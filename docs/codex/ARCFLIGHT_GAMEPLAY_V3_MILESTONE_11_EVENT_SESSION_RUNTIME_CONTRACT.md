@@ -230,18 +230,18 @@ zero writes. A command that is not listed for the current row returns
 
 | M11 `sessionState` | Permitted domain `lifecycleState` | Permitted `phase` | Commands permitted | Recovery/correction | M10/terminal operations |
 | --- | --- | --- | --- | --- | --- |
-| `setup` | `draft`, `configuration`, `ready` | `null` | none; reads only | `abort` and GM correction of setup data | no closeout; terminal reads only |
-| `round-introduction` | `active` | `situation` | `pause`; the internal `applyVoyageEncounterCrewPlanningTransition` is the only advance | correction only | no closeout |
-| `crew-planning` | `active` | `crew-planning` | `station-selection`, `station-selection-clear`, `station-order`, `plan-lock`, `pause` | correction only | no closeout |
-| `plan-locked` | `active` | `lock-readiness` | `action-segment`, `reaction`, `pause` | correction only | no closeout |
-| `station-resolution` | `active` | `resolution` | `action-segment`, `reaction`, `round-closeout`, `pause` | correction only | no closeout |
-| `round-closeout` | `active` | `consequences` | `emergency-response`, `round-closeout`, `pause` | correction only | no closeout unless the canonical round result enters review |
-| `next-round` | `active` | `cleanup-advance`, `situation` | `pause`; the canonical transition to `round-introduction` and then Crew Planning is internal to the domain operation | correction only | no closeout |
-| `event-closeout-review` | `active` | `cleanup-advance` | `closeout-review`, `pause` | `recover`, `correct`, `abort` | a confirmed accepted review atomically records its M10 application-plan evidence, appends the exact M11 review-acceptance event/audit record, and advances to `persistent-application`; no reservation or commit |
-| `persistent-application` | `active` | `cleanup-advance` | `closeout-prepare`, `closeout-reserve`, `closeout-ship-apply`, `closeout-session-commit`, `pause` | `recover`, `correct` before ship mutation; no correction after commit | requires the persisted accepted application-plan evidence; M10 reservation/continuation/checkpoint/finalization only |
+| `setup` | `draft`, `configuration`, `ready` | `null` | none; reads only | `abort` only from `configuration`/`ready`; no Task 7 correction | no closeout; terminal reads only |
+| `round-introduction` | `active` | `situation` | `pause`; the internal `applyVoyageEncounterCrewPlanningTransition` is the only advance | no Task 7 correction | no closeout |
+| `crew-planning` | `active` | `crew-planning` | `station-selection`, `station-selection-clear`, `station-order`, `plan-lock`, `pause` | Task 7 `station-selection`/`station-order` correction only | no closeout |
+| `plan-locked` | `active` | `lock-readiness` | `action-segment`, `reaction`, `pause` | no Task 7 correction | no closeout |
+| `station-resolution` | `active` | `resolution` | `action-segment`, `reaction`, `round-closeout`, `pause` | no Task 7 correction | no closeout |
+| `round-closeout` | `active` | `consequences` | `emergency-response`, `round-closeout`, `pause` | no Task 7 correction | no closeout unless the canonical round result enters review |
+| `next-round` | `active` | `cleanup-advance`, `situation` | `pause`; the canonical transition to `round-introduction` and then Crew Planning is internal to the domain operation | no Task 7 correction | no closeout |
+| `event-closeout-review` | `active` | `cleanup-advance` | `closeout-review`, `pause` | `recover`, `abort`; no Task 7 correction | a confirmed accepted review atomically records its M10 application-plan evidence, appends the exact M11 review-acceptance event/audit record, and advances to `persistent-application`; no reservation or commit |
+| `persistent-application` | `active` | `cleanup-advance` | `closeout-prepare`, `closeout-reserve`, `closeout-ship-apply`, `closeout-session-commit`, `pause` | `recover`; no Task 7 correction | requires the persisted accepted application-plan evidence; M10 reservation/continuation/checkpoint/finalization only |
 | `completed` | `completed-success`, `completed-failure` | `null` | reads only | recovery inspection only | terminal reads; no M10 mutation |
-| `paused` | `paused` | `null` or the last verified operational phase | `resume` only for the current authority | `recover`, `correct`, `abort` | no M10 mutation while paused |
-| `emergency-response` | `active` | `consequences` | `emergency-response`, `reaction`, `pause` | correction only | M9 result regeneration; no M10 commit until returned to review/application |
+| `paused` | `paused` | `null` or the last verified operational phase | `resume` only for the current authority | `recover`, `abort`; no Task 7 correction | no M10 mutation while paused |
+| `emergency-response` | `active` | `consequences` | `emergency-response`, `reaction`, `pause` | no Task 7 correction | M9 result regeneration; no M10 commit until returned to review/application |
 | `aborted` | `abandoned`, `discarded` | `null` | reads only | recovery inspection only | no M10 mutation |
 | `recovery-required` | `recovery` | `null` or the last verified phase | reads only | `recover`, including `recoveryAction: "abort"` | no M10 mutation |
 
@@ -251,6 +251,11 @@ the last valid domain phase; `resume` restores that
 exact captured pair after fresh authority and revision checks. The
 `emergency-response` and `recovery-required` rows are not implicit aliases for
 any other row.
+
+For Task 7, the generic `correct` entry in this table is narrowed by Section
+16.1: only the reachable current `crew-planning` state with no
+`before-plan-lock` checkpoint accepts `station-selection` or `station-order`;
+every other correction attempt is `m11-command-not-allowed` with zero writes.
 
 Allowed transitions are exactly:
 
@@ -1046,6 +1051,17 @@ Exact request keys:
 }
 ```
 
+`kind` is exactly `voyage.m11-abort-session`. The stored processed-request
+mapping is `commandKind: "abort-session"`, `resultKind: "aborted"`, and
+`projectionKind: "gm"`. Its canonical fingerprint is:
+
+```js
+JSON.stringify([
+  sessionId, principalUserId, "gm", authorityEpoch, expectedRevision,
+  "abort-session", { reason, confirmation }
+])
+```
+
 `confirmation` must be literal `true`. Setup cancellation and active-event
 abort follow the canonical Event Runner rules. Any persistent consequence still
 requires M10 preview, GM review, and M10 application; M11 cannot invent or
@@ -1071,9 +1087,45 @@ Exact request keys:
 }
 ```
 
-This GM-only command is the sole post-lock correction boundary. It requires
-literal `true` confirmation, a nonblank reason, a valid target request or
-checkpoint, and canonical regeneration from the existing domain API. It
+`kind` is exactly `voyage.m11-correct-session`. The closed
+`correctionKind` vocabulary is exactly `"station-selection"` and
+`"station-order"`; no other value is accepted. Both `targetRequestId` and
+`targetCheckpointId` must be literal `null`. The target is
+the existing corresponding selection or proposal in the freshly reread
+current `crew-planning` state, identified by the replacement payload and
+validated by the canonical `...Change` API. The current session must have no
+`before-plan-lock` checkpoint yet. This is the reachable pre-lock correction
+boundary; it changes only the current durable proposal and does not edit
+historical evidence.
+
+For `station-selection`, `replacementPayload` has exact keys and order
+`{ stationId, actionId }` and is passed only to the existing
+`applyVoyageEncounterStationActionSelectionChange(encounterState, selectionRequest)`
+API. For `station-order`, `replacementPayload` has exact keys and order
+`{ stationOrder }` and is passed only to the existing
+`applyVoyageEncounterStationOrderProposalChange(encounterState, orderRequest)` API.
+The authenticated session identity, current encounter state, station
+assignments, revisions, event identity, and all calculated output come from
+the freshly reread durable session or trusted API; `replacementPayload` is only
+the proposal input. The API result must be a complete canonical `{ nextState, events,
+errors, warnings }` result, with one valid domain event and a valid successor
+encounter revision. A missing, throwing, hostile, malformed, or identity-
+mismatched result returns `m11-correction-invalid` at `replacementPayload` and
+performs zero writes.
+
+The stored processed-request mapping is `commandKind: "correct-session"`,
+`resultKind: "corrected"`, `projectionKind: "gm"`, and `resultRevision` is
+the resulting M11 session revision. Its fingerprint payload is the exact
+ordered object `{ correctionKind, targetRequestId, targetCheckpointId,
+replacementPayload, reason, confirmation }`. The successful response is the
+standard envelope with the resulting status, the canonical station-change event
+followed by exactly one correction runtime event in `events`, and no
+caller-authored result, event, audit, receipt, projection, or revision fields.
+
+This GM-only command is the sole correction boundary. It requires
+literal `true` confirmation, a nonblank reason, null target IDs, and canonical
+regeneration from the
+existing domain API. It
 records before/after identity and never silently rewrites rolls, committed
 permanent consequences, M10 ship state, or M10 ledger entries.
 
@@ -1347,13 +1399,12 @@ are true:
 Task 4 supplies the hostile-safe checkpoint capture/validation and
 forward-recovery substrate only. The command-owning later slices wire each
 listed checkpoint boundary through this substrate together with their
-canonical domain API. M6-M10 event validators/replay, `reconcile-closeout`,
-and audited `abort` analysis remain owned by those later slices; until an
-owning replay dependency is injected, Task 4 rejects those records/actions
-without a generic substitute. In this Task 4 slice, persisted recovery
-records are valid only for `recoveryAction: "rebuild-latest"`; persisted
-`abort` or `reconcile-closeout` recovery records are invalid session evidence
-until their owning slices register the complete canonical implementation.
+canonical domain API. M6-M10 event validators/replay and
+`reconcile-closeout` remain owned by those later slices. The Task 4-only
+implementation accepts only `recoveryAction: "rebuild-latest"`; the complete
+Task 7 `abort` records and recovery action are defined in Section 16.1 and are
+accepted only after that slice registers every dependency and validator listed
+there. No generic substitute is permitted.
 
 The complete event journal is one chronological revision chain. M11 validates
 each M11 runtime event against the immediately preceding event revision. For
@@ -1377,10 +1428,10 @@ bindings before it may return any duplicate response.
 For `rebuild-latest`, M11 rebuilds the latest valid recoverable state through
 Task 4-supported evidence or an explicitly injected trusted owning replay
 dependency. `reconcile-closeout` remains deferred to the M10 orchestration
-slice and `abort` remains deferred to the audited abort slice; Task 4 returns
-the existing `m11-command-not-allowed` diagnostic at
-`request.recoveryAction` for those actions until their owning slice is
-present.
+slice. Until Task 7 is implemented, recovery `abort` returns the existing
+`m11-command-not-allowed` diagnostic at `request.recoveryAction`; after Task 7
+registers its complete Section 16.1 implementation, recovery `abort` follows
+the forward-only recovery-abort rules there.
 No recovery action rerolls, duplicates Pressure or Hazards, reapplies a Scar,
 downgrades a committed M10 ledger, removes a processed request, invalidates a
 historical event, or overwrites an earlier checkpoint.
@@ -1731,7 +1782,7 @@ ship revision bindings remain M6–M10 authority.
 ## 16. Audited correction and abort
 
 Corrections are GM-only, explicit, revisioned commands. A correction must name
-its target request/checkpoint, provide a nonblank reason and literal `true`
+its target request, provide a nonblank reason and literal `true`
 confirmation, and pass through the canonical domain analyzer/application for
 the affected operation. It appends an audit record containing the authenticated
 GM, authority epoch, before/after revisions, target ID, and server timestamp.
@@ -1741,8 +1792,290 @@ receipt, or mutate M10 ship state directly.
 Setup cancellation is an audited transition with no persistent consequences.
 Active-event abort stops later station commands, retains all prior events,
 applies only the authored abort path after GM review, and uses M10 for any
-persistent closeout consequence. Abort never silently rolls back committed
-ship data.
+persistent closeout consequence. Task 7's supported abort result is
+non-persistent only; a consequence-bearing authored path remains unsupported
+until a separately authorized M10 handoff exists. Abort never silently rolls
+back committed ship data.
+
+### 16.1 Task 7 protocol lock
+
+The following definitions are the complete Task 7 vocabulary. They supersede
+the earlier Task 4 statement that `abort` is deferred, but change no Task 1--6
+record or validator. A Task 7 implementation must register every listed
+record, event, and audit validator together; it may not accept a partial
+future kind.
+
+#### Trusted abort dependency
+
+Direct setup cancellation and active-event abort use the trusted canonical
+dependency `applyVoyageEncounterAbortTransition(encounterState, abortRequest)`.
+The `encounterState` argument comes only from the freshly reread durable M11
+session or canonical recovery replay; callers cannot supply it. It contains no
+JournalEntry, M10 state, caller candidate, authority object, receipt, audit,
+response, or projection. Its exact `abortRequest` keys are
+`{ kind, sessionId, abortScope, reason }`, where `kind` is
+`"voyage.abort-setup"`, `"voyage.abort-active-event"`, or
+`"voyage.abort-recovery"` and `abortScope` is `"setup-cancellation"`,
+`"active-event"`, or `"recovery-abort"` respectively. M11 supplies only
+the captured session identity and GM reason; it never supplies a candidate,
+revision, lifecycle, event, or consequence.
+
+Direct abort supplies the current durable encounter state; recovery abort
+supplies the canonically replayed encounter state selected by forward recovery.
+The exact dependency result keys are
+`{ ok, nextState, events, errors, warnings, persistentConsequence }`.
+`nextState` is the complete canonical encounter state, `events` is the exact
+dense canonical domain-event delta, and `persistentConsequence` must be literal
+`null` in this Task 7 slice; a
+non-null authored consequence is unsupported and fails write-free with the
+existing `m11-m10-handoff-invalid` diagnostic at `m10`. The result is
+hostile-safely
+captured and validated against session identity, current encounter revision,
+lifecycle transition, and event schemas. A throwing, malformed,
+identity-mismatched, or noncanonical result fails with zero writes. Task 7
+does not claim to complete an abort requiring persistent M10 application.
+
+#### Direct abort semantics
+
+Setup cancellation is legal only from M11 `setup` with domain lifecycle
+`configuration` or `ready`; the dependency transitions the domain lifecycle
+to `discarded`, leaves phase `null`, and M11 transitions to `aborted`. It
+increments both the encounter and M11 revisions once, preserves every prior
+event, checkpoint, and processed request, appends exactly one canonical domain
+event, one `voyage.m11-session-aborted` runtime event, and one audit. No M10
+API is called and no persistent consequence is stored. It appends one direct
+abort processed-request record, does not append or invalidate a checkpoint, and
+does not alter any prior record.
+
+Active-event abort is legal from `round-introduction`, `crew-planning`,
+`plan-locked`, `station-resolution`, `round-closeout`, `next-round`,
+`event-closeout-review`, or `paused`, provided the domain lifecycle is `active`
+or `paused`.
+The dependency transitions the domain lifecycle to `abandoned` with phase
+`null`; M11 transitions to `aborted`, advances both revisions once, preserves
+all historical evidence, and appends the same one domain/runtime-event/audit
+sequence. It appends one direct-abort processed-request record and does not
+append or invalidate a checkpoint. It never deletes or rewrites committed M10 data. Aborted sessions
+are terminal and reject later gameplay, closeout, correction, and direct-abort
+commands; only reads and recovery inspection are allowed.
+
+The exact direct-abort audit kinds are `setup-cancelled` and `event-aborted`.
+Their exact ordered `details` objects are:
+
+```js
+// setup-cancelled
+{ abortScope, previousSessionState, nextSessionState,
+  previousLifecycleState, nextLifecycleState, reason }
+
+// event-aborted
+{ abortScope, previousSessionState, nextSessionState,
+  previousLifecycleState, nextLifecycleState, reason,
+  persistentConsequence }
+```
+
+`persistentConsequence` is literal `false` in the stored audit. Both audits
+bind their top-level request, authenticated GM, authority epoch, previous and
+resulting M11 revisions, and trusted server timestamp.
+
+Both direct-abort operations use this exact ordered runtime-event shape:
+
+```js
+{
+  type, sessionId, eventId, definitionSnapshotId, shipId,
+  abortScope, abortAuthorityUserId, previousRevision, revision,
+  previousEncounterRevision, encounterRevision
+}
+```
+
+`type` is `voyage.m11-session-aborted`; `abortScope` distinguishes
+`setup-cancellation` from `active-event`; and both revision pairs bind to the
+trusted dependency result.
+
+Direct abort appends the canonical domain event first, then the
+`voyage.m11-session-aborted` runtime event. The success response `events` array
+contains those same two events in that order. No checkpoint is appended or
+invalidated.
+
+#### Correction semantics and dependencies
+
+The only legal correction kinds are `station-selection` and `station-order`.
+Both require `sessionState: "crew-planning"`, require
+`targetRequestId: null` and `targetCheckpointId: null`, and require that no
+`before-plan-lock` checkpoint exists yet.
+
+`station-selection` calls the existing canonical
+`applyVoyageEncounterStationActionSelectionChange(encounterState,
+selectionRequest)` with exact request keys `{ stationId, actionId }`.
+`station-order` calls the existing canonical
+`applyVoyageEncounterStationOrderProposalChange(encounterState,
+proposalRequest)` with exact request keys `{ stationOrder }`. The freshly
+reread current session supplies the complete encounter state and identity. The
+replacement payload supplies only those
+listed proposal fields. M11 requires one canonical domain event, a successor
+encounter revision of exactly `previous + 1`, unchanged session and ship
+identity, and no calculated caller-authored fields. No correction may touch a
+committed closeout, M10 receipt, processed request, roll, or Actor.
+
+A successful correction preserves the M11 session state, advances the M11
+revision exactly once, advances the encounter revision exactly as the owning
+API returns, appends the canonical domain event and exactly one
+`voyage.m11-session-corrected` runtime event, appends one audit, and appends no
+checkpoint. It appends one `correct-session` processed-request record. The
+canonical station-change event is appended first, followed by the M11 runtime
+event; the success response `events` array contains both in that order. All
+earlier evidence remains unchanged.
+
+The correction audit kind is `correction-applied` with exact ordered details:
+
+```js
+{ correctionKind, targetRequestId, previousSessionState,
+  nextSessionState, previousEncounterRevision, encounterRevision,
+  reason }
+```
+
+For this pre-lock boundary both target-ID fields in that audit are literal
+`null`; the corrected target identity is the `correctionKind` plus its exact
+canonical replacement payload, bound to the pre-existing current selection or
+proposal.
+
+Its runtime event has exact ordered shape:
+
+```js
+{
+  type, sessionId, eventId, definitionSnapshotId, shipId,
+  correctionKind, targetRequestId, correctionAuthorityUserId,
+  previousRevision, revision, previousEncounterRevision, encounterRevision
+}
+```
+
+`type` is `voyage.m11-session-corrected`; its M11 revision pair is strict and
+unique, and its encounter revision pair binds to the canonical domain event.
+`targetRequestId` is literal `null`; the event binds its target through
+`correctionKind` and the canonical replacement payload recorded in the audit.
+
+#### Recovery abort
+
+`recoveryAction: "abort"` is legal only for a completely valid immutable
+recovery envelope whose current evidence is `recovery-required` (or whose
+stored recovery record is an uncompleted abort attempt). Recovery first
+selects the latest completely valid non-invalidated checkpoint and canonically
+replays the append-only suffix exactly as `rebuild-latest` does. Bootstrap
+active-GM adoption occurs first when required by Section 6.2. The trusted abort
+dependency then receives the replayed encounter state with `kind:
+"voyage.abort-recovery"`, `sessionId`, `abortScope: "recovery-abort"`, and
+the captured reason.
+
+The terminal domain lifecycle is source-aware: a replayed
+`configuration`/`ready` setup source must transition to `discarded`, while a
+replayed active or paused operational source must transition to `abandoned`.
+Any other replayed lifecycle is unsupported for recovery abort and fails
+write-free with `m11-unrecoverable-session`.
+
+Recovery abort never copies the checkpoint revision into the current session.
+It preserves all prior events, checkpoints, processed requests, receipts, and
+audits, then appends the canonical abort domain event(s), followed by exactly
+one `voyage.m11-recovery-aborted` runtime event, its `recovery-aborted` audit,
+and its `after-recovery` checkpoint in one write. The recovery record has
+`status: "resolved"`, retains the selected source checkpoint identity, and
+uses `resultKind: "recovered-aborted"`. Its response `events` array is exactly
+the canonical abort domain-event delta followed by the new recovery runtime
+event. Exact replay is
+write-free and returns the stored isolated response; changed request,
+principal, role, epoch, or fingerprint is the established conflict.
+
+The recovery-abort runtime event has exact ordered shape:
+
+```js
+{
+  type, sessionId, eventId, definitionSnapshotId, shipId,
+  sourceCheckpointId, sourceCheckpointRevision,
+  recoveryAuthorityUserId, previousRevision, revision,
+  previousEncounterRevision, encounterRevision
+}
+```
+
+`type` is `voyage.m11-recovery-aborted`. Its audit kind is
+`recovery-aborted`, with exact ordered details:
+
+```js
+{ recoveryAction, sourceCheckpointId, sourceCheckpointRevision,
+  recoveryAuthorityUserId, replayedEventCount, failedRequestId,
+  failedRevision, previousSessionState, nextSessionState,
+  previousEncounterRevision, encounterRevision }
+```
+
+The event, audit, recovery record, and `after-recovery` checkpoint must bind
+to the same source checkpoint, replay count, authenticated GM, historical
+request/revision/epoch, and resulting revisions. Invalid immutable evidence
+remains `m11-unrecoverable-session` with zero writes.
+
+#### Task 7 record and event mappings
+
+The exact new processed-request mappings are:
+
+| operation | `commandKind` | `resultKind` | `projectionKind` | `resultRevision` |
+| --- | --- | --- | --- | --- |
+| direct abort | `abort-session` | `aborted` | `gm` | resulting M11 revision |
+| correction | `correct-session` | `corrected` | `gm` | resulting M11 revision |
+| recovery abort | `recover` | `recovered-aborted` | `gm` | resulting M11 revision |
+
+Direct abort uses the exact fingerprint payload
+`{ reason, confirmation }`; its full fingerprint is:
+
+```js
+JSON.stringify([
+  sessionId, principalUserId, "gm", authorityEpoch, expectedRevision,
+"abort-session", { reason, confirmation }
+])
+```
+
+Correction uses
+`{ correctionKind, targetRequestId, targetCheckpointId, replacementPayload,
+reason, confirmation }`; its full fingerprint is:
+
+```js
+JSON.stringify([
+  sessionId, principalUserId, "gm", authorityEpoch, expectedRevision,
+  "correct-session",
+  { correctionKind, targetRequestId, targetCheckpointId, replacementPayload,
+    reason, confirmation }
+])
+```
+
+Recovery abort uses the existing recovery tuple with `commandKind: "recover"`
+and `{ recoveryAction: "abort", reason }`.
+Every stored response is the standard isolated success envelope with status
+`"aborted"` for direct/recovery abort and the current `crew-planning` status
+for correction, plus the operation-specific event arrays enumerated in
+Sections 16.1. No generic
+future record validator is permitted. Reload accepts only these complete
+records together with their exact runtime-event/audit/checkpoint bindings;
+missing, extra, reordered, duplicate, forged, hostile, or historical
+revision/epoch-mismatched evidence fails closed.
+
+The Task 7 revision/state effects are normative:
+
+| operation | source | destination | M11 revision | encounter revision | checkpoint |
+| --- | --- | --- | --- | --- | --- |
+| setup cancellation | `setup` + `configuration`/`ready` | `aborted` + `discarded`/`null` phase | `+1` | trusted abort result `+1` | preserve; no new/invalidation |
+| active abort | listed active/paused state | `aborted` + `abandoned`/`null` phase | `+1` | trusted abort result `+1` | preserve; no new/invalidation |
+| correction | `crew-planning` | `crew-planning` | `+1` | owning API successor | preserve; no new/invalidation |
+| recovery abort | `recovery-required` | source-aware `aborted` + `discarded`/`null` phase for replayed `configuration`/`ready`, otherwise `abandoned`/`null` phase for replayed active/paused operation | `+1` beyond all history | trusted abort result | append `after-recovery` |
+
+Every row appends its processed request and audit; only recovery abort appends
+the checkpoint shown. No row deletes, rewrites, or reuses a
+revision.
+
+All accepted Task 7 mutations use this precedence: hostile capture; exact root
+keys and mode; trusted authentication and active-GM/connection authority;
+unique session resolution and complete validation; exact replay/conflict;
+authority epoch; expected revision; lifecycle and confirmation; reason and
+target/payload validation; trusted canonical dependency; candidate, event,
+audit, checkpoint, and revision validation; one atomic JournalEntry update;
+reread and exact verification; isolated response. Authentication and complete
+session validation therefore precede semantic correction/abort work, and every
+failure before or after the write is zero-write unless the existing
+persisted-then-thrown classification proves the candidate was durably stored.
 
 ## 17. Security and isolation rules
 
@@ -1851,6 +2184,23 @@ The M11 implementation must cover:
 - deterministic repeated requests, caller immutability, returned-value
   isolation, PF2e/sibling-data preservation through M10, and terminal
   committed-state behavior.
+- Task 7 exact mode literals, closed correction vocabulary, target-request
+  rules, no-checkpoint pre-lock boundary, replacement-payload key order,
+  canonical station-selection/order change
+  regeneration, and rejection of caller-authored calculated fields;
+- setup cancellation and active-event abort confirmation/reason/lifecycle
+  gates, dependency failures, persistent-consequence handoff rejection,
+  terminal `aborted` mapping, preserved history, no Actor/M10 writes, exact
+  abort runtime-event/audit pairing, replay/conflict, hostile persisted abort
+  evidence, and failed/ambiguous-write classification;
+- correction success and every invalid target, payload, dependency, identity,
+  encounter-revision, M11-revision, runtime-event, audit, checkpoint, replay,
+  conflict, and committed-consequence-preservation witness;
+- recovery abort latest-valid-checkpoint selection, bootstrap adoption,
+  canonical replay, forward-only revision, preserved historical evidence,
+  `recovery-aborted` event/audit/after-recovery checkpoint binding, immutable
+  envelope failure, exact source-aware event arrays, replay/conflict, and
+  zero-write errors.
 
 ## 19. Manual Foundry validation checklist
 
