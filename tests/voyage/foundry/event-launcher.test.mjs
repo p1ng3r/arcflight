@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildVoyageEventManagerDashboardModel, launchVoyageEventSession, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../../../scripts/voyage/foundry/event-launcher.js";
 import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID } from "../../../scripts/voyage/m12/event-definition.js";
+import { ARCFLIGHT_SHIP_ACTOR_TYPE } from "../../../scripts/documents/ships.js";
 import { analyzeVoyageEventDefinitionRoundActionAuthoring } from "../../../scripts/voyage/domain/round-action-authoring.js";
 import { reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 
-function actor(id, name, ship = false, tracker = null) { return { id, uuid: `Actor.${id}`, name, type: ship ? "vehicle" : "character", getFlag: (_module, key) => ship ? (key === "enabled" ? true : "ship") : false, async update() { if (tracker) tracker.actors += 1; return this; } }; }
+function actor(id, name, ship = false, tracker = null, actorType = ARCFLIGHT_SHIP_ACTOR_TYPE, enabled = true) { return { id, uuid: `Actor.${id}`, name, type: ship ? "vehicle" : "character", getFlag: (_module, key) => ship ? (key === "enabled" ? enabled : actorType) : (key === "enabled" ? enabled : actorType), async update() { if (tracker) tracker.actors += 1; return this; } }; }
 function fixture() {
   const journals = [];
   const tracker = { creates: 0, updates: 0, deletes: 0, actors: 0, throwUpdate: false, persistThenThrow: false };
@@ -35,6 +36,15 @@ test("M12 launch candidates and assignment normalization use canonical identitie
   assert.equal(normalized.valid, true);
   assert.deepEqual(normalized.assignments[0].operator, { kind: "actor", id: "captain", uuid: "Actor.captain", name: "Captain Vale" });
   assert.equal(normalizeVoyageEventOperatorSelections({ captain: "captain", engineer: "captain" }, fx.actors).valid, false);
+});
+
+test("M12 ship filtering requires the canonical enabled Arcflight vehicle identity", () => {
+  const fx = fixture();
+  const disabled = actor("disabled", "Disabled", true, null, ARCFLIGHT_SHIP_ACTOR_TYPE, false);
+  const wrongType = actor("wrong-type", "Wrong Type", true, null, "ship", true);
+  const nonVehicle = actor("character-ship", "Character Ship", false, null, ARCFLIGHT_SHIP_ACTOR_TYPE, true);
+  assert.deepEqual(listVoyageEventLaunchShips([...fx.actors, disabled, wrongType, nonVehicle]), [{ id: "ship-1", uuid: "Actor.ship-1", name: "The Cinderwake" }]);
+  assert.deepEqual(listVoyageEventLaunchShips([fx.actors[0]]), [{ id: "ship-1", uuid: "Actor.ship-1", name: "The Cinderwake" }]);
 });
 
 test("registered M12 snapshot is directly Task-2-compatible across all three rounds", () => {

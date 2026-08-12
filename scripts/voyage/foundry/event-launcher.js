@@ -7,6 +7,7 @@ import { createDraftVoyageEncounterDefaults } from "../domain/defaults.js";
 import { applyVoyageEncounterStationAssignments } from "../domain/station-assignments-application.js";
 import { applyContextPreservingVoyageLifecycleTransition } from "../domain/lifecycle-application.js";
 import { analyzeVoyageStationAssignments } from "../domain/station-assignments.js";
+import { ARCFLIGHT_SHIP_ACTOR_TYPE } from "../../documents/ships.js";
 import { M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID, M12_EVENT_PRESENTATION, M12_STATION_IDS, getM12EventDefinition, validateM12EventDefinition } from "../m12/event-definition.js";
 
 const LAUNCH_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision", "authorityEpoch", "eventId", "definitionSnapshotId", "shipId", "operatorSelections"]);
@@ -63,7 +64,7 @@ function actorIdentity(actor) {
   return id && uuid ? { kind: "actor", id, uuid, name } : null;
 }
 function validShip(actor) {
-  try { return actor?.type === "vehicle" && actor.getFlag?.("arcflight", "enabled") === true && actor.getFlag?.("arcflight", "actorType") === "ship"; } catch { return false; }
+  try { return actor?.type === "vehicle" && actor.getFlag?.("arcflight", "enabled") === true && actor.getFlag?.("arcflight", "actorType") === ARCFLIGHT_SHIP_ACTOR_TYPE; } catch { return false; }
 }
 function journalEntries(context) {
   try { const source = context?.journalEntries ?? globalThis.game?.journal; return source ? (typeof source.values === "function" ? [...source.values()] : Array.from(source)) : []; } catch { return []; }
