@@ -138,7 +138,19 @@ import {
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
 import { launchVoyageEventSession as launchVoyageEventSessionInternal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections, buildVoyageEventManagerDashboardModel } from "./voyage/foundry/event-launcher.js";
 import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION } from "./voyage/m12/event-definition.js";
+import { getFoundrySessionMutationCoordinator } from "./voyage/foundry/session-coordinator.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
+
+function trustedFoundryUsers() {
+  try {
+    const source = globalThis.game?.users;
+    const users = Array.isArray(source) ? source : source?.contents;
+    if (!Array.isArray(users)) return [];
+    return users.map((user) => ({ id: user?.id, isGM: user?.isGM, active: user?.active }));
+  } catch {
+    return [];
+  }
+}
 
 function trustedLaunchContext() {
   const connectionId = globalThis.game?.socket?.id ?? null;
@@ -147,14 +159,14 @@ function trustedLaunchContext() {
     authenticatedConnectionId: connectionId,
     trustedTransportContext: typeof connectionId === "string" && connectionId.length > 0,
     activeGmUserId: globalThis.game?.users?.activeGM?.id ?? null,
-    users: globalThis.game?.users,
+    users: trustedFoundryUsers(),
     actors: globalThis.game?.actors,
     journalEntries: globalThis.game?.journal,
     JournalEntry: globalThis.JournalEntry,
     isJournalEntryDocument: (document) => document?.documentName === "JournalEntry" || document?.constructor?.name === "JournalEntry",
     createDocumentId: () => globalThis.foundry?.utils?.randomID?.(),
     resolveEventDefinitionSnapshot: async (eventId, definitionSnapshotId) => getM12EventDefinition(eventId, definitionSnapshotId),
-    runExclusiveSessionMutation: globalThis.game?.arcflight?.runExclusiveSessionMutation
+    runExclusiveSessionMutation: getFoundrySessionMutationCoordinator(globalThis.game)
   };
 }
 

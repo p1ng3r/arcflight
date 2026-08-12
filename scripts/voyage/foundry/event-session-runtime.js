@@ -834,21 +834,29 @@ function trustedJournalEntry(document, context = {}) {
   } catch { return false; }
 }
 function documentId(document) { try { const id = document?.id; return nonBlank(id) ? { ok: true, value: id } : { ok: false, value: null }; } catch { return { ok: false, value: null }; } }
+function persistedSessionValue(source) {
+  const flags = ownData(source, "flags");
+  if (!flags.ok || !isPlainObject(flags.value)) return { present: false, hostile: false, value: null };
+  const moduleFlags = ownData(flags.value, ARCFLIGHT_MODULE_ID);
+  if (!moduleFlags.ok) return { present: false, hostile: false, value: null };
+  if (!isPlainObject(moduleFlags.value)) return { present: false, hostile: true, value: null };
+  const system = ownData(moduleFlags.value, "system");
+  if (!system.ok) return { present: false, hostile: false, value: null };
+  if (!isPlainObject(system.value)) return { present: false, hostile: true, value: null };
+  const voyage = ownData(system.value, "voyageSession");
+  if (!voyage.ok) return { present: false, hostile: false, value: null };
+  return { present: true, hostile: false, value: voyage.value };
+}
 function readDocumentSession(document, context = {}) {
   try {
     if (!trustedJournalEntry(document, context) || typeof document.toObject !== "function") return { ok: false };
-    const sourceCapture = capture(document.toObject()); if (!sourceCapture.ok || !isPlainObject(sourceCapture.value)) return { ok: false };
-    const sourceId = ownData(sourceCapture.value, "_id"), liveId = documentId(document);
+    const source = document.toObject(), sourceId = ownData(source, "_id"), liveId = documentId(document);
     if (!sourceId.ok || !liveId.ok || sourceId.value !== liveId.value) return { ok: false };
-    const flags = ownData(sourceCapture.value, "flags"); if (!flags.ok || !isPlainObject(flags.value)) return { ok: false };
-    const moduleFlags = ownData(flags.value, ARCFLIGHT_MODULE_ID); if (!moduleFlags.ok) return { ok: true, session: null, sessionId: null, documentId: liveId.value, document };
-    if (!isPlainObject(moduleFlags.value)) return { ok: false };
-    const system = ownData(moduleFlags.value, "system"); if (!system.ok) return { ok: true, session: null, sessionId: null, documentId: liveId.value, document };
-    if (!isPlainObject(system.value)) return { ok: false };
-    const voyage = ownData(system.value, "voyageSession"); if (!voyage.ok) return { ok: true, session: null, sessionId: null, documentId: liveId.value, document };
-    if (!isPlainObject(voyage.value)) return { ok: false };
-    const sessionId = ownData(voyage.value, "sessionId"); if (!sessionId.ok || !nonBlank(sessionId.value)) return { ok: false };
-    return { ok: true, session: voyage.value, sessionId: sessionId.value, documentId: liveId.value, document };
+    const extracted = persistedSessionValue(source);
+    if (!extracted.present) return extracted.hostile ? { ok: false } : { ok: true, session: null, sessionId: null, documentId: liveId.value, document };
+    const captured = capture(extracted.value); if (!captured.ok || !isPlainObject(captured.value)) return { ok: false };
+    const sessionId = ownData(captured.value, "sessionId"); if (!sessionId.ok || !nonBlank(sessionId.value)) return { ok: false };
+    return { ok: true, session: captured.value, sessionId: sessionId.value, documentId: liveId.value, document };
   } catch { return { ok: false }; }
 }
 function journalDocuments(context) {
@@ -1457,13 +1465,15 @@ export async function runExclusiveSessionMutation(context, descriptor, callback,
   return runExclusiveTransfer(coordinator, Object.freeze({ ...descriptor }), callback, identities, options);
 }
 
-async function cleanupExact(document, expectedId, sessionId, beforeDocuments, context) {
+async function cleanupExact(document, expectedId, sessionId, beforeDocuments, context, expectedSession = null) {
   try {
-    if (!trustedJournalEntry(document, context) || !nonBlank(expectedId) || beforeDocuments.some((entry) => documentId(entry).value === expectedId)) return false;
-    const beforeRead = readDocumentSession(document, context); if (!beforeRead.ok || beforeRead.documentId !== expectedId) return false;
+    const returnedId = documentId(document);
+    if (!trustedJournalEntry(document, context) || !returnedId.ok || returnedId.value !== expectedId || !nonBlank(expectedId) || beforeDocuments.some((entry) => documentId(entry).value === expectedId)) return false;
     const before = journalDocuments(context); if (!before.ok) return false;
-    const exact = before.documents.filter((entry) => entry === document && documentId(entry).value === expectedId); if (exact.length !== 1) return false;
-    await document.delete();
+    const exact = before.documents.filter((entry) => documentId(entry).value === expectedId); if (exact.length !== 1) return false;
+    const persisted = readDocumentSession(exact[0], context);
+    if (!persisted.ok || persisted.documentId !== expectedId || persisted.sessionId !== sessionId || (expectedSession !== null && (!equal(persisted.session, expectedSession) || !pristineSession(persisted.session, expectedId, { replayContext: context })))) return false;
+    await exact[0].delete();
     const after = journalDocuments(context); if (!after.ok) return false;
     if (after.documents.some((entry) => documentId(entry).value === expectedId)) return false;
     const found = findSessionDocuments(sessionId, context); if (found.error || found.matches.length !== 0) return false;
@@ -2048,11 +2058,12 @@ export async function createVoyageEventSession(request, context = {}) {
   const reread = journalDocuments(context); if (!reread.ok) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
   if (document === undefined) return collectionUnchanged(before.documents, reread.documents, beforeSources, context) && !reread.documents.some((entry) => readDocumentSession(entry, context).sessionId === value.sessionId)
     ? failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities) : failure([diagnostic("m11-recovery-required", "recovery")], identities);
-  const returned = readDocumentSession(document, context), returnedId = returned.ok ? returned.documentId : documentId(document).value;
-  const live = reread.documents.filter((entry) => entry === document && documentId(entry).value === id);
-  const verified = returned.ok && returnedId === id && live.length === 1 && equal(returned.session, session) && pristineSession(returned.session, id);
-  if (verified) return success(returned.session, value.requestId);
-  const cleaned = returned.ok && returnedId === id && await cleanupExact(document, id, value.sessionId, before.documents, context);
+  const returnedId = documentId(document).value;
+  const live = reread.documents.filter((entry) => documentId(entry).value === id);
+  const persisted = live.length === 1 ? readDocumentSession(live[0], context) : null;
+  const verified = returnedId === id && persisted?.ok === true && persisted.documentId === id && persisted.sessionId === value.sessionId && equal(persisted.session, session) && pristineSession(persisted.session, id, { replayContext: context });
+  if (verified) return success(persisted.session, value.requestId);
+  const cleaned = returnedId === id && await cleanupExact(document, id, value.sessionId, before.documents, context, session);
   return failure([diagnostic(cleaned ? "m11-session-write-failed" : "m11-recovery-required", cleaned ? VOYAGE_SESSION_PATH : "recovery")], identities);
 }
 

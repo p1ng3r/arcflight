@@ -139,6 +139,100 @@ test("M12 launch requires the connected active GM and rejects stale launch autho
   assert.equal(stale.tracker.creates, 0); assert.equal(stale.tracker.updates, 0); assert.equal(stale.tracker.actors, 0);
 });
 
+test("public Foundry launch adapter snapshots User documents into trusted plain metadata", async () => {
+  const fx = fixture();
+  const createDocument = fx.context.JournalEntry.create;
+  fx.context.JournalEntry.create = async (...args) => {
+    const entry = await createDocument(...args);
+    entry.documentName = "JournalEntry";
+    return { ...entry, documentName: "JournalEntry", toObject: () => entry.toObject() };
+  };
+  const previous = Object.fromEntries(["foundry", "Hooks", "CONFIG", "game", "JournalEntry"].map((key) => [key, { exists: Object.hasOwn(globalThis, key), value: globalThis[key] }]));
+  let initCallback;
+  class FoundryUser {
+    constructor(id, isGM, active) { this._id = id; this._isGM = isGM; this._active = active; }
+    get id() { return this._id; }
+    get isGM() { return this._isGM; }
+    get active() { return this._active; }
+  }
+  const user = new FoundryUser("gm-1", true, true);
+  const socketListeners = [];
+  const socket = {
+    id: "connection-gm-1",
+    connected: true,
+    on(channel, callback) { assert.equal(channel, "module.arcflight"); socketListeners.push(callback); },
+    emit(channel, message) { assert.equal(channel, "module.arcflight"); for (const callback of socketListeners) callback(structuredClone(message)); }
+  };
+  try {
+    globalThis.foundry = { applications: { api: { HandlebarsApplicationMixin: (Base) => Base }, sheets: { ActorSheetV2: class {}, ItemSheetV2: class {} }, apps: {} }, documents: {}, utils: { randomID: () => "Journal.public-launch" } };
+    globalThis.Hooks = { once: (_event, callback) => { initCallback = callback; } };
+    globalThis.CONFIG = {};
+    globalThis.game = {
+      user,
+      userId: user.id,
+      users: { contents: [user], activeGM: user },
+      actors: fx.actors,
+      journal: fx.journals,
+      socket,
+      time: { serverTime: Date.parse("2026-08-12T12:00:00.000Z") }
+    };
+    globalThis.JournalEntry = fx.context.JournalEntry;
+    await import(`../../../scripts/arcflight.js?foundry-auth-boundary=${Date.now()}`);
+    initCallback();
+    const request = { kind: "voyage.m12-launch-event", requestId: "foundry-auth-launch", sessionId: "foundry-auth-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } };
+    const result = await globalThis.game.arcflight.launchVoyageEventSession(request);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.status, "crew-planning");
+    assert.equal(result.revision, 5);
+    assert.equal(fx.tracker.creates, 1);
+    assert.equal(fx.tracker.actors, 0);
+    assert.equal(fx.journals.length, 1);
+    assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.revision, 5);
+    assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.checkpoints, []);
+    assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.stationAssignments.map((entry) => entry.stationId), ["captain", "engineer"]);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value.exists) globalThis[key] = value.value;
+      else delete globalThis[key];
+    }
+  }
+});
+
+test("M12 launch ignores unrelated JournalEntry source accessors", async () => {
+  const fx = fixture();
+  const originalCreate = fx.context.JournalEntry.create;
+  class JournalEntryLike {
+    constructor(source) { this.source = source; this.documentName = "JournalEntry"; }
+    get id() { return this.source.id; }
+    get __testSource() { return this.source.__testSource; }
+    get flags() { return this.source.__testSource.flags; }
+    toObject() {
+      const source = structuredClone(this.source.toObject());
+      Object.defineProperty(source.flags, "exportSource", { enumerable: false, get() { throw new Error("unrelated accessor"); } });
+      return source;
+    }
+    async update(...args) { return this.source.update(...args); }
+    async delete(...args) { return this.source.delete(...args); }
+  }
+  fx.context.isJournalEntryDocument = (document) => document instanceof JournalEntryLike;
+  fx.context.JournalEntry.create = async (...args) => {
+    const created = await originalCreate(...args);
+    const wrapped = new JournalEntryLike(created);
+    fx.journals.splice(fx.journals.indexOf(created), 1, wrapped);
+    return wrapped;
+  };
+  const request = { kind: "voyage.m12-launch-event", requestId: "accessor-launch", sessionId: "accessor-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } };
+  const result = await launchVoyageEventSession(request, fx.context);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.status, "crew-planning");
+  assert.equal(result.revision, 5);
+  assert.equal(fx.tracker.creates, 1);
+  assert.equal(fx.tracker.updates, 1);
+  assert.equal(fx.journals.length, 1);
+  assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.checkpoints, []);
+  assert.equal(reloadVoyageEventSession("accessor-session", fx.context).ok, true);
+});
+
 test("M12 launch rechecks active-GM and connection authority inside the coordinator", async () => {
   const activeDrift = fixture();
   activeDrift.context.runExclusiveSessionMutation = async (_descriptor, callback) => { activeDrift.context.users[0].active = false; return callback({ connectionId: "connection-gm-1", occurredAt: "2026-08-12T12:00:00.000Z" }); };

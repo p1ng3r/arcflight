@@ -242,6 +242,67 @@ test("valid creation uses keepId and stores only pristine voyageSession state", 
   const stored = session(fixture.journals[0]); pristineKeys(stored); assert.equal(stored.sessionDocumentId, fixture.journals[0].id); assert.equal(stored.revision, 0); assert.equal(stored.sessionState, "setup"); assert.equal(stored.encounterState.revision, 0); assert.deepEqual(stored.events, []); assert.deepEqual(Object.keys(stored.processedRequests[0]), ["requestId", "principalUserId", "projectionKind", "fingerprint", "commandKind", "resultKind", "resultRevision", "response"]); assert.equal(stored.processedRequests[0].commandKind, "create-session"); assert.equal(stored.processedRequests[0].resultKind, "created"); assert.equal(stored.processedRequests[0].projectionKind, "gm");
 });
 
+test("creation verification accepts a Foundry reread with a distinct document instance", async () => {
+  const fixture = makeContext({ create(_data, _tracker, _journals, makeDocument) { makeDocument(); return makeDocument({ persist: false }); } });
+  const result = await createVoyageEventSession(request(), fixture.context);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(fixture.journals.length, 1);
+  assert.equal(fixture.journals[0].id, "Journal.session-1");
+  assert.equal(fixture.tracker.deletes, 0);
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+});
+
+test("JournalEntry source accessors outside voyageSession do not block session discovery", async () => {
+  const fixture = makeContext();
+  const originalCreate = fixture.context.JournalEntry.create;
+  class JournalEntryLike {
+    constructor(source) { this.source = source; }
+    get id() { return this.source.id; }
+    get flags() { return this.source.__testSource.flags; }
+    toObject() {
+      const source = structuredClone(this.source.toObject());
+      Object.defineProperty(source.flags, "exportSource", { enumerable: false, get() { throw new Error("unrelated accessor"); } });
+      return source;
+    }
+    async update(...args) { return this.source.update(...args); }
+    async delete(...args) { return this.source.delete(...args); }
+  }
+  fixture.context.isJournalEntryDocument = (document) => document instanceof JournalEntryLike;
+  fixture.context.JournalEntry.create = async (...args) => {
+    const created = await originalCreate(...args);
+    const wrapped = new JournalEntryLike(created);
+    fixture.journals.splice(fixture.journals.indexOf(created), 1, wrapped);
+    return wrapped;
+  };
+  const created = await createVoyageEventSession(request(), fixture.context);
+  assert.equal(created.ok, true, JSON.stringify(created.errors));
+  const unrelatedRaw = makeJournalDocument({ _id: "Journal.unrelated", flags: {} }, fixture.tracker, fixture.journals);
+  fixture.journals.splice(fixture.journals.indexOf(unrelatedRaw), 1, new JournalEntryLike(unrelatedRaw));
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+  const projection = readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "accessor-read", sessionId: "session-1", expectedRevision: 0 }, fixture.context);
+  assert.equal(projection.ok, true, JSON.stringify(projection.errors));
+  const replay = await createVoyageEventSession(request(), fixture.context);
+  assert.deepEqual(replay, created);
+  assert.equal(fixture.tracker.updates, 0);
+});
+
+test("a hostile voyageSession subtree remains rejected while unrelated source data is ignored", async () => {
+  const fixture = makeContext();
+  await createVoyageEventSession(request(), fixture.context);
+  const document = fixture.journals[0];
+  const originalToObject = document.toObject.bind(document);
+  class HostileSession { constructor(value) { Object.assign(this, value); } }
+  document.toObject = () => {
+    const source = originalToObject();
+    Object.defineProperty(source.flags, "exportSource", { enumerable: false, get() { throw new Error("unrelated accessor"); } });
+    source.flags.arcflight.system.voyageSession = new HostileSession(source.flags.arcflight.system.voyageSession);
+    return source;
+  };
+  const rejected = reloadVoyageEventSession("session-1", fixture.context);
+  assertFailure(rejected, "m11-hostile-data-capture-failed", "$", "M11 data could not be captured safely.");
+  assert.equal(fixture.tracker.updates, 0);
+});
+
 test("GM-only ownership is exact", async () => { const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context); assert.deepEqual(fixture.journals[0].ownership, { default: 0, "gm-1": 3, "gm-2": 3 }); });
 
 test("authority failures precede document and domain resolution", async () => {
@@ -290,7 +351,7 @@ test("missing, one, and multiple matching documents have exact precedence", asyn
 });
 
 test("cleanup is authorized only for the exact generated document", async () => {
-  const clean = makeContext({ create(_data, _tracker, _journals, makeDocument) { const document = makeDocument(); session(document).sessionId = "wrong-session"; return document; } }); const result = await createVoyageEventSession(request(), clean.context); assertFailure(result, "m11-session-write-failed", "flags.arcflight.system.voyageSession", "Event Session write did not complete or verify."); assert.deepEqual(clean.tracker.deletedIds, ["Journal.session-1"]);
+  const clean = makeContext({ create(_data, _tracker, _journals, makeDocument) { const document = makeDocument(); session(document).sessionId = "wrong-session"; return document; } }); const result = await createVoyageEventSession(request(), clean.context); assertFailure(result, "m11-recovery-required", "recovery", "Event Session requires explicit recovery."); assert.deepEqual(clean.tracker.deletedIds, []);
   const uncertain = [
     { name: "returned id mismatch", create(_data, _tracker, _journals, makeDocument) { return makeDocument({ id: "Journal.other" }); } },
     { name: "returned source id mismatch", create(_data, _tracker, _journals, makeDocument) { const document = makeDocument(); const source = document.__testSource; document.toObject = () => ({ ...source, _id: "Journal.other" }); return document; } },
@@ -312,8 +373,8 @@ test("cleanup is authorized only for the exact generated document", async () => 
     return document;
   } });
   const concurrentResult = await createVoyageEventSession(request(), concurrent.context);
-  assertFailure(concurrentResult, "m11-session-write-failed", "flags.arcflight.system.voyageSession", "Event Session write did not complete or verify.");
-  assert.deepEqual(concurrent.tracker.deletedIds, ["Journal.session-1"]);
+  assertFailure(concurrentResult, "m11-recovery-required", "recovery", "Event Session requires explicit recovery.");
+  assert.deepEqual(concurrent.tracker.deletedIds, []);
   assert.equal(concurrent.journals.length, 1);
 });
 
