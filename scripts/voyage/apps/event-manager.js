@@ -1,5 +1,5 @@
 import { readVoyageEventSessionProjection, reloadVoyageEventSession } from "../foundry/event-session-runtime.js";
-import { buildVoyageEventManagerDashboardModel, launchVoyageEventSession, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../foundry/event-launcher.js";
+import { buildVoyageEventManagerDashboardModel, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../foundry/event-launcher.js";
 import { M12_EVENT_PRESENTATION, M12_STATION_IDS } from "../m12/event-definition.js";
 import { arcflightTemplatePath } from "../../sheets/sheet-helpers.js";
 
@@ -12,6 +12,16 @@ function actors() {
 function activeGmId() {
   try { return game.users?.activeGM?.id ?? game.users?.find?.((user) => user?.isGM && user.active)?.id ?? null; } catch { return null; }
 }
+function trustedUsersSnapshot() {
+  try {
+    const source = game.users;
+    const users = Array.isArray(source) ? source : source?.contents;
+    if (!Array.isArray(users)) return [];
+    return users.map((user) => ({ id: user?.id, isGM: user?.isGM, active: user?.active }));
+  } catch {
+    return [];
+  }
+}
 function eventContext() {
   const connectionId = game.socket?.id ?? null;
   return {
@@ -19,7 +29,7 @@ function eventContext() {
     authenticatedConnectionId: connectionId,
     trustedTransportContext: typeof connectionId === "string" && connectionId.length > 0,
     activeGmUserId: activeGmId(),
-    users: game.users,
+    users: trustedUsersSnapshot(),
     actors: game.actors,
     journalEntries: game.journal,
     JournalEntry,
@@ -105,7 +115,9 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
 
   async #launch() {
     const request = { kind: "voyage.m12-launch-event", requestId: randomId("m12-launch"), sessionId: randomId("voyage-session"), expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_PRESENTATION.eventId, definitionSnapshotId: M12_EVENT_PRESENTATION.definitionSnapshotId, shipId: this.#shipId, operatorSelections: { ...this.#operatorSelections } };
-    const result = await (game.arcflight?.launchVoyageEventSession ?? launchVoyageEventSession)(request);
+    const launch = game.arcflight?.launchVoyageEventSession;
+    if (typeof launch !== "function") return ui.notifications?.error?.("Arcflight launch transport is unavailable.");
+    const result = await launch(request);
     if (!result.ok) return ui.notifications?.error?.(result.errors?.[0]?.message ?? "Arcflight could not launch the event.");
     this.#sessionId = result.sessionId; this.#expectedRevision = result.revision; this.#mode = "live"; this.render();
   }
