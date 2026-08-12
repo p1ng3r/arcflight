@@ -1,0 +1,15 @@
+<div class="arcflight-event-manager">
+  {{#if setupMode}}
+    <header class="arcflight-event-manager__header"><div><p class="arcflight-kicker">Milestone 12 · Event Launcher</p><h1>{{event.title}}</h1><p>{{event.description}}</p></div><span class="arcflight-status">SETUP</span></header>
+    <section class="arcflight-event-manager__section"><h2>Event</h2><p>{{event.roundCount}} rounds · fixed Event Runner stations</p></section>
+    <section class="arcflight-event-manager__section"><h2>Ship</h2><select data-m12-ship>{{#each ships}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select>{{#unless ships.length}}<p class="arcflight-error">No valid Arcflight PF2e vehicle ships are available.</p>{{/unless}}</section>
+    <section class="arcflight-event-manager__section"><h2>Fixed operators</h2>{{#each stations}}<label class="arcflight-event-manager__row"><span>{{label}}</span><select data-m12-operator="{{stationId}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select><small>{{#if occupied}}Occupied{{else}}Unoccupied{{/if}}</small></label>{{/each}}</section>
+    {{#if validationErrors.length}}<section class="arcflight-event-manager__section"><h2>Validation</h2><ul class="arcflight-error">{{#each validationErrors}}<li>{{this}}</li>{{/each}}</ul></section>{{/if}}
+    <footer class="arcflight-event-manager__footer"><button type="button" data-m12-launch {{#unless launchEnabled}}disabled{{/unless}}>Launch Event</button></footer>
+  {{else}}
+    <header class="arcflight-event-manager__header"><div><p class="arcflight-kicker">Live GM Dashboard</p><h1>{{event.title}}</h1><p>{{sessionId}}</p></div><span class="arcflight-status">LIVE</span></header>
+    {{#if dashboard}}<section class="arcflight-event-manager__grid"><div><strong>Session</strong><span>{{dashboard.sessionState}}</span><span>Revision {{dashboard.revision}} · Epoch {{dashboard.authorityEpoch}}</span></div><div><strong>Round</strong><span>{{dashboard.roundNumber}}</span><span>{{dashboard.lifecycleState}} · {{dashboard.phase}}</span></div><div><strong>Momentum</strong><span>{{dashboard.momentum}}</span></div><div><strong>Hazards</strong><span>{{dashboard.activeHazardCount}}</span></div></section><section class="arcflight-event-manager__section"><h2>Pressure</h2><div class="arcflight-event-manager__pressure">{{#each dashboard.pressureSystems}}<span><b>{{pressureSystemId}}</b>{{value}} / {{capacity}}</span>{{/each}}</div></section><section class="arcflight-event-manager__section"><h2>Stations</h2>{{#each dashboard.stationAssignments}}<p>{{stationId}} · {{operator.name}}</p>{{/each}}</section>{{else}}<p class="arcflight-error">The persisted session could not be read.</p>{{/if}}
+    {{#if dashboard}}<p class="arcflight-event-manager__active-gm">Active GM {{dashboard.activeGmUserId}}</p>{{/if}}
+    <footer class="arcflight-event-manager__footer"><button type="button" data-m12-refresh>Refresh</button><button type="button" data-m12-new-session>New Event</button></footer>
+  {{/if}}
+</div>
