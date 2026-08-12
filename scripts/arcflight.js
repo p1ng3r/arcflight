@@ -136,7 +136,31 @@ import {
   organizeArcflightItems
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
+import { launchVoyageEventSession as launchVoyageEventSessionInternal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections, buildVoyageEventManagerDashboardModel } from "./voyage/foundry/event-launcher.js";
+import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION } from "./voyage/m12/event-definition.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
+
+function trustedLaunchContext() {
+  const connectionId = globalThis.game?.socket?.id ?? null;
+  return {
+    authenticatedUserId: globalThis.game?.user?.id ?? null,
+    authenticatedConnectionId: connectionId,
+    trustedTransportContext: typeof connectionId === "string" && connectionId.length > 0,
+    activeGmUserId: globalThis.game?.users?.activeGM?.id ?? null,
+    users: globalThis.game?.users,
+    actors: globalThis.game?.actors,
+    journalEntries: globalThis.game?.journal,
+    JournalEntry: globalThis.JournalEntry,
+    isJournalEntryDocument: (document) => document?.documentName === "JournalEntry" || document?.constructor?.name === "JournalEntry",
+    createDocumentId: () => globalThis.foundry?.utils?.randomID?.(),
+    resolveEventDefinitionSnapshot: async (eventId, definitionSnapshotId) => getM12EventDefinition(eventId, definitionSnapshotId),
+    runExclusiveSessionMutation: globalThis.game?.arcflight?.runExclusiveSessionMutation
+  };
+}
+
+async function launchVoyageEventSessionFromPublicBoundary(request) {
+  return launchVoyageEventSessionInternal(request, trustedLaunchContext());
+}
 import {
   backfillInstallStateForAllShips,
   backfillInstallStateForShip,
@@ -360,6 +384,18 @@ Hooks.once("init", () => {
     createVoyageEncounterState,
     normalizeVoyageEncounterState,
     validateVoyageEncounterState,
+    launchVoyageEventSession: launchVoyageEventSessionFromPublicBoundary,
+    listVoyageEventLaunchShips,
+    normalizeVoyageEventOperatorSelections,
+    buildVoyageEventManagerDashboardModel,
+    m12EventId: M12_EVENT_ID,
+    m12DefinitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID,
+    m12EventPresentation: M12_EVENT_PRESENTATION,
+    getM12EventDefinition,
+    openEventManager: async () => {
+      const { openArcflightEventManager } = await import("./voyage/apps/event-manager.js");
+      return openArcflightEventManager();
+    },
     validateVoyageEncounterStationSelections,
     applyVoyageEncounterStationActionSelection,
     validateVoyageEncounterActivationReadiness,
@@ -478,6 +514,14 @@ export {
   cleanupDuplicateArcflightItems,
   createVoyageEncounterState,
   normalizeVoyageEncounterState,
+  launchVoyageEventSessionFromPublicBoundary as launchVoyageEventSession,
+  listVoyageEventLaunchShips,
+  normalizeVoyageEventOperatorSelections,
+  buildVoyageEventManagerDashboardModel,
+  getM12EventDefinition,
+  M12_EVENT_ID,
+  M12_DEFINITION_SNAPSHOT_ID,
+  M12_EVENT_PRESENTATION,
   validateVoyageEncounterState,
   validateVoyageEncounterStationSelections,
   applyVoyageEncounterStationActionSelection,

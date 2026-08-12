@@ -234,7 +234,7 @@ async function task6CanonicalM10Fixture() {
   return { actor, fixture, run, previewRequest, preview };
 }
 
-test("M11 runtime exposes the Task 7 audited correction and abort boundaries", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionProjection", "recoverVoyageEventSession", "reloadVoyageEventSession", "transferVoyageEventSessionControl"]));
+test("M11 runtime exposes the Task 7 audited correction and abort boundaries", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionProjection", "recoverVoyageEventSession", "reloadVoyageEventSession", "runExclusiveSessionMutation", "transferVoyageEventSessionControl"]));
 
 test("valid creation uses keepId and stores only pristine voyageSession state", async () => {
   const fixture = makeContext(); const result = await createVoyageEventSession(request(), fixture.context);
