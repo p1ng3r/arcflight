@@ -234,7 +234,7 @@ async function task6CanonicalM10Fixture() {
   return { actor, fixture, run, previewRequest, preview };
 }
 
-test("M11 runtime exposes the Task 5 projection boundary", () => assert.deepEqual(Object.keys(runtime).sort(), ["createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionProjection", "recoverVoyageEventSession", "reloadVoyageEventSession", "transferVoyageEventSessionControl"]));
+test("M11 runtime exposes the Task 7 audited correction and abort boundaries", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionProjection", "recoverVoyageEventSession", "reloadVoyageEventSession", "transferVoyageEventSessionControl"]));
 
 test("valid creation uses keepId and stores only pristine voyageSession state", async () => {
   const fixture = makeContext(); const result = await createVoyageEventSession(request(), fixture.context);
@@ -1598,4 +1598,166 @@ test("Task 6 canonical M10 adapters preserve the Actor boundary through finaliza
   assert.equal(actor.flags.arcflight.system.voyage.closeoutLedger[0].status, "committed");
   assert.ok(actor.updates.every((patch) => Object.keys(patch).every((key) => key === "flags.arcflight.system.voyage" || key === "flags.arcflight.system.voyage.closeoutLedger")));
   assert.ok(integrated.fixture.tracker.updatePayloads.every((payload) => Object.keys(payload).length === 1 && Object.hasOwn(payload, "flags.arcflight.system.voyageSession")));
+});
+
+test("Task 7 abort and correction enforce literal confirmation before any dependency or write", async () => {
+  const fixture = makeContext(); await createVoyageEventSession(request(), fixture.context);
+  const abort = await runtime.abortVoyageEventSession({ kind: "voyage.m11-abort-session", requestId: "abort-confirmation", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, reason: "cancel", confirmation: false }, fixture.context);
+  assertFailure(abort, "m11-abort-confirmation-required", "confirmation", "Complete abort confirmation is required.");
+  const correction = await runtime.correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "correction-confirmation", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, correctionKind: "station-selection", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain", actionId: "action-1" }, reason: "fix", confirmation: false }, fixture.context);
+  assertFailure(correction, "m11-correction-confirmation-required", "confirmation", "Complete GM correction confirmation is required.");
+  assert.equal(fixture.tracker.updates, 0);
+});
+
+test("Task 7 setup abort persists canonical evidence without M10 and replays exactly", async () => {
+  const setupEncounter = encounter(); setupEncounter.lifecycleState = "configuration";
+  const fixture = makeContext({ update: persistSession, encounterValue: setupEncounter });
+  await createVoyageEventSession(request(definition(), setupEncounter), fixture.context);
+  const stored = fixtureSession(fixture);
+  const abort = { kind: "voyage.m11-abort-session", requestId: "setup-abort", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, reason: "cancel", confirmation: true };
+  const first = await runtime.abortVoyageEventSession(abort, fixture.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.equal(fixture.tracker.updates, 1);
+  assert.equal(first.events.length, 2);
+  assert.equal(first.events[0].type, "voyage.lifecycle-transitioned");
+  assert.equal(first.events[1].type, "voyage.m11-session-aborted");
+  assert.equal(fixtureSession(fixture).auditHistory.at(-1).details.previousSessionState, "setup");
+  assert.equal(fixtureSession(fixture).encounterState.lifecycleState, "discarded");
+  const reloaded = reloadVoyageEventSession("session-1", fixture.context);
+  assert.equal(reloaded.ok, true, JSON.stringify(reloaded.errors));
+  const replay = await runtime.abortVoyageEventSession(abort, fixture.context);
+  assert.deepEqual(replay, first);
+  assert.equal(fixture.tracker.updates, 1);
+});
+
+async function task7CorrectionFixture() {
+  const fixture = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), fixture.context);
+  const stored = fixtureSession(fixture);
+  stored.revision = 1;
+  stored.events.push({ type: "voyage.m6-crew-planning", encounterId: "event-1", previousRevision: 0, revision: 1 });
+  stored.checkpoints.push({ checkpointId: `arcflight-voyage-checkpoint:${JSON.stringify([stored.sessionId, "before-action-segment", 1])}`, kind: "before-action-segment", sessionId: stored.sessionId, revision: 1, encounterRevision: 0, eventCount: 1, sessionState: "crew-planning", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout), authorityEpoch: 0, invalidated: false });
+  stored.sessionState = "crew-planning";
+  stored.encounterState.lifecycleState = "active";
+  stored.encounterState.phase = "crew-planning";
+  stored.encounterState.currentStage = { stageId: "stage-1" };
+  stored.encounterState.roundNumber = 1;
+  stored.checkpoints[0].encounterState = structuredClone(stored.encounterState);
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "crew-planning", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  fixture.context.applyVoyageEncounterStationActionSelectionChange = async (state, payload) => ({ ok: true, nextState: { ...structuredClone(state), revision: state.revision + 1 }, events: [{ type: "voyage.station-action-selected", encounterId: state.encounterId, lifecycleState: "active", stationId: payload.stationId, actionId: payload.actionId, previousRevision: state.revision, revision: state.revision + 1 }], errors: [], warnings: [] });
+  return fixture;
+}
+
+test("Task 7 station-selection correction persists, reloads, and replays", async () => {
+  const fixture = await task7CorrectionFixture();
+  const correction = { kind: "voyage.m11-correct-session", requestId: "selection-correction", sessionId: "session-1", expectedRevision: 1, authorityEpoch: 0, correctionKind: "station-selection", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain", actionId: "rally" }, reason: "fix", confirmation: true };
+  const first = await runtime.correctVoyageEventSession(correction, fixture.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.equal(first.events.length, 2);
+  assert.equal(fixture.tracker.updates, 1);
+  assert.equal((await reloadVoyageEventSession("session-1", fixture.context)).ok, true);
+  const replay = await runtime.correctVoyageEventSession(correction, fixture.context);
+  assert.deepEqual(replay, first);
+  assert.equal(fixture.tracker.updates, 1);
+});
+
+test("Task 7 station-order correction persists the canonical order-change evidence", async () => {
+  const fixture = await task7CorrectionFixture();
+  fixture.context.applyVoyageEncounterStationOrderProposalChange = async (state, payload) => ({ ok: true, nextState: { ...structuredClone(state), revision: state.revision + 1 }, events: [{ type: "voyage.station-order-proposed", encounterId: state.encounterId, lifecycleState: "active", stationOrder: payload.stationOrder, previousRevision: state.revision, revision: state.revision + 1 }], errors: [], warnings: [] });
+  const correction = { kind: "voyage.m11-correct-session", requestId: "order-correction", sessionId: "session-1", expectedRevision: 1, authorityEpoch: 0, correctionKind: "station-order", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationOrder: ["captain", "engineer", "navigator", "watchmaster", "veilwarden"] }, reason: "reorder", confirmation: true };
+  const first = await runtime.correctVoyageEventSession(correction, fixture.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.equal(first.events.length, 2);
+  assert.equal(fixture.tracker.updates, 1);
+  assert.equal((await reloadVoyageEventSession("session-1", fixture.context)).ok, true);
+  const replay = await runtime.correctVoyageEventSession(correction, fixture.context);
+  assert.deepEqual(replay, first);
+  assert.equal(fixture.tracker.updates, 1);
+});
+
+test("Task 7 correction reload rejects unreachable or unauthorized persisted evidence", async () => {
+  const mutations = [
+    (stored) => { const checkpoint = stored.checkpoints[0]; checkpoint.kind = "before-plan-lock"; checkpoint.checkpointId = `arcflight-voyage-checkpoint:${JSON.stringify([stored.sessionId, checkpoint.kind, checkpoint.revision])}`; },
+    (stored) => { stored.encounterState.lifecycleState = "configuration"; },
+    (stored) => { stored.encounterState.phase = "situation"; },
+    (stored) => { stored.events.at(-1).correctionKind = "action-segment"; stored.processedRequests.at(-1).response.events[1].correctionKind = "action-segment"; }
+  ];
+  for (const mutate of mutations) {
+    const fixture = await task7CorrectionFixture();
+    const correction = { kind: "voyage.m11-correct-session", requestId: "correction-integrity", sessionId: "session-1", expectedRevision: 1, authorityEpoch: 0, correctionKind: "station-selection", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain", actionId: "rally" }, reason: "fix", confirmation: true };
+    assert.equal((await runtime.correctVoyageEventSession(correction, fixture.context)).ok, true);
+    mutate(fixtureSession(fixture));
+    assertFailure(reloadVoyageEventSession("session-1", fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+    assert.equal(fixture.tracker.updates, 1);
+  }
+});
+
+test("Task 7 active event-closeout abort persists canonical evidence without duplicate writes", async () => {
+  const fixture = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), fixture.context);
+  const stored = task6ActiveSession(fixture);
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "event-closeout-review", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  fixture.context.applyVoyageEncounterAbortTransition = async (state) => ({ ok: true, nextState: { ...structuredClone(state), lifecycleState: "abandoned", phase: null, revision: state.revision + 1 }, events: [{ type: "voyage.lifecycle-transitioned", encounterId: state.encounterId, fromLifecycleState: "active", toLifecycleState: "abandoned", previousRevision: state.revision, revision: state.revision + 1 }], errors: [], warnings: [], persistentConsequence: null });
+  const abort = { kind: "voyage.m11-abort-session", requestId: "active-abort", sessionId: "session-1", expectedRevision: 1, authorityEpoch: 0, reason: "abandon", confirmation: true };
+  const first = await runtime.abortVoyageEventSession(abort, fixture.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.equal(first.events.length, 2);
+  assert.equal(fixture.tracker.updates, 1);
+  assert.equal((await reloadVoyageEventSession("session-1", fixture.context)).ok, true);
+  const replay = await runtime.abortVoyageEventSession(abort, fixture.context);
+  assert.deepEqual(replay, first);
+  assert.equal(fixture.tracker.updates, 1);
+});
+
+test("Task 7 paused abort persists without M10 mutation", async () => {
+  const fixture = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), fixture.context);
+  const stored = task6ActiveSession(fixture);
+  stored.sessionState = "paused";
+  stored.encounterState.lifecycleState = "paused";
+  stored.encounterState.phase = "cleanup-advance";
+  stored.checkpoints[0] = { checkpointId: `arcflight-voyage-checkpoint:${JSON.stringify([stored.sessionId, "before-action-segment", 1])}`, kind: "before-action-segment", sessionId: stored.sessionId, revision: 1, encounterRevision: stored.encounterState.revision, eventCount: 1, sessionState: "paused", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout), authorityEpoch: 0, invalidated: false };
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "paused", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  fixture.context.applyVoyageEncounterAbortTransition = async (state) => ({ ok: true, nextState: { ...structuredClone(state), lifecycleState: "abandoned", phase: null, revision: state.revision + 1 }, events: [{ type: "voyage.lifecycle-transitioned", encounterId: state.encounterId, fromLifecycleState: "paused", toLifecycleState: "abandoned", previousRevision: state.revision, revision: state.revision + 1 }], errors: [], warnings: [], persistentConsequence: null });
+  const abort = { kind: "voyage.m11-abort-session", requestId: "paused-abort", sessionId: "session-1", expectedRevision: 1, authorityEpoch: 0, reason: "abandon", confirmation: true };
+  const first = await runtime.abortVoyageEventSession(abort, fixture.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.equal(first.events.length, 2);
+  assert.equal(fixture.tracker.updates, 1);
+  assert.equal((await reloadVoyageEventSession("session-1", fixture.context)).ok, true);
+  const replay = await runtime.abortVoyageEventSession(abort, fixture.context);
+  assert.deepEqual(replay, first);
+  assert.equal(fixture.tracker.updates, 1);
+});
+
+test("Task 7 recovery abort preserves its two-event response and rejects checkpoint tampering", async () => {
+  const fixture = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), fixture.context);
+  const stored = task6ActiveSession(fixture);
+  const replayState = structuredClone(stored.encounterState);
+  markRecoveryRequired(stored);
+  fixture.context.trustedReplayDependencies = true;
+  fixture.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "event-closeout-review", encounterState: structuredClone(replayState), closeout: structuredClone(stored.closeout) });
+  fixture.context.applyVoyageEncounterAbortTransition = async (state) => ({ ok: true, nextState: { ...structuredClone(state), lifecycleState: "abandoned", phase: null, revision: state.revision + 1 }, events: [{ type: "voyage.lifecycle-transitioned", encounterId: state.encounterId, fromLifecycleState: "active", toLifecycleState: "abandoned", previousRevision: state.revision, revision: state.revision + 1 }], errors: [], warnings: [], persistentConsequence: null });
+  const abort = { kind: "voyage.m11-recover-session", requestId: "recovery-abort", sessionId: "session-1", expectedRevision: 1, authorityEpoch: 0, recoveryAction: "abort", reason: "stop" };
+  const first = await recoverVoyageEventSession(abort, fixture.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  assert.equal(first.events.length, 2);
+  const replay = await recoverVoyageEventSession(abort, fixture.context);
+  assert.deepEqual(replay, first);
+  assert.equal(fixture.tracker.updates, 1);
+  const checkpoint = fixtureSession(fixture).checkpoints.find((entry) => entry.kind === "after-recovery");
+  const originalCheckpointCloseoutStatus = checkpoint.closeout.status;
+  checkpoint.closeout.status = "committed";
+  const invalid = reloadVoyageEventSession("session-1", fixture.context);
+  assertFailure(invalid, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+  assert.equal(fixture.tracker.updates, 1);
+  checkpoint.closeout.status = originalCheckpointCloseoutStatus;
+  checkpoint.encounterState.lifecycleState = "active";
+  const invalidEncounter = reloadVoyageEventSession("session-1", fixture.context);
+  assertFailure(invalidEncounter, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+  assert.equal(fixture.tracker.updates, 1);
 });
