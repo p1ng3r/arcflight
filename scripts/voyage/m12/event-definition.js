@@ -9,12 +9,18 @@ const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilward
 
 function authoredAction(stationId, roundNumber, actionNumber) {
   const actionId = `${stationId}-round-${roundNumber}-action-${actionNumber}`;
+  const riskBidOptions = [2, 5, 8].map((dcAdjustment) => ({
+    riskBidId: `${actionId}-risk-${dcAdjustment}`,
+    dcAdjustment,
+    outcomes: { criticalSuccess: [], success: [], failure: [], criticalFailure: [] }
+  }));
   return {
     actionId,
     approaches: [{
       approachId: `${actionId}-approach`,
       statisticSlugOrAbilityId: `${stationId}-skill-${actionNumber}`
-    }]
+    }],
+    riskBidOptions
   };
 }
 

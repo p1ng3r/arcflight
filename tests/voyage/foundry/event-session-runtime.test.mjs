@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as runtime from "../../../scripts/voyage/foundry/event-session-runtime.js";
-import { createVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionProjection, recoverVoyageEventSession, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
+import { createVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, recoverVoyageEventSession, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import { createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
 import { analyzeVoyageEncounterCloseoutPreview } from "../../../scripts/voyage/domain/closeout.js";
 import { analyzeVoyageEncounterCloseoutReview } from "../../../scripts/voyage/domain/closeout-review.js";
@@ -61,7 +61,7 @@ function makeJournalDocument(data, tracker, journals, { id = data._id, flags = d
 function makeContext({ journals = [], documentId = "Journal.session-1", definitionValue = definition(), encounterValue = encounter(), create = null, authenticatedUserId = "gm-1", authenticatedConnectionId = authenticatedUserId ? `connection-${authenticatedUserId}` : null, trustedTransportContext = true, activeGmUserId = "gm-1", users = null, operatorResolver = null, update = null, timestamp = "2026-08-10T12:00:00.000Z", coordinator = null } = {}) {
   const tracker = { creates: 0, updates: 0, updatePayloads: [], deletes: 0, deletedIds: [], createOperations: [], resolverCalls: 0, builderCalls: 0, idCalls: 0, journalScans: 0, updateHandler: update };
   const mutationCoordinator = coordinator ?? makeCoordinator();
-  const JournalEntry = { async create(data, operation) { tracker.creates += 1; tracker.createOperations.push(operation); const effective = { ...data, _id: operation?.keepId === true ? data._id : "Journal.generated-by-foundry" }; return create ? create(effective, tracker, journals, (options) => makeJournalDocument(effective, tracker, journals, options)) : makeJournalDocument(effective, tracker, journals); } };
+  const JournalEntry = { async create(data, operation) { tracker.creates += 1; tracker.createOperations.push(operation); if (data?._id !== documentId || operation?.keepId !== true) throw new Error("Foundry create did not retain the preallocated JournalEntry ID"); const effective = { ...data, _id: data._id }; return create ? create(effective, tracker, journals, (options) => makeJournalDocument(effective, tracker, journals, options)) : makeJournalDocument(effective, tracker, journals); } };
   const context = {
     authenticatedUserId, authenticatedConnectionId, trustedTransportContext, activeGmUserId,
     users: users ?? [{ id: "gm-1", isGM: true, active: true }, { id: "gm-2", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }],
@@ -78,7 +78,15 @@ function makeContext({ journals = [], documentId = "Journal.session-1", definiti
 }
 function session(document) { return document.__testSource.flags.arcflight.system.voyageSession; }
 function fixtureSession(fixture) { return session(fixture.journals[0]); }
-function assertFailure(result, code, path, message) { assert.equal(result.ok, false); assert.deepEqual(Object.keys(result), ["ok", "requestId", "sessionId", "status", "revision", "authorityEpoch", "projection", "events", "errors", "warnings"]); assert.equal(result.errors.length, 1); assert.deepEqual(result.errors[0], { code, path, message, severity: "error" }); assert.deepEqual(result.events, []); assert.deepEqual(result.warnings, []); }
+function assertFailure(result, code, path, message, expectedDiagnostic = null) { assert.equal(result.ok, false); assert.deepEqual(Object.keys(result), ["ok", "requestId", "sessionId", "status", "revision", "authorityEpoch", "projection", "events", "errors", "warnings"]); assert.equal(result.errors.length, 1); const expected = { code, path, message, severity: "error" }; const actual = { ...result.errors[0] }; if (expectedDiagnostic && typeof expectedDiagnostic === "object") expected.diagnostic = expectedDiagnostic; else delete actual.diagnostic; assert.deepEqual(actual, expected); assert.deepEqual(result.events, []); assert.deepEqual(result.warnings, []); }
+function assertRevision0Diagnostic(result, stage, overrides = {}) {
+  const diagnostic = result.errors[0]?.diagnostic;
+  assert.deepEqual(Object.keys(diagnostic ?? {}), ["revision0Stage", "sessionId", "documentId", "createdDocumentId", "rereadDocumentId", "candidateRevision", "persistedRevision", "persistedSessionPresent", "firstDifferencePath", "expectedValue", "actualValue", "createErrorName", "createErrorMessage", "createErrorCode", "createErrorCauseMessage", "createErrorStack"]);
+  assert.equal(diagnostic.revision0Stage, stage);
+  assert.equal(diagnostic.sessionId, "session-1");
+  assert.equal(diagnostic.candidateRevision, 0);
+  for (const [key, value] of Object.entries(overrides)) assert.deepEqual(diagnostic[key], value);
+}
 function pristineKeys(value) { assert.deepEqual(Object.keys(value), ["schemaVersion", "sessionDocumentId", "sessionId", "eventId", "definitionSnapshotId", "shipId", "revision", "sessionState", "activeGmUserId", "authorityEpoch", "encounterState", "events", "checkpoints", "processedRequests", "closeout", "recovery", "auditHistory"]); }
 function addRecoveryCheckpoint(stored, kind = "before-plan-lock") {
   stored.checkpoints.push({ checkpointId: `arcflight-voyage-checkpoint:${JSON.stringify([stored.sessionId, kind, stored.revision])}`, kind, sessionId: stored.sessionId, revision: stored.revision, encounterRevision: stored.encounterState.revision, eventCount: stored.events.length, sessionState: stored.sessionState, encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout), authorityEpoch: stored.authorityEpoch, invalidated: false });
@@ -234,7 +242,7 @@ async function task6CanonicalM10Fixture() {
   return { actor, fixture, run, previewRequest, preview };
 }
 
-test("M11 runtime exposes the Task 7 audited correction and abort boundaries", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionProjection", "recoverVoyageEventSession", "reloadVoyageEventSession", "runExclusiveSessionMutation", "transferVoyageEventSessionControl"]));
+test("M11 runtime exposes the audited boundaries and GM planning read", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionPlanning", "readVoyageEventSessionProjection", "recoverVoyageEventSession", "reloadVoyageEventSession", "runExclusiveSessionMutation", "transferVoyageEventSessionControl"]));
 
 test("valid creation uses keepId and stores only pristine voyageSession state", async () => {
   const fixture = makeContext(); const result = await createVoyageEventSession(request(), fixture.context);
@@ -379,6 +387,31 @@ test("cleanup is authorized only for the exact generated document", async () => 
 });
 
 test("undefined create with unchanged collection is a write failure without deletion", async () => { const fixture = makeContext({ create: () => undefined }); const result = await createVoyageEventSession(request(), fixture.context); assertFailure(result, "m11-session-write-failed", "flags.arcflight.system.voyageSession", "Event Session write did not complete or verify."); assert.equal(fixture.tracker.deletes, 0); });
+
+test("revision-0 verification failures propagate a bounded diagnostic on the failure object", async () => {
+  const reread = makeContext({ create(_data, _tracker, _journals, makeDocument) { return makeDocument({ persist: false }); } });
+  const rereadResult = await createVoyageEventSession(request(), reread.context);
+  assertFailure(rereadResult, "m11-recovery-required", "recovery", "Event Session requires explicit recovery.");
+  assertRevision0Diagnostic(rereadResult, "reread-by-id", { createdDocumentId: "Journal.session-1", rereadDocumentId: null, persistedSessionPresent: false });
+  assert.equal(reread.tracker.deletes, 0);
+
+  const missing = makeContext({ create(_data, _tracker, _journals, makeDocument) {
+    const document = makeDocument(); delete document.__testSource.flags.arcflight.system.voyageSession; return document;
+  } });
+  const missingResult = await createVoyageEventSession(request(), missing.context);
+  assertFailure(missingResult, "m11-recovery-required", "recovery", "Event Session requires explicit recovery.");
+  assertRevision0Diagnostic(missingResult, "validate-pristine", { createdDocumentId: "Journal.session-1", rereadDocumentId: "Journal.session-1", persistedSessionPresent: false });
+  assert.equal(missing.tracker.deletes, 0);
+
+  const mismatch = makeContext({ create(_data, _tracker, _journals, makeDocument) {
+    const document = makeDocument(); session(document).sessionId = "wrong-session"; return document;
+  } });
+  const mismatchResult = await createVoyageEventSession(request(), mismatch.context);
+  assertFailure(mismatchResult, "m11-recovery-required", "recovery", "Event Session requires explicit recovery.");
+  assertRevision0Diagnostic(mismatchResult, "compare-session", { createdDocumentId: "Journal.session-1", rereadDocumentId: "Journal.session-1", persistedRevision: 0, persistedSessionPresent: true, firstDifferencePath: "flags.arcflight.system.voyageSession.sessionId", expectedValue: "session-1", actualValue: "wrong-session" });
+  assert.equal(mismatch.tracker.deletes, 0);
+
+});
 
 test("cleanup rejection, throw, remaining document, and ambiguity require recovery", async () => {
   const configs = [
