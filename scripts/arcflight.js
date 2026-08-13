@@ -139,6 +139,7 @@ import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers
 import { launchVoyageEventSession as launchVoyageEventSessionInternal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections, buildVoyageEventManagerDashboardModel } from "./voyage/foundry/event-launcher.js";
 import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION } from "./voyage/m12/event-definition.js";
 import { getFoundrySessionMutationCoordinator } from "./voyage/foundry/session-coordinator.js";
+import { dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning } from "./voyage/foundry/event-session-runtime.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 
 function trustedFoundryUsers() {
@@ -165,13 +166,21 @@ function trustedLaunchContext() {
     JournalEntry: globalThis.JournalEntry,
     isJournalEntryDocument: (document) => document?.documentName === "JournalEntry" || document?.constructor?.name === "JournalEntry",
     createDocumentId: () => globalThis.foundry?.utils?.randomID?.(),
-    resolveEventDefinitionSnapshot: async (eventId, definitionSnapshotId) => getM12EventDefinition(eventId, definitionSnapshotId),
+    resolveEventDefinitionSnapshot: (eventId, definitionSnapshotId) => getM12EventDefinition(eventId, definitionSnapshotId),
     runExclusiveSessionMutation: getFoundrySessionMutationCoordinator(globalThis.game)
   };
 }
 
 async function launchVoyageEventSessionFromPublicBoundary(request) {
   return launchVoyageEventSessionInternal(request, trustedLaunchContext());
+}
+
+function dispatchVoyageEventSessionCommandFromPublicBoundary(request) {
+  return dispatchVoyageEventSessionCommand(request, trustedLaunchContext());
+}
+
+function readVoyageEventSessionPlanningFromPublicBoundary(sessionId) {
+  return readVoyageEventSessionPlanning(sessionId, trustedLaunchContext());
 }
 import {
   backfillInstallStateForAllShips,
@@ -397,6 +406,8 @@ Hooks.once("init", () => {
     normalizeVoyageEncounterState,
     validateVoyageEncounterState,
     launchVoyageEventSession: launchVoyageEventSessionFromPublicBoundary,
+    dispatchVoyageEventSessionCommand: dispatchVoyageEventSessionCommandFromPublicBoundary,
+    readVoyageEventSessionPlanning: readVoyageEventSessionPlanningFromPublicBoundary,
     listVoyageEventLaunchShips,
     normalizeVoyageEventOperatorSelections,
     buildVoyageEventManagerDashboardModel,
@@ -527,6 +538,8 @@ export {
   createVoyageEncounterState,
   normalizeVoyageEncounterState,
   launchVoyageEventSessionFromPublicBoundary as launchVoyageEventSession,
+  dispatchVoyageEventSessionCommandFromPublicBoundary as dispatchVoyageEventSessionCommand,
+  readVoyageEventSessionPlanningFromPublicBoundary as readVoyageEventSessionPlanning,
   listVoyageEventLaunchShips,
   normalizeVoyageEventOperatorSelections,
   buildVoyageEventManagerDashboardModel,
