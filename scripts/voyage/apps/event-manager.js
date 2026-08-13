@@ -1,5 +1,6 @@
-import { readVoyageEventSessionProjection, reloadVoyageEventSession } from "../foundry/event-session-runtime.js";
-import { buildVoyageEventManagerDashboardModel, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../foundry/event-launcher.js";
+import { readVoyageEventSessionProjection, readVoyageEventSessionResolution, reloadVoyageEventSession } from "../foundry/event-session-runtime.js";
+import { executeVoyagePf2ePendingCheckInFoundry } from "../pf2e/runtime-execution.js";
+import { buildVoyageEventManagerDashboardModel, isVoyageEventSessionTerminal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../foundry/event-launcher.js";
 import { M12_EVENT_PRESENTATION, M12_STATION_IDS } from "../m12/event-definition.js";
 import { arcflightTemplatePath } from "../../sheets/sheet-helpers.js";
 
@@ -36,7 +37,9 @@ function eventContext() {
     isJournalEntryDocument: (document) => document?.documentName === "JournalEntry" || document?.constructor?.name === "JournalEntry",
     createDocumentId: () => foundry.utils.randomID(),
     resolveEventDefinitionSnapshot: (eventId, definitionSnapshotId) => game.arcflight.getM12EventDefinition(eventId, definitionSnapshotId),
-    runExclusiveSessionMutation: game.arcflight?.runExclusiveSessionMutation
+    runExclusiveSessionMutation: game.arcflight?.runExclusiveSessionMutation,
+    executeVoyagePf2ePendingCheck: (pendingCheck) => executeVoyagePf2ePendingCheckInFoundry(pendingCheck, globalThis),
+    applyVoyageEncounterAbortTransition: game.arcflight?.applyVoyageEncounterAbortTransition
   };
 }
 function randomId(prefix) { return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`; }
@@ -95,6 +98,12 @@ export function buildVoyagePlanningOrder(planning) {
   return [...assignments];
 }
 
+export function isVoyagePlanReady(planning, planningStations, effectiveOrder = buildVoyagePlanningOrder(planning)) {
+  const occupiedCount = Array.isArray(planning?.stationAssignments) ? planning.stationAssignments.length : 0;
+  return Boolean(planning && Array.isArray(planningStations) && planningStations.every((station) => station.ready)
+    && Array.isArray(effectiveOrder) && effectiveOrder.length === occupiedCount);
+}
+
 export function reorderVoyagePlanningOrder(order, draggedStationId, targetStationId, before = true) {
   if (!Array.isArray(order) || typeof draggedStationId !== "string" || typeof targetStationId !== "string") return null;
   const source = [...order];
@@ -108,10 +117,21 @@ export function reorderVoyagePlanningOrder(order, draggedStationId, targetStatio
   return source;
 }
 
-export const EVENT_MANAGER_TAB_IDS = Object.freeze(["overview", "crew-plan", "resolution-order", "plan-review"]);
+export const EVENT_MANAGER_TAB_IDS = Object.freeze(["overview", "crew-plan", "resolution-order", "plan-review", "resolution"]);
 
 export function normalizeEventManagerTab(tab) {
   return typeof tab === "string" && EVENT_MANAGER_TAB_IDS.includes(tab) ? tab : "overview";
+}
+
+export function buildEventManagerResolutionPresentation({ planLocked = false, resolutionPhase = null } = {}) {
+  const locked = planLocked === true;
+  return {
+    awaitingPlanLock: !locked,
+    readyToStart: locked && resolutionPhase === "lock-readiness",
+    rollAvailable: locked && resolutionPhase === "resolution",
+    planReviewStatus: locked ? "PLAN LOCKED" : "PLAN REVIEW",
+    canNavigateToResolution: locked
+  };
 }
 
 export function buildVoyagePlanReview(planning, planningStations, order) {
@@ -167,22 +187,25 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     if (!this.#shipId && ships[0]) this.#shipId = ships[0].id;
     let dashboard = null;
     let planning = null;
+    let resolution = null;
     if (this.#mode === "live" && this.#sessionId) {
       const projection = readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: randomId("m12-read"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision ?? 0 }, eventContext());
       if (projection.ok) {
         dashboard = { ...buildVoyageEventManagerDashboardModel(projection.projection, M12_EVENT_PRESENTATION, eventContext().activeGmUserId), shipName: allActors.find((actor) => actor.id === this.#shipId)?.name ?? this.#shipId ?? "" };
         planning = game.arcflight?.readVoyageEventSessionPlanning?.(this.#sessionId) ?? null;
+        resolution = game.arcflight?.readVoyageEventSessionResolution?.(this.#sessionId) ?? readVoyageEventSessionResolution(this.#sessionId, eventContext());
         if (planning?.ok) this.#authorityEpoch = planning.projection.authorityEpoch;
       }
     }
     const operatorActors = allActors.filter((actor) => actor?.type !== "vehicle").map((actor) => ({ id: actor.id, name: actor.name ?? actor.id }));
     const normalized = normalizeVoyageEventOperatorSelections(this.#operatorSelections, allActors);
     const planningProjection = planning?.ok ? planning.projection : null;
-    const planningStations = planningProjection ? buildPlanningStations(planningProjection, planningProjection.sessionState === "plan-locked") : [];
+    const planLocked = planningProjection?.sessionState === "plan-locked" || planningProjection?.sessionState === "station-resolution";
+    const planningStations = planningProjection ? buildPlanningStations(planningProjection, planLocked) : [];
     const proposedOrder = planningProjection ? buildVoyagePlanningOrder(planningProjection) : [];
-    const planReady = Boolean(planningProjection && planningStations.every((station) => station.ready)
-      && (planningProjection.proposedStationOrder.length || planningProjection.stationAssignments.length === 0));
+    const planReady = isVoyagePlanReady(planningProjection, planningStations, proposedOrder);
     const planReview = buildVoyagePlanReview(planningProjection, planningStations, proposedOrder);
+    const resolutionPresentation = buildEventManagerResolutionPresentation({ planLocked, resolutionPhase: resolution?.ok ? resolution.projection?.phase : null });
     return {
       mode: this.#mode,
       event: M12_EVENT_PRESENTATION,
@@ -196,6 +219,7 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
       sessionId: this.#sessionId,
       dashboard,
       planning: planning?.ok ? planning.projection : null,
+      resolution: resolution?.ok ? resolution.projection : null,
       planningStations,
       proposedOrder,
       orderEntries: planningProjection ? proposedOrder.map((stationId, index) => {
@@ -217,7 +241,12 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
       activeTab: this.#activeTab,
       tabIds: EVENT_MANAGER_TAB_IDS,
       planReady,
-      planLocked: planningProjection?.sessionState === "plan-locked"
+      planLocked,
+      abandoned: planningProjection?.sessionState === "aborted",
+      abandonEnabled: Boolean(dashboard && !["completed", "aborted"].includes(dashboard.sessionState)),
+      ...resolutionPresentation,
+      resolutionReadyToStart: resolutionPresentation.readyToStart,
+      resolutionRollAvailable: resolutionPresentation.rollAvailable
     };
   }
 
@@ -229,7 +258,7 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
         const session = entry?.flags?.arcflight?.system?.voyageSession ?? entry?.toObject?.()?.flags?.arcflight?.system?.voyageSession;
         if (!session || session.eventId !== M12_EVENT_PRESENTATION.eventId) return null;
         const reloaded = reloadVoyageEventSession(session.sessionId, eventContext());
-        if (!reloaded.ok || ["completed", "aborted"].includes(reloaded.status)) return null;
+        if (!reloaded.ok || isVoyageEventSessionTerminal({ ...session, sessionState: reloaded.status })) return null;
         return { sessionId: session.sessionId, revision: reloaded.revision, shipId: session.shipId };
       } catch { return null; }
     }).filter(Boolean);
@@ -243,13 +272,7 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
 
   _onRender(context, options) {
     super._onRender(context, options);
-    this.element.querySelectorAll("[data-m12-tab]").forEach((tab) => tab.addEventListener("click", () => {
-      const viewState = this.#captureViewState() ?? { scrollPositions: { ...this.#tabScrollPositions } };
-      this.#activeTab = normalizeEventManagerTab(tab.dataset.tabId);
-      this.#pendingViewState = { ...viewState, activeTab: this.#activeTab, stationId: null, controlId: null, actionId: null };
-      this.#applyTabState();
-      this.#restoreViewState();
-    }));
+    this.element.querySelectorAll("[data-m12-tab]").forEach((tab) => tab.addEventListener("click", () => this.#navigateToTab(tab.dataset.tabId)));
     this.element.querySelectorAll("[data-m12-ship]").forEach((input) => input.addEventListener("change", (event) => { this.#shipId = event.currentTarget.value; this.render(); }));
     this.element.querySelectorAll("[data-m12-operator]").forEach((input) => input.addEventListener("change", (event) => { this.#operatorSelections[event.currentTarget.dataset.m12Operator] = event.currentTarget.value || null; this.render(); }));
     this.element.querySelector("[data-m12-launch]")?.addEventListener("click", () => this.#launch());
@@ -288,6 +311,18 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
       element.addEventListener("drop", (event) => this.#dropOrder(event));
     });
     this.element.querySelector("[data-m12-plan-lock]")?.addEventListener("click", () => this.#dispatchPlanning("plan-lock", { phaseStartSnapshotId: randomId("m12-plan-lock") }));
+    this.element.querySelector("[data-m12-go-resolution]")?.addEventListener("click", () => this.#navigateToTab("resolution"));
+    this.element.querySelector("[data-m12-resolution-start]")?.addEventListener("click", () => this.#beginResolution());
+    this.element.querySelector("[data-m12-roll-check]")?.addEventListener("click", () => this.#resolveStation());
+    this.element.querySelector("[data-m12-abandon]")?.addEventListener("click", () => this.#abandonEvent());
+    this.#applyTabState();
+    this.#restoreViewState();
+  }
+
+  #navigateToTab(tabId) {
+    const viewState = this.#captureViewState() ?? { scrollPositions: { ...this.#tabScrollPositions } };
+    this.#activeTab = normalizeEventManagerTab(tabId);
+    this.#pendingViewState = { ...viewState, activeTab: this.#activeTab, stationId: null, controlId: null, actionId: null };
     this.#applyTabState();
     this.#restoreViewState();
   }
@@ -401,6 +436,70 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     this.#expectedRevision = reread.revision;
     this.#authorityEpoch = reread.authorityEpoch;
     this.#pendingViewState = viewState;
+    this.render();
+    return result;
+  }
+
+  async #resolveStation() {
+    const viewState = this.#captureViewState();
+    const resolve = game.arcflight?.resolveVoyageEventSessionStation;
+    if (typeof resolve !== "function") return ui.notifications?.error?.("Resolution transport is unavailable.");
+    const result = await resolve({ kind: "voyage.m12-resolve-station", requestId: randomId("m12-resolve"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision, authorityEpoch: this.#authorityEpoch });
+    if (!result?.ok) {
+      ui.notifications?.error?.(result?.errors?.[0]?.message ?? "The station check was rejected.");
+      this.#pendingViewState = viewState;
+      this.render();
+      return result;
+    }
+    const reread = reloadVoyageEventSession(this.#sessionId, eventContext());
+    if (!reread.ok) return reread;
+    this.#expectedRevision = reread.revision;
+    this.#authorityEpoch = reread.authorityEpoch;
+    this.#pendingViewState = viewState;
+    this.render();
+    return result;
+  }
+
+  async #beginResolution() {
+    const viewState = this.#captureViewState();
+    const begin = game.arcflight?.beginVoyageEventSessionResolution;
+    if (typeof begin !== "function") return ui.notifications?.error?.("Resolution transport is unavailable.");
+    const result = await begin({ kind: "voyage.m12-begin-resolution", requestId: randomId("m12-resolution-start"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision, authorityEpoch: this.#authorityEpoch });
+    if (!result?.ok) {
+      ui.notifications?.error?.(result?.errors?.[0]?.message ?? "Resolution start was rejected.");
+      this.#pendingViewState = viewState;
+      this.render();
+      return result;
+    }
+    const reread = reloadVoyageEventSession(this.#sessionId, eventContext());
+    const resolution = reread.ok ? readVoyageEventSessionResolution(this.#sessionId, eventContext()) : null;
+    if (!reread.ok || !resolution?.ok || resolution.projection?.phase !== "resolution") {
+      ui.notifications?.error?.("Resolution start did not reach the canonical Resolution phase.");
+      this.#pendingViewState = viewState;
+      this.render();
+      return reread.ok ? resolution : reread;
+    }
+    this.#expectedRevision = reread.revision;
+    this.#authorityEpoch = reread.authorityEpoch;
+    this.#pendingViewState = viewState;
+    this.render();
+    return result;
+  }
+
+  async #abandonEvent() {
+    if (!globalThis.confirm?.("Abandon this Event Session? It will remain in history and allow a new event to be launched.")) return null;
+    const result = await game.arcflight?.abortVoyageEventSession?.({ kind: "voyage.m11-abort-session", requestId: randomId("m12-abandon"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision, authorityEpoch: this.#authorityEpoch, reason: "GM abandoned Event Session", confirmation: true });
+    if (!result?.ok) {
+      ui.notifications?.error?.(result?.errors?.[0]?.message ?? "The Event Session could not be abandoned.");
+      return result;
+    }
+    const reread = reloadVoyageEventSession(this.#sessionId, eventContext());
+    if (!reread.ok) {
+      ui.notifications?.error?.("The Event Session was abandoned but could not be reread.");
+      return reread;
+    }
+    this.#expectedRevision = reread.revision;
+    this.#authorityEpoch = reread.authorityEpoch;
     this.render();
     return result;
   }

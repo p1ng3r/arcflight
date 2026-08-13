@@ -7,8 +7,20 @@ export const M12_STATION_IDS = Object.freeze(["captain", "engineer", "navigator"
 
 const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
 
+// The first-round actions deliberately use ordinary PF2e statistics.  The
+// runtime binds the authored character source to the durable station operator
+// UUID before a check is prepared; the definition itself remains declarative.
+const stationStatistics = {
+  captain: ["diplomacy", "intimidation", "society"],
+  engineer: ["crafting", "athletics", "arcana"],
+  navigator: ["survival", "nature", "society"],
+  watchmaster: ["perception", "stealth", "survival"],
+  veilwarden: ["occultism", "religion", "medicine"]
+};
+
 function authoredAction(stationId, roundNumber, actionNumber) {
   const actionId = `${stationId}-round-${roundNumber}-action-${actionNumber}`;
+  const statistics = stationStatistics[stationId];
   const riskBidOptions = [2, 5, 8].map((dcAdjustment) => ({
     riskBidId: `${actionId}-risk-${dcAdjustment}`,
     dcAdjustment,
@@ -16,9 +28,16 @@ function authoredAction(stationId, roundNumber, actionNumber) {
   }));
   return {
     actionId,
+    check: {
+      source: { kind: "character" },
+      statisticOptions: [...statistics],
+      dcSource: { kind: "fixed", value: 18 },
+      secrecy: "public",
+      metadata: {}
+    },
     approaches: [{
       approachId: `${actionId}-approach`,
-      statisticSlugOrAbilityId: `${stationId}-skill-${actionNumber}`
+      statisticSlugOrAbilityId: statistics[0]
     }],
     riskBidOptions
   };

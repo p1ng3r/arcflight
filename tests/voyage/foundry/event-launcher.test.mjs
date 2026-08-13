@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildVoyageEventManagerDashboardModel, launchVoyageEventSession, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../../../scripts/voyage/foundry/event-launcher.js";
+import { readFileSync } from "node:fs";
+import { buildVoyageEventManagerDashboardModel, isVoyageEventSessionActive, isVoyageEventSessionTerminal, launchVoyageEventSession, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../../../scripts/voyage/foundry/event-launcher.js";
 import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID } from "../../../scripts/voyage/m12/event-definition.js";
 import { ARCFLIGHT_SHIP_ACTOR_TYPE } from "../../../scripts/documents/ships.js";
 import { analyzeVoyageEventDefinitionRoundActionAuthoring } from "../../../scripts/voyage/domain/round-action-authoring.js";
-import { dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
+import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 
 globalThis.foundry ??= { applications: { api: { HandlebarsApplicationMixin: (base) => base, ApplicationV2: class {} } } };
-const { buildPlanningStations, buildVoyagePlanReview, buildVoyagePlanningOrder, buildVoyageStationSelectionClearCommand, reorderVoyagePlanningOrder, EVENT_MANAGER_TAB_IDS, normalizeEventManagerTab } = await import("../../../scripts/voyage/apps/event-manager.js");
+const { buildEventManagerResolutionPresentation, buildPlanningStations, buildVoyagePlanReview, buildVoyagePlanningOrder, buildVoyageStationSelectionClearCommand, isVoyagePlanReady, reorderVoyagePlanningOrder, EVENT_MANAGER_TAB_IDS, normalizeEventManagerTab } = await import("../../../scripts/voyage/apps/event-manager.js");
 
 function actor(id, name, ship = false, tracker = null, actorType = ARCFLIGHT_SHIP_ACTOR_TYPE, enabled = true) { return { id, uuid: `Actor.${id}`, name, type: ship ? "vehicle" : "character", getFlag: (_module, key) => ship ? (key === "enabled" ? enabled : actorType) : (key === "enabled" ? enabled : actorType), async update() { if (tracker) tracker.actors += 1; return this; } }; }
 function fixture() {
@@ -173,6 +174,102 @@ test("M12 launch permits a new session when no active session exists", async () 
   assert.equal(reloadVoyageEventSession("new-session", fx.context).ok, true);
 });
 
+test("M12 terminal session classification ignores abandoned history but blocks active sessions", () => {
+  const abandoned = { sessionState: "aborted", encounterState: { lifecycleState: "abandoned" } };
+  assert.equal(isVoyageEventSessionTerminal(abandoned), true);
+  assert.equal(isVoyageEventSessionActive(abandoned), false);
+  assert.equal(isVoyageEventSessionTerminal({ sessionState: "crew-planning", encounterState: { lifecycleState: "active" } }), false);
+  assert.equal(isVoyageEventSessionActive({ sessionState: "crew-planning", encounterState: { lifecycleState: "active" } }), true);
+  assert.equal(isVoyageEventSessionTerminal({ sessionState: "crew-planning", encounterState: { lifecycleState: "discarded" } }), true);
+});
+
+test("M12 abandoned session no longer blocks a fresh launch", async () => {
+  const fx = fixture();
+  fx.context.applyVoyageEncounterAbortTransition = applyVoyageEncounterAbortTransition;
+  const first = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "abandon-launch", sessionId: "abandon-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain" } }, fx.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  const abandoned = await abortVoyageEventSession({ kind: "voyage.m11-abort-session", requestId: "abandon-session-request", sessionId: "abandon-session", expectedRevision: first.revision, authorityEpoch: 0, reason: "GM test abandon", confirmation: true }, fx.context);
+  assert.equal(abandoned.ok, true, JSON.stringify(abandoned.errors));
+  assert.equal(reloadVoyageEventSession("abandon-session", fx.context).status, "aborted");
+  fx.context.createDocumentId = () => "Journal.session-2";
+  const fresh = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "fresh-after-abandon", sessionId: "fresh-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+  assert.equal(fresh.ok, true, JSON.stringify(fresh.errors));
+  assert.equal(fx.journals.length, 2);
+});
+
+test("M12 fresh launch after abandon verifies the new document by ID across distinct rereads", async () => {
+  const fx = fixture();
+  fx.context.applyVoyageEncounterAbortTransition = applyVoyageEncounterAbortTransition;
+  const first = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "abandon-launch", sessionId: "abandon-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain" } }, fx.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  const abandoned = await abortVoyageEventSession({ kind: "voyage.m11-abort-session", requestId: "abandon-session-request", sessionId: "abandon-session", expectedRevision: first.revision, authorityEpoch: 0, reason: "GM test abandon", confirmation: true }, fx.context);
+  assert.equal(abandoned.ok, true, JSON.stringify(abandoned.errors));
+  fx.context.createDocumentId = () => "Journal.session-2";
+  fx.tracker.distinctReread = true;
+  const fresh = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "fresh-distinct-launch", sessionId: "fresh-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+  assert.equal(fresh.ok, true, JSON.stringify(fresh.errors));
+  assert.equal(fx.journals.length, 2);
+  assert.equal(fx.journals.filter((entry) => entry.id === "Journal.session-2").length, 1);
+  assert.equal(reloadVoyageEventSession("abandon-session", fx.context).status, "aborted");
+  assert.equal(reloadVoyageEventSession("fresh-session", fx.context).status, "crew-planning");
+  assert.equal(fx.tracker.deletes, 0);
+});
+
+test("M12 fresh launch after abandon accepts a persisted-then-thrown update without cleanup", async () => {
+  const fx = fixture();
+  fx.context.applyVoyageEncounterAbortTransition = applyVoyageEncounterAbortTransition;
+  const first = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "abandon-launch", sessionId: "abandon-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain" } }, fx.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  const abandoned = await abortVoyageEventSession({ kind: "voyage.m11-abort-session", requestId: "abandon-session-request", sessionId: "abandon-session", expectedRevision: first.revision, authorityEpoch: 0, reason: "GM test abandon", confirmation: true }, fx.context);
+  assert.equal(abandoned.ok, true, JSON.stringify(abandoned.errors));
+  const writesBeforeFresh = fx.tracker.updates;
+  fx.context.createDocumentId = () => "Journal.session-2";
+  fx.tracker.distinctReread = true;
+  fx.tracker.throwUpdate = true;
+  fx.tracker.persistThenThrow = true;
+  const fresh = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "fresh-throw-launch", sessionId: "fresh-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+  assert.equal(fresh.ok, true, JSON.stringify(fresh.errors));
+  assert.equal(fx.tracker.updates, writesBeforeFresh + 1);
+  assert.equal(fx.tracker.deletes, 0);
+  assert.equal(fx.journals.length, 2);
+  assert.equal(reloadVoyageEventSession("fresh-session", fx.context).status, "crew-planning");
+});
+
+test("M12 historical Foundry Journals with exportSource accessors do not block repeated fresh launches", async () => {
+  const fx = fixture();
+  fx.context.applyVoyageEncounterAbortTransition = applyVoyageEncounterAbortTransition;
+  const accessorized = (entry) => {
+    entry.toObject = () => {
+      const source = structuredClone(entry.__testSource);
+      Object.defineProperty(source.flags, "exportSource", { enumerable: false, get() { throw new Error("exportSource must not be captured"); } });
+      return source;
+    };
+  };
+  const launch = async (requestId, sessionId, documentId) => {
+    fx.context.createDocumentId = () => documentId;
+    const result = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId, sessionId, expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    const entry = fx.journals.find((candidate) => candidate.id === documentId);
+    assert.ok(entry);
+    accessorized(entry);
+    return result;
+  };
+  const eventA = await launch("historical-a", "historical-session-a", "Journal.historical-a");
+  const abandonedA = await abortVoyageEventSession({ kind: "voyage.m11-abort-session", requestId: "historical-abort-a", sessionId: "historical-session-a", expectedRevision: eventA.revision, authorityEpoch: 0, reason: "GM test abandon", confirmation: true }, fx.context);
+  assert.equal(abandonedA.ok, true, JSON.stringify(abandonedA.errors));
+  const eventB = await launch("historical-b", "historical-session-b", "Journal.historical-b");
+  const abandonedB = await abortVoyageEventSession({ kind: "voyage.m11-abort-session", requestId: "historical-abort-b", sessionId: "historical-session-b", expectedRevision: eventB.revision, authorityEpoch: 0, reason: "GM test abandon", confirmation: true }, fx.context);
+  assert.equal(abandonedB.ok, true, JSON.stringify(abandonedB.errors));
+  const eventC = await launch("historical-c", "historical-session-c", "Journal.historical-c");
+  assert.equal(eventC.status, "crew-planning");
+  assert.equal(fx.tracker.creates, 3);
+  assert.deepEqual(fx.journals.map((entry) => entry.id).sort(), ["Journal.historical-a", "Journal.historical-b", "Journal.historical-c"]);
+  assert.equal(reloadVoyageEventSession("historical-session-a", fx.context).status, "aborted");
+  assert.equal(reloadVoyageEventSession("historical-session-b", fx.context).status, "aborted");
+  assert.equal(reloadVoyageEventSession("historical-session-c", fx.context).status, "crew-planning");
+  assert.equal(fx.tracker.deletes, 0);
+});
+
 test("M12 different new-session launches share one world coordination claim", async () => {
   const fx = fixture();
   let nextDocumentId = 1;
@@ -261,10 +358,58 @@ test("M12 Task 2 drag order uses only the persisted participating station IDs", 
 });
 
 test("M12 Event Manager tabs have a deterministic default and navigation vocabulary", () => {
-  assert.deepEqual(EVENT_MANAGER_TAB_IDS, ["overview", "crew-plan", "resolution-order", "plan-review"]);
+  assert.deepEqual(EVENT_MANAGER_TAB_IDS, ["overview", "crew-plan", "resolution-order", "plan-review", "resolution"]);
   assert.equal(normalizeEventManagerTab(undefined), "overview");
   assert.equal(normalizeEventManagerTab("not-a-tab"), "overview");
   assert.equal(normalizeEventManagerTab("crew-plan"), "crew-plan");
+});
+
+test("M12 Event Manager keeps Resolution after Plan Review and gates its controls on the canonical handoff", () => {
+  const beforeLock = buildEventManagerResolutionPresentation({ planLocked: false, resolutionPhase: "planning" });
+  assert.equal(beforeLock.awaitingPlanLock, true);
+  assert.equal(beforeLock.readyToStart, false);
+  assert.equal(beforeLock.rollAvailable, false);
+  assert.equal(beforeLock.planReviewStatus, "PLAN REVIEW");
+  const locked = buildEventManagerResolutionPresentation({ planLocked: true, resolutionPhase: "lock-readiness" });
+  assert.equal(locked.awaitingPlanLock, false);
+  assert.equal(locked.readyToStart, true);
+  assert.equal(locked.rollAvailable, false);
+  assert.equal(locked.planReviewStatus, "PLAN LOCKED");
+  const resolving = buildEventManagerResolutionPresentation({ planLocked: true, resolutionPhase: "resolution" });
+  assert.equal(resolving.readyToStart, false);
+  assert.equal(resolving.rollAvailable, true);
+  assert.equal(EVENT_MANAGER_TAB_IDS.indexOf("resolution") > EVENT_MANAGER_TAB_IDS.indexOf("plan-review"), true);
+});
+
+test("M12 Resolution pre-lock guard uses the prepared model key", () => {
+  const presentation = buildEventManagerResolutionPresentation({ planLocked: false, resolutionPhase: "lock-readiness" });
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.equal(presentation.awaitingPlanLock, true);
+  assert.match(template, /\{\{#if awaitingPlanLock\}\}/);
+  assert.doesNotMatch(template, /resolutionAwaitingPlanLock/);
+  assert.match(template, /PLAN MUST BE LOCKED BEFORE RESOLUTION/);
+  assert.doesNotMatch(template, /resolutionAwaitingPlanLock[\s\S]*ROLL CHECK/);
+});
+
+test("M12 paused nonterminal session blocks a fresh launch but abandoned history does not", async () => {
+  const fx = fixture();
+  fx.context.applyVoyageEncounterAbortTransition = applyVoyageEncounterAbortTransition;
+  const first = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "paused-launch-a", sessionId: "paused-session-a", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  const storedA = fx.journals.find((entry) => entry.id === "Journal.session-1").__testSource.flags.arcflight.system.voyageSession;
+  storedA.sessionState = "paused";
+  storedA.encounterState.lifecycleState = "paused";
+  assert.equal(isVoyageEventSessionActive(storedA), true);
+  fx.context.createDocumentId = () => "Journal.session-2";
+  const blocked = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "paused-launch-b", sessionId: "paused-session-b", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.errors[0].code, "m12-active-session-conflict");
+  assert.equal(fx.tracker.creates, 1);
+  const abandoned = await abortVoyageEventSession({ kind: "voyage.m11-abort-session", requestId: "paused-abort-a", sessionId: "paused-session-a", expectedRevision: storedA.revision, authorityEpoch: 0, reason: "GM test abandon", confirmation: true }, fx.context);
+  assert.equal(abandoned.ok, true, JSON.stringify(abandoned.errors));
+  const allowed = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "paused-launch-b-retry", sessionId: "paused-session-b", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+  assert.equal(allowed.ok, true, JSON.stringify(allowed.errors));
+  assert.equal(fx.journals.length, 2);
 });
 
 test("M12 Plan Review reconstructs incomplete and ready station state from persisted planning", () => {
@@ -283,6 +428,45 @@ test("M12 Plan Review reconstructs incomplete and ready station state from persi
   const locked = buildVoyagePlanReview(lockedPlanning, stations, lockedOrder);
   assert.equal(locked.locked, true);
   assert.equal(locked.rows[0].stationId, "engineer");
+});
+
+test("M12 default effective station order makes a complete plan lock-ready without a drag", async () => {
+  const { fx, run } = await task2Fixture();
+  const captain = await run("default-captain", 5, "station-selection", { stationId: "captain", actionId: "captain-round-1-action-1", approachId: "captain-round-1-action-1-approach", riskBidId: null });
+  const engineer = await run("default-engineer", captain.revision, "station-selection", { stationId: "engineer", actionId: "engineer-round-1-action-1", approachId: "engineer-round-1-action-1-approach", riskBidId: null });
+  assert.equal(engineer.ok, true, JSON.stringify(engineer.errors));
+  const planning = readVoyageEventSessionPlanning("task2-session", fx.context);
+  assert.equal(planning.ok, true, JSON.stringify(planning.errors));
+  const stations = buildPlanningStations(planning.projection);
+  const effectiveOrder = buildVoyagePlanningOrder(planning.projection);
+  assert.deepEqual(planning.projection.proposedStationOrder, []);
+  assert.deepEqual(effectiveOrder, ["captain", "engineer"]);
+  assert.equal(isVoyagePlanReady(planning.projection, stations, effectiveOrder), true);
+  const writesBeforeLock = fx.tracker.updates;
+  const locked = await run("default-lock", engineer.revision, "plan-lock", { phaseStartSnapshotId: "default-order-lock" });
+  assert.equal(locked.ok, true, JSON.stringify(locked.errors));
+  assert.equal(fx.tracker.updates, writesBeforeLock + 1);
+  assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.committedStationOrder, effectiveOrder);
+});
+
+test("M12 Crew Plan keeps an unselected action blank and gates approach/risk until selection", () => {
+  const planning = { stationAssignments: [{ stationId: "captain", operator: { id: "captain", name: "Captain" } }], stations: [{ stationId: "captain", actions: [
+    { actionId: "action-1", approaches: [{ approachId: "approach-1" }], riskBidOptions: [{ riskBidId: "risk-2", dcAdjustment: 2 }] },
+    { actionId: "action-2", approaches: [{ approachId: "approach-2" }], riskBidOptions: [{ riskBidId: "risk-5", dcAdjustment: 5 }] },
+    { actionId: "action-3", approaches: [{ approachId: "approach-3" }], riskBidOptions: [{ riskBidId: "risk-8", dcAdjustment: 8 }] }
+  ] }], selections: {}, riskBids: {} };
+  const blank = buildPlanningStations(planning)[0];
+  assert.equal(blank.selectedActionId, "");
+  assert.equal(blank.actions.some((action) => action.selected), false);
+  assert.deepEqual(blank.approaches, []);
+  assert.deepEqual(blank.riskBidOptions, []);
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /<option value="" \{\{#unless selectedActionId\}\}selected\{\{\/unless\}\}>Choose Action\.\.\.<\/option>/);
+  assert.match(template, /Select an Action first/);
+  const selected = buildPlanningStations({ ...planning, selections: { captain: { actionId: "action-1", approachId: "", statisticSlugOrAbilityId: null } } })[0];
+  assert.equal(selected.actions.find((action) => action.actionId === "action-1").selected, true);
+  assert.equal(selected.approaches.length, 1);
+  assert.deepEqual(selected.riskBidOptions.map((option) => option.dcAdjustment), [2]);
 });
 
 test("M12 Task 2 Clear uses the exact station-selection-clear command", () => {
@@ -310,6 +494,10 @@ test("M12 Task 2 clearing a selection preserves order, marks the station incompl
   const captain = buildPlanningStations(planning.projection).find((entry) => entry.stationId === "captain");
   assert.equal(captain.planState, "incomplete");
   assert.equal(captain.selectionState, "none");
+  assert.equal(captain.selectedActionId, "");
+  assert.equal(captain.actions.some((action) => action.selected), false);
+  assert.deepEqual(captain.approaches, []);
+  assert.deepEqual(captain.riskBidOptions, []);
   assert.equal(captain.ready, false);
   const planLock = await run("locked-too-soon", 9, "plan-lock", { phaseStartSnapshotId: "not-ready" });
   assert.equal(planLock.ok, false);
