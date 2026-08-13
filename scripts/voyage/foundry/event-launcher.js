@@ -223,7 +223,9 @@ export async function launchVoyageEventSession(request, context = {}) {
   if (!launchResult?.ok && launchResult.errors?.[0]?.code === "m12-active-session-conflict") {
     // A coordinator loser cannot enter its callback; reread authoritative Journal state
     // before exposing the world-level active-session conflict.
-    hasActiveSession(context, sessionId);
+    if (!hasActiveSession(context, sessionId)) {
+      return response(requestId, sessionId, "failed", null, null, [issue("m11-cross-client-coordinator-required", "transport.coordinator", "A trusted cross-client mutation coordinator is required.")]);
+    }
   }
   return launchResult;
 }
