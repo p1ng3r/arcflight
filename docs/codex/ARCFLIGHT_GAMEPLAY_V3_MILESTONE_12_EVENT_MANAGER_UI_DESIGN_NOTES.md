@@ -104,9 +104,8 @@ persistence, or gameplay semantics.
 ## Scope and Deferred Validation
 
 The current Event Manager is GM-facing. Player-facing controls will later
-reuse the canonical domain commands; they are not built here. The deferred
-New Event launch regression (real Foundry launch reports that the Event
-Session write did not complete or verify while the existing session remains
-intact) is recorded for resolution before the Task 2 commit or merge. It is
-outside this navigation-only pass. Canonical gameplay contracts override
+reuse the canonical domain commands; they are not built here. New Event
+launches now use one shared world-level coordination identity and reject a
+second active Event Session with the canonical `m12-active-session-conflict`
+result before JournalEntry creation. Canonical gameplay contracts override
 these non-normative notes.

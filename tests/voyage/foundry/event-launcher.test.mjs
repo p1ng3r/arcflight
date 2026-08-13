@@ -173,6 +173,38 @@ test("M12 launch permits a new session when no active session exists", async () 
   assert.equal(reloadVoyageEventSession("new-session", fx.context).ok, true);
 });
 
+test("M12 different new-session launches share one world coordination claim", async () => {
+  const fx = fixture();
+  let nextDocumentId = 1;
+  fx.context.createDocumentId = () => `Journal.concurrent-${nextDocumentId++}`;
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  let claimed = false;
+  fx.context.runExclusiveSessionMutation = async (descriptor, callback) => {
+    assert.equal(descriptor.sessionId, "arcflight-m12-event-launch-world");
+    assert.equal(descriptor.sessionDocumentId, "arcflight-m12-event-launch-world");
+    if (claimed) return null;
+    claimed = true;
+    entered.resolve();
+    await release.promise;
+    try { return await callback({ connectionId: descriptor.connectionId, occurredAt: "2026-08-12T12:00:00.000Z" }); }
+    finally { claimed = false; }
+  };
+  const makeRequest = (requestId, sessionId) => ({ kind: "voyage.m12-launch-event", requestId, sessionId, expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } });
+  const firstPromise = launchVoyageEventSession(makeRequest("concurrent-a", "concurrent-session-a"), fx.context);
+  await entered.promise;
+  const secondPromise = launchVoyageEventSession(makeRequest("concurrent-b", "concurrent-session-b"), fx.context);
+  release.resolve();
+  const [first, second] = await Promise.all([firstPromise, secondPromise]);
+  const results = [first, second];
+  assert.equal(results.filter((result) => result.ok).length, 1);
+  assert.equal(results.filter((result) => result.errors?.[0]?.code === "m12-active-session-conflict").length, 1);
+  assert.equal(fx.journals.length, 1);
+  assert.equal(fx.tracker.creates, 1);
+  const successful = results.find((result) => result.ok);
+  assert.equal(reloadVoyageEventSession(successful.sessionId, fx.context).ok, true);
+});
+
 test("M12 Task 2 drag order uses only the persisted participating station IDs", () => {
   const planning = {
     stationAssignments: [{ stationId: "captain" }, { stationId: "engineer" }, { stationId: "watchmaster" }, { stationId: "veilwarden" }],
