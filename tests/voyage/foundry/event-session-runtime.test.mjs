@@ -242,7 +242,7 @@ async function task6CanonicalM10Fixture() {
   return { actor, fixture, run, previewRequest, preview };
 }
 
-test("M11 runtime exposes the audited boundaries and GM planning read", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionPlanning", "readVoyageEventSessionProjection", "recoverVoyageEventSession", "reloadVoyageEventSession", "runExclusiveSessionMutation", "transferVoyageEventSessionControl"]));
+test("M11 runtime exposes the audited boundaries and GM planning/read-resolution APIs", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "applyVoyageEncounterAbortTransition", "beginVoyageEventSessionResolution", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionPlanning", "readVoyageEventSessionProjection", "readVoyageEventSessionResolution", "recoverVoyageEventSession", "reloadVoyageEventSession", "resolveVoyageEventSessionStation", "runExclusiveSessionMutation", "transferVoyageEventSessionControl"]));
 
 test("valid creation uses keepId and stores only pristine voyageSession state", async () => {
   const fixture = makeContext(); const result = await createVoyageEventSession(request(), fixture.context);

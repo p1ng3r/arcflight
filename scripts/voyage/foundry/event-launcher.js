@@ -73,12 +73,21 @@ function journalEntries(context) {
 }
 function readSession(entry) { try { return entry?.__testSource?.flags?.arcflight?.system?.voyageSession ?? entry?.flags?.arcflight?.system?.voyageSession ?? entry?.toObject?.()?.flags?.arcflight?.system?.voyageSession ?? null; } catch { return null; } }
 function findSession(context, sessionId) { return journalEntries(context).find((entry) => readSession(entry)?.sessionId === sessionId) ?? null; }
+export function isVoyageEventSessionTerminal(session) {
+  try {
+    return ["completed", "aborted"].includes(session?.sessionState)
+      || ["completed-success", "completed-failure", "abandoned", "discarded"].includes(session?.encounterState?.lifecycleState);
+  } catch { return false; }
+}
+export function isVoyageEventSessionActive(session) {
+  try {
+    return session?.encounterState?.lifecycleState === "active" && !isVoyageEventSessionTerminal(session);
+  } catch { return false; }
+}
 function hasActiveSession(context, excludedSessionId = null) {
   return journalEntries(context).some((entry) => {
     const session = readSession(entry);
-    return session?.sessionId !== excludedSessionId
-      && session?.encounterState?.lifecycleState === "active"
-      && !["completed", "aborted"].includes(session?.sessionState);
+    return session?.sessionId !== excludedSessionId && isVoyageEventSessionActive(session);
   });
 }
 function fingerprint(value, auth) { return JSON.stringify([value.sessionId, auth, "gm", 0, 0, "m12-launch", { eventId: value.eventId, definitionSnapshotId: value.definitionSnapshotId, shipId: value.shipId, operatorSelections: M12_STATION_IDS.map((stationId) => [stationId, value.operatorSelections[stationId] === "" || value.operatorSelections[stationId] === undefined ? null : value.operatorSelections[stationId]]) }]); }
@@ -159,18 +168,34 @@ function launchEvents(sessionId, eventId, definitionSnapshotId, shipId, states) 
   ];
   return transitions.map(([transitionKind, previousSessionState, nextSessionState, previousEncounterRevision, encounterRevision], index) => ({ type: `voyage.m12-${transitionKind}`, sessionId, eventId, definitionSnapshotId, shipId, transitionKind, previousSessionState, nextSessionState, previousEncounterRevision, encounterRevision, previousRevision: index, revision: index + 1 }));
 }
-function launchPersistedExactly(documentIdValue, candidate, sessionId, context) {
+function launchPersistedExactly(documentIdValue, candidate, sessionId, requestId, context) {
   try {
     const matches = journalEntries(context).filter((entry) => entry?.id === documentIdValue);
     if (matches.length !== 1) return false;
     const stored = readSession(matches[0]);
-    return stored !== null && JSON.stringify(stored) === JSON.stringify(candidate) && reloadVoyageEventSession(sessionId, context).ok;
+    if (!stored || stored.sessionId !== sessionId || stored.sessionDocumentId !== documentIdValue) return false;
+    if (stored.eventId !== candidate.eventId || stored.definitionSnapshotId !== candidate.definitionSnapshotId || stored.shipId !== candidate.shipId) return false;
+    if (!Number.isSafeInteger(stored.revision) || stored.revision !== candidate.revision || !Number.isSafeInteger(stored.authorityEpoch) || stored.authorityEpoch !== candidate.authorityEpoch || stored.sessionState !== "crew-planning") return false;
+    if (stored.encounterState?.lifecycleState !== "active" || stored.encounterState?.phase !== "crew-planning") return false;
+    if (!Array.isArray(stored.events) || stored.events.length !== candidate.events.length || stored.events.some((event, index) => {
+      const expected = candidate.events[index];
+      return !expected || ["type", "sessionId", "eventId", "definitionSnapshotId", "shipId", "transitionKind", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision", "previousRevision", "revision"].some((key) => event?.[key] !== expected[key]);
+    })) return false;
+    const audit = Array.isArray(stored.auditHistory) ? stored.auditHistory.find((entry) => entry?.kind === "m12-launch" && entry.requestId === requestId) : null;
+    if (!audit || audit.sessionId !== sessionId || audit.actorUserId !== stored.activeGmUserId || audit.revision !== candidate.revision || audit.previousRevision !== candidate.revision - 1 || audit.authorityEpoch !== stored.authorityEpoch || audit.details?.transitionKind !== "launch" || audit.details?.nextSessionState !== "crew-planning" || audit.details?.eventCount !== candidate.events.length) return false;
+    const record = Array.isArray(stored.processedRequests) ? stored.processedRequests.find((entry) => entry?.commandKind === "m12-launch" && entry.requestId === requestId) : null;
+    if (!record || record.resultKind !== "launched" || record.resultRevision !== candidate.revision || record.principalUserId !== stored.activeGmUserId || record.response?.requestId !== requestId || record.response?.sessionId !== sessionId || record.response?.status !== "crew-planning" || record.response?.revision !== candidate.revision || record.response?.authorityEpoch !== stored.authorityEpoch || record.response?.projection !== null || !Array.isArray(record.response?.events) || record.response.events.length !== candidate.events.length || record.response.events.some((event, index) => {
+      const expected = candidate.events[index];
+      return !expected || ["type", "sessionId", "eventId", "definitionSnapshotId", "shipId", "transitionKind", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision", "previousRevision", "revision"].some((key) => event?.[key] !== expected[key]);
+    }) || !Array.isArray(record.response?.errors) || record.response.errors.length !== 0 || !Array.isArray(record.response?.warnings) || record.response.warnings.length !== 0) return false;
+    const reloaded = reloadVoyageEventSession(sessionId, context);
+    return reloaded.ok === true && reloaded.revision === candidate.revision;
   } catch { return false; }
 }
 
 async function cleanupCreatedLaunchDocument(document, expectedId, sessionId, beforeDocuments, context) {
   try {
-    if (!document || document.id !== expectedId || beforeDocuments.some((entry) => entry === document || entry?.id === expectedId)) return false;
+    if (!document || document.id !== expectedId || beforeDocuments.some((entry) => entry?.id === expectedId)) return false;
     await document.delete?.();
     const remaining = journalEntries(context);
     return !remaining.some((entry) => entry?.id === expectedId || readSession(entry)?.sessionId === sessionId);
@@ -216,8 +241,8 @@ export async function launchVoyageEventSession(request, context = {}) {
     const document = journalEntries(context).find((entry) => entry?.id === documentIdValue), stored = readSession(document); if (!document || !stored) return response(requestId, sessionId, "failed", null, null, [issue("m12-launch-persistence-failed", "flags.arcflight.system.voyageSession", "The created Event Session could not be reread.")]);
     const events = launchEvents(sessionId, value.eventId, value.definitionSnapshotId, value.shipId, planning.nextState), candidate = structuredClone(stored); candidate.revision = events.length; candidate.sessionState = "crew-planning"; candidate.encounterState = structuredClone(planning.nextState); candidate.events.push(...events);
     const launchResponse = response(requestId, sessionId, "crew-planning", candidate.revision, candidate.authorityEpoch, [], events); candidate.auditHistory.push({ auditId: `arcflight-voyage-audit:${JSON.stringify([candidate.sessionId, candidate.auditHistory.length, "m12-launch"])}`, kind: "m12-launch", sessionId, requestId, actorUserId: auth, authorityEpoch: candidate.authorityEpoch, previousRevision: candidate.revision - 1, revision: candidate.revision, occurredAt, details: { transitionKind: "launch", previousSessionState: "setup", nextSessionState: "crew-planning", previousEncounterRevision: 0, encounterRevision: candidate.encounterState.revision, eventCount: events.length } }); candidate.processedRequests.push({ requestId, principalUserId: auth, projectionKind: "gm", fingerprint: fp, commandKind: "m12-launch", resultKind: "launched", resultRevision: candidate.revision, response: launchResponse });
-    try { await document.update({ "flags.arcflight.system.voyageSession": candidate }, { diff: false, recursive: false }); } catch { if (launchPersistedExactly(documentIdValue, candidate, sessionId, context)) return launchResponse; const cleaned = await cleanupCreatedLaunchDocument(document, documentIdValue, sessionId, beforeDocuments, context); return response(requestId, sessionId, "failed", null, null, [issue(cleaned ? "m12-launch-persistence-failed" : "m11-recovery-required", cleaned ? "flags.arcflight.system.voyageSession" : "recovery", cleaned ? "The Event Session launch could not be persisted." : "The Event Session requires recovery.")]); }
-    if (launchPersistedExactly(documentIdValue, candidate, sessionId, context)) return launchResponse;
+    try { await document.update({ "flags.arcflight.system.voyageSession": candidate }, { diff: false, recursive: false }); } catch { if (launchPersistedExactly(documentIdValue, candidate, sessionId, requestId, context)) return launchResponse; const cleaned = await cleanupCreatedLaunchDocument(document, documentIdValue, sessionId, beforeDocuments, context); return response(requestId, sessionId, "failed", null, null, [issue(cleaned ? "m12-launch-persistence-failed" : "m11-recovery-required", cleaned ? "flags.arcflight.system.voyageSession" : "recovery", cleaned ? "The Event Session launch could not be persisted." : "The Event Session requires recovery.")]); }
+    if (launchPersistedExactly(documentIdValue, candidate, sessionId, requestId, context)) return launchResponse;
     const cleaned = await cleanupCreatedLaunchDocument(document, documentIdValue, sessionId, beforeDocuments, context); return response(requestId, sessionId, "failed", null, null, [issue(cleaned ? "m12-launch-persistence-failed" : "m11-recovery-required", cleaned ? "flags.arcflight.system.voyageSession" : "recovery", cleaned ? "The launched Event Session failed reread validation." : "The Event Session requires recovery.")]);
   }, identities, { nonWinnerCode: "m12-active-session-conflict", nonWinnerPath: "sessionId" });
   if (!launchResult?.ok && launchResult.errors?.[0]?.code === "m12-active-session-conflict") {

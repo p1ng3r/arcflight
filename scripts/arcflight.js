@@ -139,7 +139,8 @@ import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers
 import { launchVoyageEventSession as launchVoyageEventSessionInternal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections, buildVoyageEventManagerDashboardModel } from "./voyage/foundry/event-launcher.js";
 import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION } from "./voyage/m12/event-definition.js";
 import { getFoundrySessionMutationCoordinator } from "./voyage/foundry/session-coordinator.js";
-import { dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning } from "./voyage/foundry/event-session-runtime.js";
+import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, beginVoyageEventSessionResolution, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
+import { executeVoyagePf2ePendingCheckInFoundry } from "./voyage/pf2e/runtime-execution.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 
 function trustedFoundryUsers() {
@@ -167,7 +168,9 @@ function trustedLaunchContext() {
     isJournalEntryDocument: (document) => document?.documentName === "JournalEntry" || document?.constructor?.name === "JournalEntry",
     createDocumentId: () => globalThis.foundry?.utils?.randomID?.(),
     resolveEventDefinitionSnapshot: (eventId, definitionSnapshotId) => getM12EventDefinition(eventId, definitionSnapshotId),
-    runExclusiveSessionMutation: getFoundrySessionMutationCoordinator(globalThis.game)
+    runExclusiveSessionMutation: getFoundrySessionMutationCoordinator(globalThis.game),
+    executeVoyagePf2ePendingCheck: (pendingCheck) => executeVoyagePf2ePendingCheckInFoundry(pendingCheck, globalThis),
+    applyVoyageEncounterAbortTransition
   };
 }
 
@@ -181,6 +184,18 @@ function dispatchVoyageEventSessionCommandFromPublicBoundary(request) {
 
 function readVoyageEventSessionPlanningFromPublicBoundary(sessionId) {
   return readVoyageEventSessionPlanning(sessionId, trustedLaunchContext());
+}
+function readVoyageEventSessionResolutionFromPublicBoundary(sessionId) {
+  return readVoyageEventSessionResolution(sessionId, trustedLaunchContext());
+}
+function resolveVoyageEventSessionStationFromPublicBoundary(request) {
+  return resolveVoyageEventSessionStation(request, trustedLaunchContext());
+}
+function beginVoyageEventSessionResolutionFromPublicBoundary(request) {
+  return beginVoyageEventSessionResolution(request, trustedLaunchContext());
+}
+function abortVoyageEventSessionFromPublicBoundary(request) {
+  return abortVoyageEventSession(request, trustedLaunchContext());
 }
 import {
   backfillInstallStateForAllShips,
@@ -408,6 +423,10 @@ Hooks.once("init", () => {
     launchVoyageEventSession: launchVoyageEventSessionFromPublicBoundary,
     dispatchVoyageEventSessionCommand: dispatchVoyageEventSessionCommandFromPublicBoundary,
     readVoyageEventSessionPlanning: readVoyageEventSessionPlanningFromPublicBoundary,
+    readVoyageEventSessionResolution: readVoyageEventSessionResolutionFromPublicBoundary,
+    beginVoyageEventSessionResolution: beginVoyageEventSessionResolutionFromPublicBoundary,
+    resolveVoyageEventSessionStation: resolveVoyageEventSessionStationFromPublicBoundary,
+    abortVoyageEventSession: abortVoyageEventSessionFromPublicBoundary,
     listVoyageEventLaunchShips,
     normalizeVoyageEventOperatorSelections,
     buildVoyageEventManagerDashboardModel,
@@ -540,6 +559,10 @@ export {
   launchVoyageEventSessionFromPublicBoundary as launchVoyageEventSession,
   dispatchVoyageEventSessionCommandFromPublicBoundary as dispatchVoyageEventSessionCommand,
   readVoyageEventSessionPlanningFromPublicBoundary as readVoyageEventSessionPlanning,
+  readVoyageEventSessionResolutionFromPublicBoundary as readVoyageEventSessionResolution,
+  beginVoyageEventSessionResolutionFromPublicBoundary as beginVoyageEventSessionResolution,
+  resolveVoyageEventSessionStationFromPublicBoundary as resolveVoyageEventSessionStation,
+  abortVoyageEventSessionFromPublicBoundary as abortVoyageEventSession,
   listVoyageEventLaunchShips,
   normalizeVoyageEventOperatorSelections,
   buildVoyageEventManagerDashboardModel,
