@@ -47,7 +47,7 @@
       </section>
       <section id="tab-resolution" class="event-tab-content tab-resolution resolution-panel" data-component="resolution-panel" data-m12-tab-content data-tab-id="resolution" role="tabpanel">
         <h2>Resolution</h2>
-        {{#if resolutionAwaitingPlanLock}}
+        {{#if awaitingPlanLock}}
           <p class="arcflight-error">PLAN MUST BE LOCKED BEFORE RESOLUTION</p>
         {{else}}
           {{#if resolution}}

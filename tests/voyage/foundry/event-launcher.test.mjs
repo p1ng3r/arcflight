@@ -381,6 +381,37 @@ test("M12 Event Manager keeps Resolution after Plan Review and gates its control
   assert.equal(EVENT_MANAGER_TAB_IDS.indexOf("resolution") > EVENT_MANAGER_TAB_IDS.indexOf("plan-review"), true);
 });
 
+test("M12 Resolution pre-lock guard uses the prepared model key", () => {
+  const presentation = buildEventManagerResolutionPresentation({ planLocked: false, resolutionPhase: "lock-readiness" });
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.equal(presentation.awaitingPlanLock, true);
+  assert.match(template, /\{\{#if awaitingPlanLock\}\}/);
+  assert.doesNotMatch(template, /resolutionAwaitingPlanLock/);
+  assert.match(template, /PLAN MUST BE LOCKED BEFORE RESOLUTION/);
+  assert.doesNotMatch(template, /resolutionAwaitingPlanLock[\s\S]*ROLL CHECK/);
+});
+
+test("M12 paused nonterminal session blocks a fresh launch but abandoned history does not", async () => {
+  const fx = fixture();
+  fx.context.applyVoyageEncounterAbortTransition = applyVoyageEncounterAbortTransition;
+  const first = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "paused-launch-a", sessionId: "paused-session-a", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  const storedA = fx.journals.find((entry) => entry.id === "Journal.session-1").__testSource.flags.arcflight.system.voyageSession;
+  storedA.sessionState = "paused";
+  storedA.encounterState.lifecycleState = "paused";
+  assert.equal(isVoyageEventSessionActive(storedA), true);
+  fx.context.createDocumentId = () => "Journal.session-2";
+  const blocked = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "paused-launch-b", sessionId: "paused-session-b", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.errors[0].code, "m12-active-session-conflict");
+  assert.equal(fx.tracker.creates, 1);
+  const abandoned = await abortVoyageEventSession({ kind: "voyage.m11-abort-session", requestId: "paused-abort-a", sessionId: "paused-session-a", expectedRevision: storedA.revision, authorityEpoch: 0, reason: "GM test abandon", confirmation: true }, fx.context);
+  assert.equal(abandoned.ok, true, JSON.stringify(abandoned.errors));
+  const allowed = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "paused-launch-b-retry", sessionId: "paused-session-b", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} }, fx.context);
+  assert.equal(allowed.ok, true, JSON.stringify(allowed.errors));
+  assert.equal(fx.journals.length, 2);
+});
+
 test("M12 Plan Review reconstructs incomplete and ready station state from persisted planning", () => {
   const planning = { sessionState: "crew-planning", stationAssignments: [{ stationId: "captain" }, { stationId: "engineer" }] };
   const stations = [

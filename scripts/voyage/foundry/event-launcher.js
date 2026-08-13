@@ -81,7 +81,8 @@ export function isVoyageEventSessionTerminal(session) {
 }
 export function isVoyageEventSessionActive(session) {
   try {
-    return session?.encounterState?.lifecycleState === "active" && !isVoyageEventSessionTerminal(session);
+    return !isVoyageEventSessionTerminal(session)
+      && (["active", "paused"].includes(session?.encounterState?.lifecycleState) || session?.sessionState === "paused");
   } catch { return false; }
 }
 function hasActiveSession(context, excludedSessionId = null) {
