@@ -51,7 +51,8 @@ schemas.
 
 ## Explicit exclusions
 
-This slice does not implement a Player Event application, multiplayer planning
+This slice does not implement the Player Event application (that presentation
+belongs to the subsequent Slice B contract), multiplayer planning
 mutations, sockets or broadcast UI, GM Unlock Plan, Begin Resolution changes,
 roll controls, Focus popups, round closeout, Pressure/Hazard/Momentum closeout,
 or any M10/M11 persistence redesign.

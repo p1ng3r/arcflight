@@ -221,6 +221,30 @@ function readVoyageEventSessionProjectionFromPublicBoundary(request) {
 function readVoyageEventSessionMultiplayerProjectionFromPublicBoundary(request) {
   return readVoyageEventSessionMultiplayerProjection(request, trustedLaunchContext());
 }
+
+function discoverVoyageEventSessionFromPublicBoundary() {
+  try {
+    const source = globalThis.game?.journal;
+    const entries = typeof source?.values === "function" ? [...source.values()] : (Array.isArray(source) ? source : source?.contents ?? []);
+    const candidates = [];
+    for (const entry of entries) {
+      const session = entry?.flags?.arcflight?.system?.voyageSession ?? entry?.toObject?.()?.flags?.arcflight?.system?.voyageSession;
+      if (!session || typeof session.sessionId !== "string" || !Number.isSafeInteger(session.revision)) continue;
+      const projection = readVoyageEventSessionMultiplayerProjection({
+        kind: "voyage.m12-read-multiplayer-projection",
+        requestId: `m12-discover-${session.sessionId}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`,
+        sessionId: session.sessionId,
+        expectedRevision: session.revision
+      }, trustedLaunchContext());
+      if (projection?.ok && !["completed", "aborted", "recovery-required"].includes(projection.projection?.sessionState)) {
+        candidates.push({ sessionId: projection.projection.sessionId, revision: projection.projection.revision });
+      }
+    }
+    return candidates.length === 1 ? candidates[0] : null;
+  } catch {
+    return null;
+  }
+}
 function authorizeVoyageEventSessionOperatorFromPublicBoundary(request) {
   return authorizeVoyageEventSessionOperator(request, trustedLaunchContext());
 }
@@ -463,6 +487,7 @@ Hooks.once("init", () => {
     dispatchVoyageEventSessionCommand: dispatchVoyageEventSessionCommandFromPublicBoundary,
     readVoyageEventSessionProjection: readVoyageEventSessionProjectionFromPublicBoundary,
     readVoyageEventSessionMultiplayerProjection: readVoyageEventSessionMultiplayerProjectionFromPublicBoundary,
+    discoverVoyageEventSession: discoverVoyageEventSessionFromPublicBoundary,
     authorizeVoyageEventSessionOperator: authorizeVoyageEventSessionOperatorFromPublicBoundary,
     readVoyageEventSessionPlanning: readVoyageEventSessionPlanningFromPublicBoundary,
     readVoyageEventSessionResolution: readVoyageEventSessionResolutionFromPublicBoundary,
@@ -479,6 +504,10 @@ Hooks.once("init", () => {
     openEventManager: async () => {
       const { openArcflightEventManager } = await import("./voyage/apps/event-manager.js");
       return openArcflightEventManager();
+    },
+    openPlayerEvent: async () => {
+      const { openVoyagePlayerEvent } = await import("./voyage/apps/player-event.js");
+      return openVoyagePlayerEvent();
     },
     validateVoyageEncounterStationSelections,
     applyVoyageEncounterStationActionSelection,
@@ -602,6 +631,7 @@ export {
   dispatchVoyageEventSessionCommandFromPublicBoundary as dispatchVoyageEventSessionCommand,
   readVoyageEventSessionProjectionFromPublicBoundary as readVoyageEventSessionProjection,
   readVoyageEventSessionMultiplayerProjectionFromPublicBoundary as readVoyageEventSessionMultiplayerProjection,
+  discoverVoyageEventSessionFromPublicBoundary as discoverVoyageEventSession,
   authorizeVoyageEventSessionOperatorFromPublicBoundary as authorizeVoyageEventSessionOperator,
   readVoyageEventSessionPlanningFromPublicBoundary as readVoyageEventSessionPlanning,
   readVoyageEventSessionResolutionFromPublicBoundary as readVoyageEventSessionResolution,

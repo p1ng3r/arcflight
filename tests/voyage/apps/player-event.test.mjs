@@ -1,0 +1,183 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+globalThis.foundry ??= { applications: { api: {
+  HandlebarsApplicationMixin: (Base) => Base,
+  ApplicationV2: class { render() { return this; } }
+} } };
+
+const { buildVoyagePlayerEventModel, PLAYER_TABS, VoyagePlayerEventApp, normalizePlayerTab, openVoyagePlayerEvent } = await import("../../../scripts/voyage/apps/player-event.js");
+const template = readFileSync(new URL("../../../templates/voyage/player-event.hbs", import.meta.url), "utf8");
+const runtime = readFileSync(new URL("../../../scripts/voyage/apps/player-event.js", import.meta.url), "utf8");
+const arcflight = readFileSync(new URL("../../../scripts/arcflight.js", import.meta.url), "utf8");
+
+function projection(role = "observer", ownedOperators = []) {
+  return {
+    schemaVersion: 1,
+    sessionId: "session-player",
+    eventId: "m12-glassback-cinderwake",
+    revision: 5,
+    sessionState: "crew-planning",
+    currentStage: "round-1",
+    roundNumber: 1,
+    phase: "crew-planning",
+    stationAssignments: [
+      { stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" } },
+      { stationId: "watchmaster", operator: { kind: "actor", id: "actor-watch", uuid: "Actor.watch", name: "Watchmaster" } }
+    ],
+    committedStationOrder: ["captain", "watchmaster"],
+    currentActingStationId: null,
+    momentum: 0,
+    pressureSystems: [],
+    activeHazards: [],
+    visibleEvents: [],
+    closeoutStatus: "not-started",
+    recoveryStatus: "none",
+    projectionRole: role,
+    ownedOperators,
+    readOnlyStationIds: ["watchmaster"]
+  };
+}
+
+test("Slice B exposes exactly the four read-only player tabs", () => {
+  assert.deepEqual(PLAYER_TABS, ["round", "my-station", "crew-plan", "resolution"]);
+  assert.equal(normalizePlayerTab("resolution"), "resolution");
+  assert.equal(normalizePlayerTab("gm-controls"), "round");
+  for (const tab of PLAYER_TABS) assert.match(template, new RegExp(`data-player-panel=\\"${tab}\\"`));
+});
+
+test("operator player model presents every owned station and no mutation controls", () => {
+  const model = buildVoyagePlayerEventModel(projection("operator", [
+    { stationId: "captain", operatorId: "actor-captain", operatorUuid: "Actor.captain", operatorName: "Captain", canAct: false },
+    { stationId: "watchmaster", operatorId: "actor-watch", operatorUuid: "Actor.watch", operatorName: "Watchmaster", canAct: false }
+  ]));
+  assert.equal(model.projectionRole, "operator");
+  assert.deepEqual(model.ownedStations.map((entry) => entry.stationId), ["captain", "watchmaster"]);
+  assert.equal(model.ownedStations.every((entry) => entry.readOnly), true);
+  assert.equal(model.crewPlan.filter((entry) => entry.owned).length, 2);
+  assert.doesNotMatch(template, /data-m12-(dispatch|roll|focus|action|risk-bid|station-selection)/);
+});
+
+test("crew and observer models never gain owned station state", () => {
+  const crew = buildVoyagePlayerEventModel(projection("crew", [{ stationId: "unassigned", operatorId: "other", operatorUuid: "Actor.other" }]));
+  const observer = buildVoyagePlayerEventModel(projection("observer", []));
+  assert.equal(crew.ownedStations.length, 0);
+  assert.equal(observer.ownedStations.length, 0);
+  assert.equal(crew.hasOwnedStation, false);
+  assert.equal(observer.hasOwnedStation, false);
+});
+
+test("player model filters raw session internals and remains isolated", () => {
+  const source = projection("operator", [{ stationId: "captain", operatorId: "actor-captain", operatorUuid: "Actor.captain" }]);
+  source.pressureSystems = [{ pressureSystemId: "crew-morale", value: 1, capacity: 2 }];
+  source.activeHazards = [{ hazardId: "hazard-1", privateDetails: "do-not-copy" }];
+  source.gmSecretInformation = { secret: "do-not-copy" };
+  const model = buildVoyagePlayerEventModel(source);
+  assert.equal("gmSecretInformation" in model, false);
+  assert.equal("events" in model, false);
+  assert.equal("auditHistory" in model, false);
+  assert.equal("receipts" in model, false);
+  model.ownedStations[0].operatorName = "mutated";
+  model.round.pressureSystems[0].value = 99;
+  model.round.activeHazards[0].hazardId = "mutated";
+  assert.equal(source.stationAssignments[0].operator.name, "Captain");
+  assert.equal(source.pressureSystems[0].value, 1);
+  assert.equal(source.activeHazards[0].hazardId, "hazard-1");
+  assert.equal(model.resolution.currentStation, null);
+});
+
+test("player model is projection-only and does not fabricate absent authored narrative", () => {
+  const source = projection("observer");
+  const model = buildVoyagePlayerEventModel(source);
+  assert.equal(model.round.narrativeAvailable, false);
+  assert.equal(model.round.vignette, null);
+  assert.equal(model.round.situation, null);
+  assert.equal(model.round.objective, null);
+  assert.equal(model.round.knownStakes, null);
+  const sourceWithNarrative = { ...source, roundTitle: "Projected Round", objective: "Projected objective" };
+  const projected = buildVoyagePlayerEventModel(sourceWithNarrative);
+  assert.equal(projected.round.narrativeAvailable, true);
+  assert.equal(projected.round.objective, "Projected objective");
+});
+
+test("round, plan-lock, current-station, and completed resolution states are presentation-only", () => {
+  const waiting = buildVoyagePlayerEventModel(projection("observer"));
+  assert.equal(waiting.resolution.stateLabel, "WAITING FOR RESOLUTION");
+  const lockedProjection = projection("observer"); lockedProjection.sessionState = "plan-locked"; lockedProjection.phase = "lock-readiness";
+  assert.equal(buildVoyagePlayerEventModel(lockedProjection).resolution.stateLabel, "PLAN LOCKED");
+  const activeProjection = projection("operator", [{ stationId: "captain" }]); activeProjection.sessionState = "station-resolution"; activeProjection.phase = "resolution"; activeProjection.currentActingStationId = "captain";
+  const active = buildVoyagePlayerEventModel(activeProjection);
+  assert.equal(active.resolution.currentStation.stationId, "captain");
+  assert.equal(active.resolution.ownedCurrent, true);
+  const complete = projection("observer"); complete.sessionState = "completed";
+  assert.equal(buildVoyagePlayerEventModel(complete).resolution.stateLabel, "RESOLUTION COMPLETE");
+});
+
+test("ApplicationV2 shell and public opening/discovery boundaries are wired without sockets or writes", () => {
+  assert.match(runtime, /static PARTS = \{ body/);
+  assert.match(runtime, /readVoyageEventSessionMultiplayerProjection/);
+  assert.match(runtime, /game\.arcflight\?\.discoverVoyageEventSession/);
+  assert.match(arcflight, /discoverVoyageEventSession:/);
+  assert.match(arcflight, /openPlayerEvent: async \(\) =>/);
+  assert.equal(openVoyagePlayerEvent.length, 0);
+  assert.doesNotMatch(runtime, /M12_EVENT_PRESENTATION|event-definition/);
+  assert.doesNotMatch(runtime, /dispatchVoyageEventSessionCommand|JournalEntry\.create|\.update\(/);
+  assert.doesNotMatch(template, /audit|recovery|receipt|GM Controls|Closeout|Rewards|Ship Administration/);
+});
+
+test("player template is one root and contains only the neutral absent-narrative path", () => {
+  const staticMarkup = template.replace(/\{\{[\s\S]*?\}\}/g, "");
+  const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+  const tags = /<\/?([a-z][\w:-]*)(?:\s[^<>]*?)?\/?\s*>/gi;
+  let depth = 0; let roots = 0; let match;
+  while ((match = tags.exec(staticMarkup))) {
+    const token = match[0]; const name = match[1].toLowerCase();
+    if (token.startsWith("</")) depth -= 1;
+    else { if (depth === 0) roots += 1; if (!token.endsWith("/>") && !voidTags.has(name)) depth += 1; }
+  }
+  assert.equal(roots, 1);
+  assert.equal(depth, 0);
+  assert.match(template, /Round narrative is not yet revealed/);
+  assert.doesNotMatch(template, /M12_EVENT_PRESENTATION|event-definition|gmSecretInformation|auditHistory|processedRequests|checkpoints/);
+});
+
+test("public opener has no caller-selected session authority", () => {
+  assert.match(arcflight, /openPlayerEvent: async \(\) =>[\s\S]*?openVoyagePlayerEvent\(\)/);
+  assert.doesNotMatch(arcflight, /openPlayerEvent: async \(sessionId/);
+  assert.doesNotMatch(runtime, /options\.sessionId/);
+});
+
+test("player app uses trusted discovery for valid, missing, and ambiguous active sessions", () => {
+  let reads = 0;
+  globalThis.game = { arcflight: {
+    discoverVoyageEventSession: () => ({ sessionId: "active-session", revision: 5 }),
+    readVoyageEventSessionMultiplayerProjection: (request) => { reads += 1; assert.equal(request.sessionId, "active-session"); return { ok: true, projection: projection("crew") }; }
+  } };
+  const valid = new VoyagePlayerEventApp()._prepareContext();
+  assert.equal(valid.sessionUnavailable, false);
+  assert.equal(reads, 1);
+
+  globalThis.game.arcflight.discoverVoyageEventSession = () => null;
+  const unavailable = new VoyagePlayerEventApp()._prepareContext();
+  assert.equal(unavailable.sessionUnavailable, true);
+  assert.equal(unavailable.model, null);
+  assert.equal(reads, 1);
+
+  globalThis.game.arcflight.discoverVoyageEventSession = () => null;
+  const ambiguous = new VoyagePlayerEventApp()._prepareContext();
+  assert.equal(ambiguous.sessionUnavailable, true);
+  assert.equal(ambiguous.model, null);
+  assert.equal(reads, 1);
+});
+
+test("extra opener arguments cannot replace trusted discovery", () => {
+  let requestedSession = null;
+  globalThis.game = { arcflight: {
+    discoverVoyageEventSession: () => ({ sessionId: "trusted-active", revision: 2 }),
+    readVoyageEventSessionMultiplayerProjection: (request) => { requestedSession = request.sessionId; return { ok: true, projection: projection("observer") }; }
+  } };
+  const app = openVoyagePlayerEvent("historical-or-foreign");
+  app._prepareContext();
+  assert.equal(requestedSession, "trusted-active");
+});
