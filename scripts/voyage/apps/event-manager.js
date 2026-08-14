@@ -1,8 +1,10 @@
 import { readVoyageEventSessionProjection, readVoyageEventSessionResolution, reloadVoyageEventSession } from "../foundry/event-session-runtime.js";
 import { executeVoyagePf2ePendingCheckInFoundry } from "../pf2e/runtime-execution.js";
 import { buildVoyageEventManagerDashboardModel, isVoyageEventSessionTerminal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../foundry/event-launcher.js";
-import { M12_EVENT_PRESENTATION, M12_STATION_IDS } from "../m12/event-definition.js";
+import { M12_EVENT_PRESENTATION, M12_FOCUS_ABILITIES, M12_STATION_IDS } from "../m12/event-definition.js";
 import { arcflightTemplatePath } from "../../sheets/sheet-helpers.js";
+import { stationPresentation } from "./station-icons.js";
+import { resourcePresentation } from "./resource-icons.js";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
 const { ApplicationV2 } = foundry.applications.api;
@@ -39,28 +41,57 @@ function eventContext() {
     resolveEventDefinitionSnapshot: (eventId, definitionSnapshotId) => game.arcflight.getM12EventDefinition(eventId, definitionSnapshotId),
     runExclusiveSessionMutation: game.arcflight?.runExclusiveSessionMutation,
     executeVoyagePf2ePendingCheck: (pendingCheck) => executeVoyagePf2ePendingCheckInFoundry(pendingCheck, globalThis),
+    focusAbilities: M12_FOCUS_ABILITIES,
     applyVoyageEncounterAbortTransition: game.arcflight?.applyVoyageEncounterAbortTransition
   };
 }
 function randomId(prefix) { return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`; }
 
-export function buildPlanningStations(planning, locked = false) {
+function riskBidEffectText(effect) {
+  if (effect?.effectKind === "roll-bonus") return `+${effect.value} to the next unresolved station roll this round`;
+  if (effect?.effectKind === "degree-shift") return `Improve the next result by ${effect.value} degree`;
+  return "Authored Risk Bid effect";
+}
+
+export function buildPlanningStations(planning, locked = false, expandedStationId = null) {
   const assignments = new Map((planning?.stationAssignments ?? []).map((entry) => [entry.stationId, entry]));
   return (planning?.stations ?? []).map((station) => {
     const selection = planning.selections?.[station.stationId] ?? null;
     const actionOptions = (station.actions ?? []).map((action) => ({
       ...action,
+      displayName: action.name ?? action.label ?? action.actionId,
+      displayDescription: action.description ?? "Round-specific station action.",
+      baseDc: action.check?.dcSource?.value ?? null,
       selected: selection?.actionId === action.actionId,
+      riskBidCapable: (action.riskBidOptions ?? []).length > 0,
+      riskBidAvailableResource: (action.riskBidOptions ?? []).length > 0 ? resourcePresentation("riskBid") : null,
       approaches: (action.approaches ?? []).map((approach) => ({ ...approach, selected: selection?.approachId === approach.approachId })),
-      riskBidOptions: (action.riskBidOptions ?? []).map((option) => ({ ...option, selected: planning.riskBids?.[station.stationId]?.riskBidId === option.riskBidId }))
+      riskBidOptions: (action.riskBidOptions ?? []).map((option) => ({
+        ...option,
+        selected: planning.riskBids?.[station.stationId]?.riskBidId === option.riskBidId,
+        displayName: action.riskBidPresentation?.[String(option.dcAdjustment)]?.label ?? `+${option.dcAdjustment} Risk Bid`,
+        adjustedDc: (action.check?.dcSource?.value ?? 0) + option.dcAdjustment,
+        presentation: action.riskBidPresentation?.[String(option.dcAdjustment)] ?? null,
+        finalDc: (action.check?.dcSource?.value ?? 0) + option.dcAdjustment,
+        resource: resourcePresentation("riskBid", option.dcAdjustment)
+      }))
     }));
+    for (const option of actionOptions.flatMap((entry) => entry.riskBidOptions)) {
+      const effects = option.presentation?.mechanicalEffect?.effects ?? [];
+      option.targetStations = [...new Set(effects.flatMap((effect) => effect.targetStationIds ?? []))].map((targetStationId) => ({ stationId: targetStationId, ...stationPresentation(targetStationId) }));
+      option.payoffEffects = effects.map((effect) => ({ ...effect, text: riskBidEffectText(effect), targetStations: (effect.targetStationIds ?? []).map((targetStationId) => ({ stationId: targetStationId, ...stationPresentation(targetStationId) })) }));
+      option.failureText = option.presentation?.outcome?.failure ?? "Failure: no Risk Bid payoff; no additional Risk Bid penalty.";
+      option.criticalFailureText = option.presentation?.outcome?.criticalFailure ?? "Critical Failure: no Risk Bid payoff; no additional Risk Bid penalty.";
+    }
     const selectedAction = actionOptions.find((action) => action.selected) ?? null;
+    const selectedRiskBid = selectedAction?.riskBidOptions.find((option) => option.selected) ?? null;
     const hasAction = Boolean(selection?.actionId);
     const hasApproach = Boolean(selection?.approachId);
     const planState = locked ? "locked" : !hasAction ? "incomplete" : !hasApproach ? "approach-required" : "ready";
     return {
       stationId: station.stationId,
-      label: station.stationId.replace(/(^|-)(\w)/g, (_m, _p, c) => c.toUpperCase()),
+      ...stationPresentation(station.stationId),
+      label: stationPresentation(station.stationId).stationDisplayName,
       operator: assignments.get(station.stationId)?.operator ?? null,
       actions: actionOptions,
       selectedActionId: selection?.actionId ?? "",
@@ -68,12 +99,47 @@ export function buildPlanningStations(planning, locked = false) {
       selectedRiskBidId: planning.riskBids?.[station.stationId]?.riskBidId ?? "",
       approaches: (selectedAction?.approaches ?? []).map((approach) => ({ ...approach, selected: selection?.approachId === approach.approachId })),
       riskBidOptions: (selectedAction?.riskBidOptions ?? []).map((option) => ({ ...option, selected: planning.riskBids?.[station.stationId]?.riskBidId === option.riskBidId })),
+      selectedActionName: selectedAction?.displayName ?? selectedAction?.actionId ?? "No action",
+      selectedActionDescription: selectedAction?.displayDescription ?? "",
+      selectedActionBaseDc: selectedAction?.baseDc ?? null,
+      selectedActionHasRiskBids: Boolean(selectedAction?.riskBidOptions?.length),
+      selectedRiskBidAvailableResource: selectedAction?.riskBidOptions?.length ? resourcePresentation("riskBid") : null,
+      selectedRiskBidResource: selectedRiskBid?.resource ?? null,
+      selectedRiskBidFinalDc: selectedRiskBid?.finalDc ?? null,
+      expanded: !locked && (!hasAction || !hasApproach || expandedStationId === station.stationId),
+      compactSummary: {
+        actionName: selectedAction?.displayName ?? "No action",
+        approachName: selectedAction?.approaches?.find((approach) => approach.selected)?.name ?? selection?.approachId ?? "No approach",
+        riskBidName: selectedRiskBid?.displayName ?? "NO BID"
+      },
       ready: hasAction && hasApproach,
       planState,
       selectionState: hasAction ? (hasApproach ? "complete" : "action-selected") : "none",
       statusLabel: planState === "locked" ? "LOCKED" : planState === "ready" ? "READY" : planState === "approach-required" ? "APPROACH REQUIRED" : "ACTION REQUIRED",
       statusMessage: planState === "locked" ? "Planning is locked." : planState === "ready" ? "Ready for Plan Lock." : planState === "approach-required" ? "Choose how this action is being attempted." : "Choose one of the three authored actions."
     };
+  });
+}
+
+export function buildVoyageRiskBidDependencies(planningStations, order) {
+  const orderIndex = new Map((Array.isArray(order) ? order : []).map((stationId, index) => [stationId, index]));
+  return (Array.isArray(planningStations) ? planningStations : []).flatMap((station) => {
+    const action = station.actions?.find((entry) => entry.actionId === station.selectedActionId);
+    const bid = station.riskBidOptions?.find((entry) => entry.selected);
+    const presentation = bid?.presentation;
+    const targets = presentation?.mechanicalEffect?.effects?.flatMap((effect) => effect.targetStationIds ?? []) ?? [];
+    if (!bid || targets.length === 0) return [];
+    return [{
+      sourceStationId: station.stationId,
+      sourceStationLabel: station.label,
+      sourceStationIconPath: station.stationIconPath,
+      sourceActionName: action?.displayName ?? action?.name ?? station.selectedActionId,
+      riskBidName: bid.displayName,
+      targetStationIds: [...new Set(targets)],
+      targetStations: [...new Set(targets)].map((targetStationId) => ({ stationId: targetStationId, ...stationPresentation(targetStationId) })),
+      sourceBeforeTarget: [...new Set(targets)].every((targetStationId) => orderIndex.has(station.stationId) && orderIndex.has(targetStationId) && orderIndex.get(station.stationId) < orderIndex.get(targetStationId)),
+      status: [...new Set(targets)].every((targetStationId) => orderIndex.has(station.stationId) && orderIndex.has(targetStationId) && orderIndex.get(station.stationId) < orderIndex.get(targetStationId)) ? "ORDER VALID — bonus can activate" : "TARGET RESOLVES BEFORE SOURCE — payoff cannot affect that target"
+    }];
   });
 }
 
@@ -141,12 +207,18 @@ export function buildVoyagePlanReview(planning, planningStations, order) {
     const riskBid = station?.riskBidOptions.find((entry) => entry.selected) ?? null;
     return {
       stationId,
+      ...stationPresentation(stationId),
       orderNumber: index + 1,
       stationLabel: station?.label ?? stationId,
       operatorName: station?.operator?.name ?? "Unassigned",
-      actionName: action?.name ?? action?.label ?? action?.actionId ?? "No action",
-      approachName: station?.selectedApproachId || "No approach",
-      riskBidName: riskBid ? `+${riskBid.dcAdjustment}` : "No Bid",
+      actionName: action?.displayName ?? action?.name ?? action?.label ?? action?.actionId ?? "No action",
+      approachName: station?.approaches?.find((entry) => entry.selected)?.name ?? (station?.selectedApproachId || "No approach"),
+      riskBidName: riskBid ? (riskBid.displayName ?? `+${riskBid.dcAdjustment}`) : "No Bid",
+      riskBidFinalDc: riskBid?.finalDc ?? null,
+      selectedRiskBidResource: riskBid?.resource ?? null,
+      riskBidTargetStations: riskBid?.targetStations ?? [],
+      riskBidPayoffEffects: riskBid?.payoffEffects ?? [],
+      riskBidPresentation: riskBid?.presentation ?? null,
       planState: station?.planState ?? "incomplete",
       ready: Boolean(station?.ready)
     };
@@ -170,6 +242,7 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
   #activeTab = "overview";
   #tabScrollPositions = Object.create(null);
   #pendingViewState = null;
+  #expandedStationId = null;
 
   static DEFAULT_OPTIONS = {
     id: "arcflight-event-manager",
@@ -191,7 +264,8 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     if (this.#mode === "live" && this.#sessionId) {
       const projection = readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: randomId("m12-read"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision ?? 0 }, eventContext());
       if (projection.ok) {
-        dashboard = { ...buildVoyageEventManagerDashboardModel(projection.projection, M12_EVENT_PRESENTATION, eventContext().activeGmUserId), shipName: allActors.find((actor) => actor.id === this.#shipId)?.name ?? this.#shipId ?? "" };
+        const dashboardModel = buildVoyageEventManagerDashboardModel(projection.projection, M12_EVENT_PRESENTATION, eventContext().activeGmUserId);
+        dashboard = { ...dashboardModel, stationAssignments: (dashboardModel.stationAssignments ?? []).map((assignment) => ({ ...assignment, ...stationPresentation(assignment.stationId), statusLabel: dashboardModel.sessionState === "plan-locked" ? "LOCKED" : dashboardModel.sessionState === "station-resolution" ? "RESOLVING" : "PLANNED" })), shipName: allActors.find((actor) => actor.id === this.#shipId)?.name ?? this.#shipId ?? "" };
         planning = game.arcflight?.readVoyageEventSessionPlanning?.(this.#sessionId) ?? null;
         resolution = game.arcflight?.readVoyageEventSessionResolution?.(this.#sessionId) ?? readVoyageEventSessionResolution(this.#sessionId, eventContext());
         if (planning?.ok) this.#authorityEpoch = planning.projection.authorityEpoch;
@@ -201,17 +275,31 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     const normalized = normalizeVoyageEventOperatorSelections(this.#operatorSelections, allActors);
     const planningProjection = planning?.ok ? planning.projection : null;
     const planLocked = planningProjection?.sessionState === "plan-locked" || planningProjection?.sessionState === "station-resolution";
-    const planningStations = planningProjection ? buildPlanningStations(planningProjection, planLocked) : [];
+    const planningStations = planningProjection ? buildPlanningStations(planningProjection, planLocked, this.#expandedStationId) : [];
     const proposedOrder = planningProjection ? buildVoyagePlanningOrder(planningProjection) : [];
     const planReady = isVoyagePlanReady(planningProjection, planningStations, proposedOrder);
     const planReview = buildVoyagePlanReview(planningProjection, planningStations, proposedOrder);
-    const resolutionPresentation = buildEventManagerResolutionPresentation({ planLocked, resolutionPhase: resolution?.ok ? resolution.projection?.phase : null });
+    const riskBidDependencies = buildVoyageRiskBidDependencies(planningStations, proposedOrder);
+    const resolutionProjection = resolution?.ok ? {
+      ...resolution.projection,
+      stations: (resolution.projection.stations ?? []).map((station) => ({ ...station, ...stationPresentation(station.stationId), operator: station.operator ? { ...station.operator } : null, riskBidEffects: (station.riskBidEffects ?? []).map((effect) => ({
+        ...effect,
+        sourceStation: stationPresentation(effect.sourceStationId),
+        targetStation: stationPresentation(effect.targetStationId),
+        effectText: riskBidEffectText({ effectKind: effect.effectKind, value: effect.effectValue }),
+        consumptionLabel: effect.consumptionTiming === "on-target-resolution" ? "Consumed when target resolves" : "Consumed at this station's resolution"
+      })) })),
+      reactionWindowPending: (resolution.projection.reactionWindowPending ?? []).map((entry) => ({ ...entry, focusResource: resourcePresentation("focus"), focusAbility: entry.focusAbility ? { ...entry.focusAbility, sourceStation: stationPresentation(entry.focusAbility.sourceStationId), targetStation: stationPresentation(entry.focusAbility.targetStationId) } : null }))
+    } : null;
+    const resolutionPresentation = buildEventManagerResolutionPresentation({ planLocked, resolutionPhase: resolutionProjection?.phase ?? null });
+    const currentRound = M12_EVENT_PRESENTATION.rounds?.find((round) => round.roundNumber === (planningProjection?.roundNumber ?? dashboard?.roundNumber)) ?? null;
     return {
       mode: this.#mode,
       event: M12_EVENT_PRESENTATION,
+      currentRound,
       ships: ships.map((ship) => ({ ...ship, selected: ship.id === this.#shipId })),
       operators: operatorActors,
-      stations: M12_STATION_IDS.map((stationId) => ({ stationId, label: stationId.replace(/(^|-)(\w)/g, (_m, _p, c) => c.toUpperCase()), selected: this.#operatorSelections[stationId] ?? "", occupied: Boolean(this.#operatorSelections[stationId]), options: [{ id: "", name: "Unoccupied", selected: !this.#operatorSelections[stationId] }, ...operatorActors.map((operator) => ({ ...operator, selected: operator.id === this.#operatorSelections[stationId] }))] })),
+      stations: M12_STATION_IDS.map((stationId) => ({ stationId, ...stationPresentation(stationId), label: stationPresentation(stationId).stationDisplayName, selected: this.#operatorSelections[stationId] ?? "", occupied: Boolean(this.#operatorSelections[stationId]), options: [{ id: "", name: "Unoccupied", selected: !this.#operatorSelections[stationId] }, ...operatorActors.map((operator) => ({ ...operator, selected: operator.id === this.#operatorSelections[stationId] }))] })),
       setupMode: this.#mode === "setup",
       liveMode: this.#mode === "live",
       validationErrors: normalized.valid ? [] : normalized.errors.map((error) => error.message),
@@ -219,21 +307,32 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
       sessionId: this.#sessionId,
       dashboard,
       planning: planning?.ok ? planning.projection : null,
-      resolution: resolution?.ok ? resolution.projection : null,
+      resolution: resolutionProjection,
       planningStations,
       proposedOrder,
+      riskBidDependencies,
       orderEntries: planningProjection ? proposedOrder.map((stationId, index) => {
         const station = planningStations.find((entry) => entry.stationId === stationId);
         const action = station?.selectedActionId ? station.actions.find((entry) => entry.actionId === station.selectedActionId) : null;
         const riskBid = station?.riskBidOptions.find((entry) => entry.selected) ?? null;
         return {
           stationId,
+          ...stationPresentation(stationId),
           orderNumber: index + 1,
           stationLabel: station?.label ?? stationId,
+          stationIconPath: station?.stationIconPath ?? stationPresentation(stationId).stationIconPath,
+          stationOrderIconSize: 128,
+          stationOrderIconTitle: station?.stationIconTitle ?? stationPresentation(stationId).stationIconTitle,
           operatorName: station?.operator?.name ?? "Unassigned",
-          actionName: action?.name ?? action?.label ?? action?.actionId ?? "No action",
-          approachName: station?.selectedApproachId || "No approach",
-          riskBidName: riskBid ? `+${riskBid.dcAdjustment}` : "No Bid"
+          actionName: action?.displayName ?? action?.name ?? action?.label ?? action?.actionId ?? "No action",
+          approachName: station?.approaches?.find((entry) => entry.selected)?.name ?? (station?.selectedApproachId || "No approach"),
+          riskBidName: riskBid ? (riskBid.displayName ?? `+${riskBid.dcAdjustment}`) : "No Bid",
+          riskBidAdjustment: riskBid?.dcAdjustment ?? null,
+          riskBidFinalDc: riskBid?.finalDc ?? null,
+          selectedRiskBidResource: riskBid ? resourcePresentation("riskBid", riskBid.dcAdjustment) : null,
+          riskBidAvailableResource: !riskBid && station?.actions?.find((entry) => entry.actionId === station.selectedActionId)?.riskBidCapable ? resourcePresentation("riskBid") : null,
+          canMoveUp: index > 0,
+          canMoveDown: index < proposedOrder.length - 1
         };
       }) : [],
       planReviewRows: planReview.rows,
@@ -278,10 +377,22 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     this.element.querySelector("[data-m12-launch]")?.addEventListener("click", () => this.#launch());
     this.element.querySelector("[data-m12-refresh]")?.addEventListener("click", () => this.render());
     this.element.querySelector("[data-m12-new-session]")?.addEventListener("click", () => { this.#mode = "setup"; this.#sessionId = null; this.render(); });
+    this.element.querySelectorAll("[data-m12-action-picker]").forEach((picker) => {
+      picker.addEventListener("click", () => this.#toggleActionPicker(picker));
+      picker.addEventListener("keydown", (event) => this.#actionPickerKeydown(event, picker));
+    });
+    this.element.querySelectorAll("[data-m12-action-option]").forEach((option) => {
+      option.addEventListener("click", () => this.#selectActionOption(option));
+      option.addEventListener("keydown", (event) => this.#actionOptionKeydown(event, option));
+    });
     this.element.querySelectorAll("[data-m12-station-selection]").forEach((element) => element.addEventListener("change", (event) => this.#selection(event.currentTarget)));
     this.element.querySelectorAll("[data-m12-clear-selection]").forEach((element) => element.addEventListener("click", (event) => {
       const command = buildVoyageStationSelectionClearCommand(event.currentTarget.dataset.stationId);
       if (command) this.#dispatchPlanning(command.commandKind, command.payload);
+    }));
+    this.element.querySelectorAll("[data-m12-edit-station]").forEach((button) => button.addEventListener("click", (event) => {
+      this.#expandedStationId = event.currentTarget.dataset.stationId;
+      this.render();
     }));
     this.element.querySelectorAll("[data-m12-order-station]").forEach((element) => {
       element.addEventListener("dragstart", (event) => {
@@ -310,10 +421,13 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
       });
       element.addEventListener("drop", (event) => this.#dropOrder(event));
     });
+    this.element.querySelectorAll("[data-m12-order-move]").forEach((button) => button.addEventListener("click", (event) => this.#moveOrder(event.currentTarget)));
     this.element.querySelector("[data-m12-plan-lock]")?.addEventListener("click", () => this.#dispatchPlanning("plan-lock", { phaseStartSnapshotId: randomId("m12-plan-lock") }));
     this.element.querySelector("[data-m12-go-resolution]")?.addEventListener("click", () => this.#navigateToTab("resolution"));
     this.element.querySelector("[data-m12-resolution-start]")?.addEventListener("click", () => this.#beginResolution());
     this.element.querySelector("[data-m12-roll-check]")?.addEventListener("click", () => this.#resolveStation());
+    this.element.querySelectorAll("[data-m12-focus-pass]").forEach((button) => button.addEventListener("click", () => this.#focusReaction("focus-reaction-pass", button.dataset.reactionId)));
+    this.element.querySelectorAll("[data-m12-focus-use]").forEach((button) => button.addEventListener("click", () => this.#focusReaction("focus-reaction-use", button.dataset.reactionId)));
     this.element.querySelector("[data-m12-abandon]")?.addEventListener("click", () => this.#abandonEvent());
     this.#applyTabState();
     this.#restoreViewState();
@@ -381,9 +495,64 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     this.#pendingViewState = null;
   }
 
+  #actionPickerMenu(picker) {
+    const menuId = picker?.getAttribute?.("aria-controls");
+    return menuId ? this.element.querySelector(`#${menuId}`) : null;
+  }
+
+  #toggleActionPicker(picker, force = null) {
+    if (!picker || picker.disabled) return;
+    const menu = this.#actionPickerMenu(picker);
+    if (!menu) return;
+    const open = force === null ? picker.getAttribute("aria-expanded") !== "true" : force;
+    picker.setAttribute("aria-expanded", open ? "true" : "false");
+    menu.hidden = !open;
+    if (open) {
+      const selected = menu.querySelector('[aria-selected="true"]') ?? menu.querySelector("[data-m12-action-option]");
+      selected?.focus?.({ preventScroll: true });
+    } else picker.focus?.({ preventScroll: true });
+  }
+
+  #actionPickerKeydown(event, picker) {
+    if (["Enter", " ", "ArrowDown"].includes(event.key)) {
+      event.preventDefault();
+      this.#toggleActionPicker(picker, true);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      this.#toggleActionPicker(picker, true);
+      const options = [...(this.#actionPickerMenu(picker)?.querySelectorAll("[data-m12-action-option]") ?? [])];
+      options.at(-1)?.focus?.({ preventScroll: true });
+    }
+  }
+
+  #actionOptionKeydown(event, option) {
+    const options = [...(option.closest('[role="listbox"]')?.querySelectorAll("[data-m12-action-option]") ?? [])];
+    const index = options.indexOf(option);
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      this.#selectActionOption(option);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      this.#toggleActionPicker(this.element.querySelector(`[data-m12-action-picker][data-station-id="${option.dataset.stationId}"]`), false);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const next = options[(index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length];
+      next?.focus?.({ preventScroll: true });
+    }
+  }
+
+  #selectActionOption(option) {
+    if (!option) return;
+    const stationId = option.dataset.stationId;
+    const actionId = option.dataset.actionId ?? "";
+    const approachId = option.dataset.approachId ?? "";
+    this.#toggleActionPicker(this.element.querySelector(`[data-m12-action-picker][data-station-id="${stationId}"]`), false);
+    this.#dispatchPlanning("station-selection", { stationId, actionId, approachId, riskBidId: null });
+  }
+
   #selection(element) {
     const stationId = element.dataset.stationId;
-    const actionId = this.element.querySelector(`[data-m12-action="${stationId}"]`)?.value ?? "";
+    const actionId = this.element.querySelector(`[data-m12-action-picker][data-station-id="${stationId}"]`)?.dataset.selectedActionId ?? "";
     const action = [...this.element.querySelectorAll(`[data-m12-action-option="${stationId}"]`)].find((entry) => entry.dataset.actionId === actionId);
     const actionChanged = Boolean(element.dataset.m12Action);
     const approachId = actionChanged
@@ -407,6 +576,19 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     target.style.borderTop = "";
     target.style.borderBottom = "";
     if (!proposed || proposed.every((stationId, index) => stationId === order[index])) return;
+    this.#dispatchPlanning("station-order", { stationOrder: proposed });
+  }
+
+  #moveOrder(button) {
+    if (!button || button.disabled || this.#mode !== "live") return;
+    const stationId = button.dataset.stationId;
+    const direction = button.dataset.direction === "up" ? -1 : 1;
+    const order = [...this.element.querySelectorAll("[data-m12-order-station]")].map((entry) => entry.dataset.stationId);
+    const index = order.indexOf(stationId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= order.length) return;
+    const proposed = reorderVoyagePlanningOrder(order, stationId, order[targetIndex], direction < 0);
+    if (!proposed || proposed.every((entry, position) => entry === order[position])) return;
     this.#dispatchPlanning("station-order", { stationOrder: proposed });
   }
 
@@ -457,6 +639,16 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     this.#authorityEpoch = reread.authorityEpoch;
     this.#pendingViewState = viewState;
     this.render();
+    return result;
+  }
+
+  async #focusReaction(commandKind, reactionId = null) {
+    reactionId ??= this.element.querySelector("[data-m12-focus-use], [data-m12-focus-pass]")?.dataset?.reactionId;
+    if (!reactionId) return null;
+    const result = await game.arcflight?.dispatchVoyageEventSessionCommand?.({ kind: "voyage.m11-command", requestId: randomId("m12-focus"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision, authorityEpoch: this.#authorityEpoch, commandKind, payload: { reactionId } });
+    if (!result?.ok) ui.notifications?.error?.(result?.errors?.[0]?.message ?? "Focus reaction was rejected.");
+    const reread = reloadVoyageEventSession(this.#sessionId, eventContext());
+    if (reread.ok) { this.#expectedRevision = reread.revision; this.#authorityEpoch = reread.authorityEpoch; this.render(); }
     return result;
   }
 

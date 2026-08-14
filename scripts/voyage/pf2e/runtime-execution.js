@@ -63,6 +63,18 @@ function createMomentumModifier(runtime, momentumRollBonus) {
   }
 }
 
+function createFocusModifier(runtime, focusModifier) {
+  const gameRead = safeRead(runtime, "game");
+  const pf2eRead = gameRead.ok ? safeRead(gameRead.value, "pf2e") : { ok: false, value: undefined };
+  const modifierRead = pf2eRead.ok ? safeRead(pf2eRead.value, "Modifier") : { ok: false, value: undefined };
+  if (!modifierRead.ok || typeof modifierRead.value !== "function") throw runtimeFailure("voyage-pf2e-focus-modifier-unavailable", "PF2e Modifier constructor is unavailable.");
+  try {
+    return new modifierRead.value({ slug: "arcflight-focus", label: "Arcflight Focus", modifier: focusModifier, type: "untyped" });
+  } catch {
+    throw runtimeFailure("voyage-pf2e-focus-modifier-construction-failed", "PF2e Focus modifier could not be constructed.");
+  }
+}
+
 function preparePf2eRollParameters(runtime, parameters) {
   let ownsMomentum;
 
@@ -75,7 +87,19 @@ function preparePf2eRollParameters(runtime, parameters) {
     );
   }
 
-  if (!ownsMomentum) return parameters;
+  let supplied = parameters;
+  let focusModifier;
+  try { focusModifier = Object.hasOwn(parameters, "focusModifier") ? parameters.focusModifier : undefined; } catch { throw runtimeFailure("voyage-pf2e-invalid-focus-modifier", "Focus modifier could not be inspected safely."); }
+  if (focusModifier !== undefined) {
+    if (!Number.isSafeInteger(focusModifier) || focusModifier < -5 || focusModifier > 5) throw runtimeFailure("voyage-pf2e-invalid-focus-modifier", "Focus modifier must be a safe integer from -5 through 5.");
+    supplied = { ...supplied };
+    delete supplied.focusModifier;
+  }
+  if (!ownsMomentum) {
+    const effectiveFocus = Math.max(-5, Math.min(5, focusModifier ?? 0));
+    if (effectiveFocus !== 0) supplied.modifiers = [...(Array.isArray(supplied.modifiers) ? supplied.modifiers : []), createFocusModifier(runtime, effectiveFocus)];
+    return supplied;
+  }
 
   const momentumRead = safeRead(parameters, "momentumRollBonus");
   const momentumRollBonus = momentumRead.value;
@@ -92,10 +116,12 @@ function preparePf2eRollParameters(runtime, parameters) {
     );
   }
 
-  const supplied = { ...parameters };
+  supplied = { ...supplied };
   delete supplied.momentumRollBonus;
 
-  if (momentumRollBonus === 0) return supplied;
+  const effectiveTotal = Math.max(-5, Math.min(5, momentumRollBonus + (focusModifier ?? 0)));
+  const effectiveFocus = effectiveTotal - momentumRollBonus;
+  if (momentumRollBonus === 0 && effectiveFocus === 0) return supplied;
 
   const modifiersRead = safeRead(parameters, "modifiers");
   const existingModifiers = modifiersRead.ok
@@ -112,10 +138,9 @@ function preparePf2eRollParameters(runtime, parameters) {
     );
   }
 
-  supplied.modifiers = [
-    ...(existingModifiers ?? []),
-    createMomentumModifier(runtime, momentumRollBonus)
-  ];
+  supplied.modifiers = [...(existingModifiers ?? [])];
+  if (momentumRollBonus !== 0) supplied.modifiers.push(createMomentumModifier(runtime, momentumRollBonus));
+  if (effectiveFocus !== 0) supplied.modifiers.push(createFocusModifier(runtime, effectiveFocus));
 
   return supplied;
 }

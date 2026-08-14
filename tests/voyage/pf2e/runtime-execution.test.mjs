@@ -123,6 +123,22 @@ test("positive Momentum appends to existing modifiers without mutating caller da
   assert.equal(parameters.modifiers, existingModifiers);
   assert.deepEqual(existingModifiers, [first, second]);
 });
+test("aggregated Focus modifier accepts +5 and rolls exactly once", async () => {
+  let rolls = 0; let focusModifier;
+  class Modifier { constructor(value) { if (value.slug === "arcflight-focus") focusModifier = value.modifier; } }
+  const statistic = { roll(value) { rolls += 1; return { total: 20, degreeOfSuccess: 2 }; } };
+  const runtime = { game: { system: { id: "pf2e" }, pf2e: { Modifier } }, fromUuid: async () => ({ documentName: "Actor", getStatistic: () => statistic }) };
+  const result = await executeVoyagePf2ePendingCheckInFoundry({ ...pending, focusModifier: 5 }, runtime);
+  assert.equal(result.ok, true); assert.equal(focusModifier, 5); assert.equal(rolls, 1);
+});
+test("Momentum plus aggregated Focus preserves Momentum and caps total at +5", async () => {
+  let rolls = 0; const modifiers = [];
+  class Modifier { constructor(value) { modifiers.push(value); } }
+  const statistic = { roll(value) { rolls += 1; return { total: 20, degreeOfSuccess: 2 }; } };
+  const runtime = { game: { system: { id: "pf2e" }, pf2e: { Modifier } }, fromUuid: async () => ({ documentName: "Actor", getStatistic: () => statistic }) };
+  const result = await executeVoyagePf2ePendingCheckInFoundry({ ...pending, momentumRollBonus: 3, focusModifier: 2 }, runtime);
+  assert.equal(result.ok, true); assert.deepEqual(modifiers.map((entry) => [entry.slug, entry.modifier]), [["arcflight-momentum", 3], ["arcflight-focus", 2]]); assert.equal(rolls, 1);
+});
 test("non-array supplied modifiers block before Statistic.roll", () => {
   let rolls = 0;
   class Modifier {}

@@ -104,6 +104,8 @@ function capturePendingCheck(value) {
     if (!read.present) issue(errors, "voyage-pf2e-invalid-request", key, `Pending check requires ${key}.`);
     else captured[key] = read.value;
   }
+  const focusModifier = readOwnData(value, "focusModifier", "focusModifier", errors);
+  if (focusModifier.present && focusModifier.ok) captured.focusModifier = focusModifier.value;
 
   return { captured, errors };
 }
@@ -195,6 +197,9 @@ export async function resolveVoyagePf2ePendingCheckContext(pendingCheck, depende
       "Momentum roll bonus must be a safe integer from 0 through 3."
     );
   }
+  if (captured.focusModifier !== undefined && (!Number.isSafeInteger(captured.focusModifier) || captured.focusModifier < -5 || captured.focusModifier > 5)) {
+    issue(errors, "voyage-pf2e-invalid-focus-modifier", "focusModifier", "Focus modifier must be a safe integer from -5 through 5.");
+  }
 
   let rollMode;
   if (captured.secrecy === "public") rollMode = "public";
@@ -263,7 +268,7 @@ export async function resolveVoyagePf2ePendingCheckContext(pendingCheck, depende
     errors: [],
     warnings: []
   };
-  return {
+  const context = {
     result,
     context: {
       actor,
@@ -272,4 +277,6 @@ export async function resolveVoyagePf2ePendingCheckContext(pendingCheck, depende
       momentumRollBonus: captured.momentumRollBonus
     }
   };
+  if (captured.focusModifier !== undefined) context.context.focusModifier = captured.focusModifier;
+  return context;
 }

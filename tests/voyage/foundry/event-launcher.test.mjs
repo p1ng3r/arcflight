@@ -2,13 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { buildVoyageEventManagerDashboardModel, isVoyageEventSessionActive, isVoyageEventSessionTerminal, launchVoyageEventSession, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../../../scripts/voyage/foundry/event-launcher.js";
-import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID } from "../../../scripts/voyage/m12/event-definition.js";
+import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID, M12_FOCUS_ABILITIES } from "../../../scripts/voyage/m12/event-definition.js";
 import { ARCFLIGHT_SHIP_ACTOR_TYPE } from "../../../scripts/documents/ships.js";
 import { analyzeVoyageEventDefinitionRoundActionAuthoring } from "../../../scripts/voyage/domain/round-action-authoring.js";
 import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 
 globalThis.foundry ??= { applications: { api: { HandlebarsApplicationMixin: (base) => base, ApplicationV2: class {} } } };
-const { buildEventManagerResolutionPresentation, buildPlanningStations, buildVoyagePlanReview, buildVoyagePlanningOrder, buildVoyageStationSelectionClearCommand, isVoyagePlanReady, reorderVoyagePlanningOrder, EVENT_MANAGER_TAB_IDS, normalizeEventManagerTab } = await import("../../../scripts/voyage/apps/event-manager.js");
+const { buildEventManagerResolutionPresentation, buildPlanningStations, buildVoyagePlanReview, buildVoyagePlanningOrder, buildVoyageRiskBidDependencies, buildVoyageStationSelectionClearCommand, isVoyagePlanReady, reorderVoyagePlanningOrder, EVENT_MANAGER_TAB_IDS, normalizeEventManagerTab } = await import("../../../scripts/voyage/apps/event-manager.js");
+const { VOYAGE_STATION_ICON_REGISTRY, stationPresentation } = await import("../../../scripts/voyage/apps/station-icons.js");
+const { VOYAGE_RESOURCE_ICON_REGISTRY, resourcePresentation } = await import("../../../scripts/voyage/apps/resource-icons.js");
 
 function actor(id, name, ship = false, tracker = null, actorType = ARCFLIGHT_SHIP_ACTOR_TYPE, enabled = true) { return { id, uuid: `Actor.${id}`, name, type: ship ? "vehicle" : "character", getFlag: (_module, key) => ship ? (key === "enabled" ? enabled : actorType) : (key === "enabled" ? enabled : actorType), async update() { if (tracker) tracker.actors += 1; return this; } }; }
 function fixture() {
@@ -53,12 +55,85 @@ test("M12 ship filtering requires the canonical enabled Arcflight vehicle identi
 
 test("registered M12 snapshot is directly Task-2-compatible across all three rounds", () => {
   const definition = getM12EventDefinition();
+    assert.equal(M12_DEFINITION_SNAPSHOT_ID, "m12-glassback-cinderwake-v3");
+  assert.equal(definition.definitionSnapshotId, M12_DEFINITION_SNAPSHOT_ID);
   const analysis = analyzeVoyageEventDefinitionRoundActionAuthoring(definition);
   assert.equal(analysis.authoringValid, true, JSON.stringify(analysis.errors));
   assert.equal(definition.rounds.length, 3);
   for (const round of definition.rounds) {
     for (const station of round.availableStations) assert.equal(station.actions.length, 3);
   }
+});
+
+test("M12 vertical slice is handcrafted with transparent approaches and nonempty authored Risk Bids", () => {
+  const definition = getM12EventDefinition();
+  assert.deepEqual(definition.rounds.map((round) => Object.keys(round).slice(0, 6)), [
+    ["roundId", "roundNumber", "title", "vignette", "situation", "objective"],
+    ["roundId", "roundNumber", "title", "vignette", "situation", "objective"],
+    ["roundId", "roundNumber", "title", "vignette", "situation", "objective"]
+  ]);
+  for (const round of definition.rounds) {
+    assert.equal(typeof round.knownStakes, "string");
+    for (const station of round.availableStations) {
+      assert.equal(station.actions.length, 3);
+      assert.equal(new Set(station.actions.map((action) => action.name)).size, 3);
+      for (const action of station.actions) {
+        assert.ok(action.description);
+        assert.ok(action.approaches.length >= 1 && action.approaches.length <= 2);
+        assert.ok(action.approaches.every((approach) => approach.name && approach.description));
+        assert.ok(action.riskBidOptions.length >= 0 && action.riskBidOptions.length <= 3);
+        assert.ok(action.riskBidOptions.every((option) => [2, 5, 8].includes(option.dcAdjustment)
+          && option.outcomes.criticalSuccess.length > 0
+          && option.outcomes.success.length > 0
+          && option.outcomes.failure.length === 0
+          && option.outcomes.criticalFailure.length === 0));
+        const references = action.riskBidOptions.flatMap((option) => Object.values(option.outcomes).flat());
+        assert.equal(new Set(references).size, references.length);
+        assert.equal(new Set(action.outcomeDefinition.effectRules.map((rule) => rule.effectId)).size, action.outcomeDefinition.effectRules.length);
+        assert.deepEqual(new Set(references), new Set(action.outcomeDefinition.effectRules.map((rule) => rule.effectId)));
+        for (const option of action.riskBidOptions) {
+          const stakes = action.riskBidPresentation[String(option.dcAdjustment)];
+          assert.ok(stakes?.intendedBenefit && stakes.target);
+          assert.ok(Object.values(stakes.outcome).every((text) => text && !/authored (benefit|consequence) applies/i.test(text)));
+        }
+      }
+    }
+  }
+  for (const round of definition.rounds) {
+    const riskActions = round.availableStations.flatMap((station) => station.actions.filter((action) => action.riskBidOptions.length > 0));
+    assert.equal(riskActions.length, 4);
+    assert.ok(round.availableStations.every((station) => station.actions.filter((action) => action.riskBidOptions.length > 0).length <= 2));
+    assert.ok(round.availableStations.every((station) => station.actions.some((action) => action.riskBidOptions.length === 0)));
+    for (const action of riskActions) {
+      assert.ok(action.riskBidOptions.every((option) => action.riskBidPresentation[String(option.dcAdjustment)]?.mechanicalEffect?.effects?.length > 0));
+    }
+  }
+  const mark = definition.rounds[0].availableStations.find((station) => station.stationId === "captain").actions.find((action) => action.name === "Mark the Beast");
+  assert.deepEqual(mark.riskBidPresentation["2"].mechanicalEffect.effects, [{ effectKind: "roll-bonus", value: 1, targetStationIds: ["navigator"], activationTiming: "next-unresolved-check", consumptionTiming: "on-target-resolution", requiresSourceBeforeTarget: true }]);
+  assert.deepEqual(mark.riskBidPresentation["5"].mechanicalEffect.effects.map(({ effectKind, value, targetStationIds }) => ({ effectKind, value, targetStationIds })), [
+    { effectKind: "roll-bonus", value: 2, targetStationIds: ["navigator"] },
+    { effectKind: "roll-bonus", value: 1, targetStationIds: ["watchmaster"] }
+  ]);
+  assert.equal(mark.riskBidPresentation["8"].mechanicalEffect.effects[0].effectKind, "degree-shift");
+  assert.ok(/no additional Risk Bid penalty/.test(mark.riskBidPresentation["2"].outcome.failure));
+  for (const stationId of definition.rounds[0].availableStations.map((station) => station.stationId)) {
+    const signatures = definition.rounds.map((round) => JSON.stringify(round.availableStations.find((station) => station.stationId === stationId).actions.map((action) => ({
+      name: action.name,
+      description: action.description,
+      approaches: action.approaches.map(({ name, description, statisticSlugOrAbilityId }) => ({ name, description, statisticSlugOrAbilityId })),
+      bids: action.riskBidOptions.map(({ dcAdjustment, outcomes }) => ({ dcAdjustment, outcomes }))
+    }))));
+    assert.equal(new Set(signatures).size, definition.rounds.length, `${stationId} rounds must have distinct authored signatures`);
+  }
+  for (let stationIndex = 0; stationIndex < definition.rounds[0].availableStations.length; stationIndex += 1) {
+    const namesByRound = definition.rounds.map((round) => round.availableStations[stationIndex].actions.map((action) => action.name).join("|"));
+    assert.equal(new Set(namesByRound).size, definition.rounds.length);
+  }
+  const ability = M12_FOCUS_ABILITIES[0];
+  assert.deepEqual(Object.keys(ability), ["focusAbilityId", "name", "description", "trigger", "timing", "cost", "stationId", "targetStationId", "eligibleSource", "targetRule", "check", "dcSource", "statisticSlugOrAbilityId", "dc", "secrecy", "outcomes", "outcomeNarration", "visibility", "narration"]);
+  for (const field of ["focusAbilityId", "name", "description", "trigger", "timing", "cost", "stationId", "targetStationId", "eligibleSource", "targetRule", "check", "dcSource", "statisticSlugOrAbilityId", "dc", "secrecy", "outcomes", "outcomeNarration", "visibility", "narration"]) assert.ok(Object.hasOwn(ability, field), field);
+  assert.deepEqual(Object.keys(ability.outcomes), ["criticalSuccess", "success", "failure", "criticalFailure"]);
+  assert.ok(Object.values(ability.outcomeNarration).every((text) => text.length > 0));
 });
 
 test("M12 launch reaches Round 1 Crew Planning and replays idempotently", async () => {
@@ -461,12 +536,187 @@ test("M12 Crew Plan keeps an unselected action blank and gates approach/risk unt
   assert.deepEqual(blank.approaches, []);
   assert.deepEqual(blank.riskBidOptions, []);
   const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
-  assert.match(template, /<option value="" \{\{#unless selectedActionId\}\}selected\{\{\/unless\}\}>Choose Action\.\.\.<\/option>/);
+  assert.match(template, /data-m12-action-picker/);
+  assert.match(template, /role="listbox"/);
+  assert.match(template, /role="option"/);
+  assert.doesNotMatch(template, /data-m12-action-option="\{\{\.\.\/stationId\}\}"[^>]*<option/);
+  assert.match(template, /riskBidAvailableResource/);
   assert.match(template, /Select an Action first/);
   const selected = buildPlanningStations({ ...planning, selections: { captain: { actionId: "action-1", approachId: "", statisticSlugOrAbilityId: null } } })[0];
   assert.equal(selected.actions.find((action) => action.actionId === "action-1").selected, true);
   assert.equal(selected.approaches.length, 1);
   assert.deepEqual(selected.riskBidOptions.map((option) => option.dcAdjustment), [2]);
+});
+
+test("M12 Crew Plan action picker marks only authored Risk Bid actions and keeps the canonical selection path", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const runtime = readFileSync(new URL("../../../scripts/voyage/apps/event-manager.js", import.meta.url), "utf8");
+  assert.match(template, /data-m12-action-picker/);
+  assert.match(template, /data-m12-action-option/);
+  assert.match(template, /data-action-id="\{\{actionId\}\}"/);
+  assert.match(template, /data-approach-id="\{\{approaches\.\[0\]\.approachId\}\}"/);
+  assert.match(template, /resourceIconPath/);
+  assert.match(template, /aria-label="\{\{riskBidAvailableResource\.resourceIconTitle\}\}"/);
+  assert.match(runtime, /#selectActionOption/);
+  assert.match(runtime, /#actionPickerKeydown/);
+  assert.match(runtime, /riskBidId: null/);
+  assert.match(template, /selectedActionHasRiskBids/);
+  assert.match(template, /action-picker-readonly/);
+});
+
+test("M12 choice transparency names authored Risk Bid and Focus consequences", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /displayName/);
+  assert.match(template, /adjustedDc/);
+  assert.match(template, /presentation\.intendedBenefit/);
+  assert.match(template, /presentation\.outcome\.failure/);
+  assert.match(template, /focusAbility\.name/);
+  assert.match(template, /focusAbility\.criticalSuccess/);
+  assert.match(template, /focusAbility\.criticalFailure/);
+  assert.match(template, /focusAbility\.visibility/);
+  assert.doesNotMatch(template, /<p>Eligible: \{\{operatorId\}\} \/ \{\{focusAbilityId\}\}<\/p>/);
+});
+
+test("M12 Event Manager body template has one ApplicationV2 root", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const staticMarkup = template.replace(/\{\{[\s\S]*?\}\}/g, "");
+  const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+  const tags = /<\/?([a-z][\w:-]*)(?:\s[^<>]*?)?\/?\s*>/gi;
+  let depth = 0;
+  let roots = 0;
+  let match;
+  while ((match = tags.exec(staticMarkup))) {
+    const token = match[0];
+    const name = match[1].toLowerCase();
+    if (token.startsWith("</")) {
+      depth -= 1;
+      assert.ok(depth >= 0, `unbalanced closing tag: ${name}`);
+    } else {
+      if (depth === 0) roots += 1;
+      if (!token.endsWith("/>") && !voidTags.has(name)) depth += 1;
+    }
+  }
+  assert.equal(roots, 1);
+  assert.equal(depth, 0);
+  assert.match(staticMarkup.trim(), /^<div class="arcflight-event-manager event-manager-shell"/);
+  assert.match(staticMarkup, /<style data-component="event-manager-task4-ui">/);
+});
+
+test("M12 station icon registry decorates planning, order, Risk Bid, and template models", () => {
+  const expected = {
+    captain: "modules/arcflight/assets/ui/stations/captain_icon.webp",
+    navigator: "modules/arcflight/assets/ui/stations/navigator_icon.webp",
+    watchmaster: "modules/arcflight/assets/ui/stations/watchmaster_icon.webp",
+    veilwarden: "modules/arcflight/assets/ui/stations/veilwarden_icon.webp",
+    engineer: "modules/arcflight/assets/ui/stations/engineer_icon.webp"
+  };
+  for (const [stationId, path] of Object.entries(expected)) {
+    assert.equal(VOYAGE_STATION_ICON_REGISTRY[stationId].file, `${stationId}_icon.webp`);
+    assert.equal(stationPresentation(stationId).stationIconPath, path);
+    assert.equal(stationPresentation(stationId).stationIconSize, 48);
+    assert.equal(stationPresentation(stationId).stationIconMajorSize, 56);
+    assert.equal(stationPresentation(stationId).stationIconTitle, `${stationPresentation(stationId).stationDisplayName} Station`);
+  }
+  assert.equal(stationPresentation("future-station").stationIconPath, null);
+  assert.equal(stationPresentation("future-station").stationDisplayName, "Future Station");
+  assert.equal(stationPresentation("future-station").stationIconSize, 48);
+  const planning = { stationAssignments: [{ stationId: "captain", operator: { name: "Captain" } }], stations: [{ stationId: "captain", actions: [{ actionId: "mark", name: "Mark the Beast", approaches: [{ approachId: "approach" }], riskBidOptions: [{ riskBidId: "mark-risk-5", dcAdjustment: 5 }], riskBidPresentation: { "5": { label: "+5 Risk Bid", mechanicalEffect: { effects: [{ effectKind: "roll-bonus", value: 2, targetStationIds: ["navigator"] }] }, intendedBenefit: "Navigator bonus", target: "Navigator", outcome: { failure: "No payoff", criticalFailure: "No payoff" } } } }, { actionId: "steady", name: "Steady the Crew", approaches: [{ approachId: "steady-approach" }], riskBidOptions: [] }] }], selections: { captain: { actionId: "mark", approachId: "approach" } }, riskBids: { captain: { riskBidId: "mark-risk-5", dcAdjustment: 5 } } };
+  const stations = buildPlanningStations(planning);
+  assert.equal(stations[0].stationIconPath, expected.captain);
+  assert.equal(stations[0].actions.find((action) => action.actionId === "mark").riskBidBadge, undefined);
+  assert.equal(stations[0].actions.find((action) => action.actionId === "steady").riskBidBadge, undefined);
+  assert.equal(stations[0].actions.find((action) => action.actionId === "mark").displayName, "Mark the Beast");
+  assert.equal(stations[0].selectedActionHasRiskBids, true);
+  assert.equal(stations[0].selectedRiskBidAvailableResource.resourceIconPath, "modules/arcflight/assets/ui/resources/risk_bid_icon.webp");
+  assert.equal(stations[0].selectedRiskBidResource.resourceIconPath, "modules/arcflight/assets/ui/resources/risk_bid_icon_+5.webp");
+  assert.equal(stations[0].riskBidOptions[0].targetStations[0].stationIconPath, expected.navigator);
+  assert.equal(stations[0].riskBidOptions[0].payoffEffects[0].targetStations[0].stationDisplayName, "Navigator");
+  assert.equal(stations[0].riskBidOptions[0].payoffEffects[0].text, "+2 to the next unresolved station roll this round");
+  assert.equal(stations[0].riskBidOptions[0].failureText, "No payoff");
+  const noBidStation = buildPlanningStations({ ...planning, selections: { captain: { actionId: "steady", approachId: "steady-approach" } }, riskBids: {} })[0];
+  assert.equal(noBidStation.selectedActionHasRiskBids, false);
+  assert.equal(noBidStation.selectedRiskBidAvailableResource, null);
+  assert.equal(noBidStation.expanded, false);
+  const readyStation = buildPlanningStations({ ...planning, selections: { captain: { actionId: "mark", approachId: "approach" } }, riskBids: { captain: { riskBidId: "mark-risk-5", dcAdjustment: 5 } } })[0];
+  assert.equal(readyStation.ready, true);
+  assert.equal(readyStation.expanded, false);
+  assert.equal(buildPlanningStations({ ...planning, selections: { captain: { actionId: "mark", approachId: "approach" } }, riskBids: { captain: { riskBidId: "mark-risk-5", dcAdjustment: 5 } } }, false, "captain")[0].expanded, true);
+  const dependencies = buildVoyageRiskBidDependencies(stations, ["captain", "navigator"]);
+  assert.equal(dependencies[0].sourceStationIconPath, expected.captain);
+  assert.equal(dependencies[0].targetStations[0].stationDisplayName, "Navigator");
+  assert.match(dependencies[0].status, /ORDER VALID/);
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /stationIconPath/);
+  assert.match(template, /stationIconTitle/);
+  assert.match(template, /stationIconSize/);
+  assert.match(template, /stationIconMajorSize/);
+  assert.match(template, /station-cell/);
+  assert.match(template, /targetStations/);
+  assert.match(template, /risk-bid-target-cell/);
+  assert.match(template, /FAILURE \/ CRITICAL FAILURE/);
+  assert.match(template, /ACTIVE BENEFIT/);
+  assert.match(template, /sourceActionId/);
+  assert.match(template, /effectText/);
+  assert.match(template, /consumptionLabel/);
+  assert.match(template, /No Risk Bid is authored for this action/);
+});
+
+test("M12 resource registry decorates Risk Bid tiers, Focus, and Resolution Order cards", () => {
+  const expected = {
+    focus: "modules/arcflight/assets/ui/resources/focus_icon.webp",
+    riskBid: "modules/arcflight/assets/ui/resources/risk_bid_icon.webp",
+    riskBid2: "modules/arcflight/assets/ui/resources/risk_bid_icon_+2.webp",
+    riskBid5: "modules/arcflight/assets/ui/resources/risk_bid_icon_+5.webp",
+    riskBid8: "modules/arcflight/assets/ui/resources/risk_bid_icon_+8.webp"
+  };
+  for (const [key, path] of Object.entries(expected)) assert.equal(resourcePresentation(key).resourceIconPath, path);
+  assert.equal(resourcePresentation("riskBid", 2).resourceIconPath, expected.riskBid2);
+  assert.equal(resourcePresentation("riskBid", 5).resourceIconPath, expected.riskBid5);
+  assert.equal(resourcePresentation("riskBid", 8).resourceIconPath, expected.riskBid8);
+  assert.equal(resourcePresentation("focus").resourceIconSize, 40);
+  assert.equal(resourcePresentation("riskBid", 5).resourceIconSize, 64);
+  assert.equal(VOYAGE_RESOURCE_ICON_REGISTRY.riskBid.file, "risk_bid_icon.webp");
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /resolution-order-rail/);
+  assert.match(template, /stationOrderIconSize/);
+  assert.match(template, /selectedRiskBidResource/);
+  assert.match(template, /action-picker-option:hover/);
+  assert.match(template, /aria-selected="true"\]::before/);
+  assert.match(template, /crew-plan-controls/);
+  assert.match(template, /station-compact-summary/);
+  assert.match(template, /data-m12-edit-station/);
+  assert.match(template, /risk-bid-tier-summary/);
+  assert.match(template, /selectedRiskBidId/);
+  assert.match(template, /riskBidFinalDc/);
+  assert.match(template, /resourceIconPath/);
+  assert.match(template, /focusResource/);
+  assert.match(template, /OPERATOR:/);
+  assert.match(template, /ACTION:/);
+  assert.match(template, /APPROACH:/);
+  assert.match(template, /data-m12-order-station/);
+  assert.match(template, /data-m12-order-move/);
+  assert.match(template, /stationOrderIconSize/);
+  assert.match(template, /canMoveUp/);
+  assert.match(template, /canMoveDown/);
+  assert.match(template, /resolution-order-status/);
+  assert.match(template, /overview-station-cell/);
+  assert.match(template, /plan-review-station/);
+  assert.match(template, /selectedRiskBidAvailableResource/);
+  assert.match(template, /selectedActionHasRiskBids/);
+  assert.doesNotMatch(template, /riskBidBadge/);
+  assert.match(template, /font-family/);
+  assert.match(template, /Cinzel/);
+  assert.match(template, /Inter/);
+  assert.match(template, /selectedRiskBidResource/);
+  assert.match(template, /riskBidPayoffEffects/);
+  const orderCard = template.slice(template.indexOf('<ol data-m12-order-list'), template.indexOf('</ol>'));
+  assert.ok(orderCard.indexOf('resolution-order-rail') < orderCard.indexOf('resolution-order-identity'));
+  assert.ok(orderCard.indexOf('resolution-order-identity') < orderCard.indexOf('resolution-order-fields'));
+  assert.ok(orderCard.indexOf('resolution-order-fields') < orderCard.indexOf('resolution-order-risk'));
+  assert.ok(orderCard.indexOf('resolution-order-risk') < orderCard.indexOf('resolution-order-status'));
+  const planCard = template.slice(template.indexOf('<div class="plan-review-stations"'), template.indexOf('</div>', template.indexOf('<div class="plan-review-stations"')));
+  assert.ok(planCard.indexOf('station-identity') < planCard.indexOf('station-detail-fields'));
+  assert.ok(planCard.indexOf('station-detail-fields') < planCard.indexOf('plan-review-status'));
 });
 
 test("M12 Task 2 Clear uses the exact station-selection-clear command", () => {
@@ -825,6 +1075,18 @@ test("public Foundry launch adapter snapshots User documents into trusted plain 
     assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.revision, 5);
     assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.checkpoints, []);
     assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.stationAssignments.map((entry) => entry.stationId), ["captain", "engineer"]);
+    let revision = result.revision;
+    for (const [stationId, actionId] of [["captain", "captain-round-1-action-1"], ["engineer", "engineer-round-1-action-1"]]) {
+      const selection = await globalThis.game.arcflight.dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: `public-focus-select-${stationId}`, sessionId: "foundry-auth-session", expectedRevision: revision, authorityEpoch: 0, commandKind: "station-selection", payload: { stationId, actionId, approachId: `${actionId}-approach`, riskBidId: null } });
+      assert.equal(selection.ok, true, JSON.stringify(selection.errors)); revision = selection.revision;
+    }
+    const ordered = await globalThis.game.arcflight.dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "public-focus-order", sessionId: "foundry-auth-session", expectedRevision: revision, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["captain", "engineer"] } });
+    assert.equal(ordered.ok, true, JSON.stringify(ordered.errors));
+    const locked = await globalThis.game.arcflight.dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "public-focus-lock", sessionId: "foundry-auth-session", expectedRevision: ordered.revision, authorityEpoch: 0, commandKind: "plan-lock", payload: { phaseStartSnapshotId: "public-focus-lock" } });
+    assert.equal(locked.ok, true, JSON.stringify(locked.errors));
+    const started = await globalThis.game.arcflight.beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "public-focus-begin", sessionId: "foundry-auth-session", expectedRevision: locked.revision, authorityEpoch: 0 });
+    assert.equal(started.ok, true, JSON.stringify(started.errors));
+    assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.metadata.focusAbilities, M12_FOCUS_ABILITIES);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value.exists) globalThis[key] = value.value;

@@ -993,6 +993,38 @@ function analyzeStations(round, roundPath, errors) {
     });
   }
 
+  const riskBidActionCount = normalizedStations.reduce(
+    (total, station) => total + station.actions.filter((action) => action.riskBidOptions.length > 0).length,
+    0
+  );
+  if (riskBidActionCount > 4) {
+    issue(
+      errors,
+      "event-definition-round-risk-bid-cap-exceeded",
+      `${roundPath}.availableStations`,
+      "Each authored round may offer Risk Bids on at most four action choices."
+    );
+  }
+  for (const station of normalizedStations) {
+    const stationRiskBidCount = station.actions.filter((action) => action.riskBidOptions.length > 0).length;
+    if (stationRiskBidCount > 2) {
+      issue(
+        errors,
+        "event-definition-station-risk-bid-cap-exceeded",
+        `${roundPath}.availableStations[${station.stationIndex}].actions`,
+        "A station may offer Risk Bids on at most two of its three actions."
+      );
+    }
+    if (stationRiskBidCount === station.actions.length) {
+      issue(
+        errors,
+        "event-definition-station-risk-bid-normal-action-required",
+        `${roundPath}.availableStations[${station.stationIndex}].actions`,
+        "Each station must retain at least one normal action without a Risk Bid."
+      );
+    }
+  }
+
   return { structurallyValid, stationCount, stations: normalizedStations };
 }
 

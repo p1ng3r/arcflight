@@ -137,7 +137,7 @@ import {
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
 import { launchVoyageEventSession as launchVoyageEventSessionInternal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections, buildVoyageEventManagerDashboardModel } from "./voyage/foundry/event-launcher.js";
-import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION } from "./voyage/m12/event-definition.js";
+import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION, M12_FOCUS_ABILITIES } from "./voyage/m12/event-definition.js";
 import { getFoundrySessionMutationCoordinator } from "./voyage/foundry/session-coordinator.js";
 import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, beginVoyageEventSessionResolution, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
 import { executeVoyagePf2ePendingCheckInFoundry } from "./voyage/pf2e/runtime-execution.js";
@@ -168,6 +168,7 @@ function trustedLaunchContext() {
     isJournalEntryDocument: (document) => document?.documentName === "JournalEntry" || document?.constructor?.name === "JournalEntry",
     createDocumentId: () => globalThis.foundry?.utils?.randomID?.(),
     resolveEventDefinitionSnapshot: (eventId, definitionSnapshotId) => getM12EventDefinition(eventId, definitionSnapshotId),
+    focusAbilities: M12_FOCUS_ABILITIES,
     runExclusiveSessionMutation: getFoundrySessionMutationCoordinator(globalThis.game),
     executeVoyagePf2ePendingCheck: (pendingCheck) => executeVoyagePf2ePendingCheckInFoundry(pendingCheck, globalThis),
     applyVoyageEncounterAbortTransition
