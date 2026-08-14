@@ -139,7 +139,7 @@ import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers
 import { launchVoyageEventSession as launchVoyageEventSessionInternal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections, buildVoyageEventManagerDashboardModel } from "./voyage/foundry/event-launcher.js";
 import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION, M12_FOCUS_ABILITIES } from "./voyage/m12/event-definition.js";
 import { getFoundrySessionMutationCoordinator } from "./voyage/foundry/session-coordinator.js";
-import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, beginVoyageEventSessionResolution, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
+import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, authorizeVoyageEventSessionOperator, beginVoyageEventSessionResolution, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
 import { executeVoyagePf2ePendingCheckInFoundry } from "./voyage/pf2e/runtime-execution.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 
@@ -151,6 +151,34 @@ function trustedFoundryUsers() {
     return users.map((user) => ({ id: user?.id, isGM: user?.isGM, active: user?.active }));
   } catch {
     return [];
+  }
+}
+
+function trustedOwnedVoyageOperators(userId) {
+  try {
+    const users = globalThis.game?.users;
+    const user = typeof users?.get === "function" ? users.get(userId) : (Array.isArray(users) ? users.find((entry) => entry?.id === userId) : null);
+    if (!user) return null;
+    const ownerLevel = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+    const documents = [];
+    // M12 station operators are currently canonical Actor identities. Item
+    // ownership is not an operator authority source in this slice.
+    for (const collection of [globalThis.game?.actors]) {
+      const values = Array.isArray(collection) ? collection : collection?.contents;
+      if (Array.isArray(values)) documents.push(...values);
+    }
+    const result = [];
+    for (const document of documents) {
+      const permission = typeof document?.testUserPermission === "function"
+        ? (document.testUserPermission(user, "OWNER") === true || document.testUserPermission(user, ownerLevel) === true)
+        : (typeof document?.permission?.[userId] === "number" && document.permission[userId] >= ownerLevel);
+      if (permission !== true) continue;
+      const identity = { kind: "actor", id: document?.id ?? null, uuid: document?.uuid ?? null, name: document?.name ?? "" };
+      if (typeof identity.id === "string" && identity.id.length > 0 && typeof identity.uuid === "string" && identity.uuid.length > 0) result.push(identity);
+    }
+    return result;
+  } catch {
+    return null;
   }
 }
 
@@ -168,6 +196,7 @@ function trustedLaunchContext() {
     isJournalEntryDocument: (document) => document?.documentName === "JournalEntry" || document?.constructor?.name === "JournalEntry",
     createDocumentId: () => globalThis.foundry?.utils?.randomID?.(),
     resolveEventDefinitionSnapshot: (eventId, definitionSnapshotId) => getM12EventDefinition(eventId, definitionSnapshotId),
+    resolveVoyageOperatorForPrincipal: (userId) => trustedOwnedVoyageOperators(userId),
     focusAbilities: M12_FOCUS_ABILITIES,
     runExclusiveSessionMutation: getFoundrySessionMutationCoordinator(globalThis.game),
     executeVoyagePf2ePendingCheck: (pendingCheck) => executeVoyagePf2ePendingCheckInFoundry(pendingCheck, globalThis),
@@ -185,6 +214,15 @@ function dispatchVoyageEventSessionCommandFromPublicBoundary(request) {
 
 function readVoyageEventSessionPlanningFromPublicBoundary(sessionId) {
   return readVoyageEventSessionPlanning(sessionId, trustedLaunchContext());
+}
+function readVoyageEventSessionProjectionFromPublicBoundary(request) {
+  return readVoyageEventSessionProjection(request, trustedLaunchContext());
+}
+function readVoyageEventSessionMultiplayerProjectionFromPublicBoundary(request) {
+  return readVoyageEventSessionMultiplayerProjection(request, trustedLaunchContext());
+}
+function authorizeVoyageEventSessionOperatorFromPublicBoundary(request) {
+  return authorizeVoyageEventSessionOperator(request, trustedLaunchContext());
 }
 function readVoyageEventSessionResolutionFromPublicBoundary(sessionId) {
   return readVoyageEventSessionResolution(sessionId, trustedLaunchContext());
@@ -423,6 +461,9 @@ Hooks.once("init", () => {
     validateVoyageEncounterState,
     launchVoyageEventSession: launchVoyageEventSessionFromPublicBoundary,
     dispatchVoyageEventSessionCommand: dispatchVoyageEventSessionCommandFromPublicBoundary,
+    readVoyageEventSessionProjection: readVoyageEventSessionProjectionFromPublicBoundary,
+    readVoyageEventSessionMultiplayerProjection: readVoyageEventSessionMultiplayerProjectionFromPublicBoundary,
+    authorizeVoyageEventSessionOperator: authorizeVoyageEventSessionOperatorFromPublicBoundary,
     readVoyageEventSessionPlanning: readVoyageEventSessionPlanningFromPublicBoundary,
     readVoyageEventSessionResolution: readVoyageEventSessionResolutionFromPublicBoundary,
     beginVoyageEventSessionResolution: beginVoyageEventSessionResolutionFromPublicBoundary,
@@ -559,6 +600,9 @@ export {
   normalizeVoyageEncounterState,
   launchVoyageEventSessionFromPublicBoundary as launchVoyageEventSession,
   dispatchVoyageEventSessionCommandFromPublicBoundary as dispatchVoyageEventSessionCommand,
+  readVoyageEventSessionProjectionFromPublicBoundary as readVoyageEventSessionProjection,
+  readVoyageEventSessionMultiplayerProjectionFromPublicBoundary as readVoyageEventSessionMultiplayerProjection,
+  authorizeVoyageEventSessionOperatorFromPublicBoundary as authorizeVoyageEventSessionOperator,
   readVoyageEventSessionPlanningFromPublicBoundary as readVoyageEventSessionPlanning,
   readVoyageEventSessionResolutionFromPublicBoundary as readVoyageEventSessionResolution,
   beginVoyageEventSessionResolutionFromPublicBoundary as beginVoyageEventSessionResolution,

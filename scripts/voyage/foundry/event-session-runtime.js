@@ -84,6 +84,11 @@ const PROJECTION_FIELDS = Object.freeze([
   "stationAssignments", "committedStationOrder", "currentActingStationId", "momentum", "pressureSystems", "activeHazards",
   "visibleEvents", "closeoutStatus", "recoveryStatus"
 ]);
+const MULTIPLAYER_PROJECTION_FIELDS = Object.freeze([
+  ...PROJECTION_FIELDS,
+  "projectionRole", "ownedOperators", "readOnlyStationIds"
+]);
+const MULTIPLAYER_AUTHORIZATION_FIELDS = Object.freeze(["kind", "sessionId", "stationId"]);
 const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
 const TRANSPORT_WITNESS_FIELDS = Object.freeze(["connectionId", "occurredAt"]);
 const AUDIT_FIELDS = Object.freeze(["auditId", "kind", "sessionId", "requestId", "actorUserId", "authorityEpoch", "previousRevision", "revision", "occurredAt", "details"]);
@@ -1305,23 +1310,76 @@ function canonicalOperator(value) {
   const report = analyzeVoyageStationAssignments([{ stationId: "captain", operator: captured.value }]);
   return report.valid && report.assignments.length === 1 ? report.assignments[0].operator : null;
 }
-function deriveProjectionKind(authenticated, session, context) {
-  if (authenticated.user?.isGM === true) return "gm";
+function canonicalOperators(value) {
+  const captured = capture(value);
+  if (!captured.ok || captured.value === null) return null;
+  const source = Array.isArray(captured.value) ? captured.value : [captured.value];
+  if (source.length === 0) return [];
+  const operators = [];
+  const seen = new Set();
+  for (const entry of source) {
+    const operator = canonicalOperator(entry);
+    if (!operator) return null;
+    const key = `${operator.kind}\0${operator.uuid ?? operator.id}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    operators.push(operator);
+  }
+  return operators;
+}
+function operatorIdentityMatches(left, right) {
+  if (!left || !right || left.kind !== right.kind) return false;
+  if (Object.hasOwn(left, "uuid") && Object.hasOwn(right, "uuid")) return left.uuid === right.uuid;
+  return Object.hasOwn(left, "id") && Object.hasOwn(right, "id") && left.id === right.id;
+}
+function deriveProjectionAuthority(authenticated, session, context) {
   const assignments = session?.encounterState?.stationAssignments;
-  let resolvedOperator = null;
+  const report = analyzeVoyageStationAssignments(assignments);
+  if (!report.valid) return { role: "observer", ownedOperators: [], readOnlyStationIds: [] };
+  if (authenticated.user?.isGM === true) {
+    const currentSessionGm = authenticated.authenticatedUserId === session?.activeGmUserId;
+    return {
+      role: "gm",
+      ownedOperators: report.assignments.map((entry) => ({
+        stationId: entry.stationId,
+        operatorId: entry.operator?.id ?? null,
+        operatorUuid: entry.operator?.uuid ?? null,
+        canAct: currentSessionGm,
+        gmTakeover: currentSessionGm
+      })),
+      readOnlyStationIds: []
+    };
+  }
+  let resolvedOperators = null;
   try {
-    if (typeof context?.resolveVoyageOperatorForPrincipal === "function") resolvedOperator = canonicalOperator(context.resolveVoyageOperatorForPrincipal(authenticated.authenticatedUserId));
-  } catch { resolvedOperator = null; }
-  if (resolvedOperator && Array.isArray(assignments)) {
-    const report = analyzeVoyageStationAssignments(assignments);
-    if (report.valid) {
-      const field = Object.hasOwn(resolvedOperator, "uuid") ? "uuid" : "id";
-      const matches = report.assignments.filter((entry) => entry.operator.kind === resolvedOperator.kind && entry.operator[field] === resolvedOperator[field]);
-      if (matches.length === 1) return "operator";
-      if (matches.length === 0) return "crew";
+    if (typeof context?.resolveVoyageOperatorForPrincipal === "function") {
+      resolvedOperators = canonicalOperators(context.resolveVoyageOperatorForPrincipal(authenticated.authenticatedUserId));
+    }
+  } catch {
+    resolvedOperators = null;
+  }
+  const ownedOperators = [];
+  if (Array.isArray(resolvedOperators)) {
+    for (const entry of report.assignments) {
+      if (resolvedOperators.some((operator) => operatorIdentityMatches(operator, entry.operator))) {
+        ownedOperators.push({
+          stationId: entry.stationId,
+          operatorId: entry.operator?.id ?? null,
+          operatorUuid: entry.operator?.uuid ?? null,
+          canAct: true,
+          gmTakeover: false
+        });
+      }
     }
   }
-  return "observer";
+  return {
+    role: ownedOperators.length > 0 ? "operator" : (Array.isArray(resolvedOperators) && resolvedOperators.length > 0 ? "crew" : "observer"),
+    ownedOperators,
+    readOnlyStationIds: report.assignments.filter((entry) => !ownedOperators.some((owned) => owned.stationId === entry.stationId)).map((entry) => entry.stationId)
+  };
+}
+function deriveProjectionKind(authenticated, session, context) {
+  return deriveProjectionAuthority(authenticated, session, context).role;
 }
 function buildSessionProjection(session, projectionKind) {
   try {
@@ -2692,6 +2750,18 @@ function validM12Task3Record(record, session, audit, domainEvent, runtimeEvent) 
     return tuple[4] === record.resultRevision - 1;
   } catch { return false; }
 }
+function buildMultiplayerProjection(session, authority) {
+  const common = buildSessionProjection(session, authority.role);
+  if (!common || !authority || !["gm", "operator", "crew", "observer"].includes(authority.role)) return null;
+  const projection = {
+    ...common,
+    projectionRole: authority.role,
+    ownedOperators: authority.ownedOperators,
+    readOnlyStationIds: authority.readOnlyStationIds
+  };
+  const isolated = capture(projection);
+  return isolated.ok && exactKeys(isolated.value, MULTIPLAYER_PROJECTION_FIELDS) ? isolated.value : null;
+}
 
 function createResolvedRiskBidEffects(prior, candidate, commandValue) {
   try {
@@ -3492,6 +3562,58 @@ export function readVoyageEventSessionProjection(request, context = {}) {
   const response = success(match.session, value.requestId);
   response.projection = capture(projection).value;
   return response;
+}
+
+/**
+ * Slice A read boundary.  This deliberately leaves the accepted M11 common
+ * projection untouched and adds only trusted role/ownership decisions.
+ */
+export function readVoyageEventSessionMultiplayerProjection(request, context = {}) {
+  const captured = capture(request); if (!captured.ok) return failure([diagnostic("m11-hostile-data-capture-failed", "$")]);
+  const value = captured.value, identities = requestIdentities(value);
+  if (!exactKeys(value, READ_PROJECTION_FIELDS)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  if (value.kind !== "voyage.m12-read-multiplayer-projection") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
+  const auth = projectionPrincipal(context); if (auth.error) return failure([auth.error], identities);
+  if (!nonBlank(value.requestId) || !nonBlank(value.sessionId) || !safeInteger(value.expectedRevision)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
+  const match = resolved.match;
+  if (!pristineSession(match.session, match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const authorityDecision = deriveProjectionAuthority(auth, match.session, context);
+  if (value.expectedRevision !== match.session.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+  if (match.session.processedRequests.some((record) => record.requestId === value.requestId)) return failure([diagnostic("m11-request-id-conflict", "request.requestId")], identities);
+  const projection = buildMultiplayerProjection(match.session, authorityDecision);
+  if (!projection) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const response = success(match.session, value.requestId);
+  response.projection = projection;
+  return response;
+}
+
+/** Reusable, read-only owned-operator authorization for future M12 commands. */
+export function authorizeVoyageEventSessionOperator(request, context = {}) {
+  const captured = capture(request); if (!captured.ok) return failure([diagnostic("m11-hostile-data-capture-failed", "$")]);
+  const value = captured.value, identities = requestIdentities(value);
+  if (!exactKeys(value, MULTIPLAYER_AUTHORIZATION_FIELDS)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  if (value.kind !== "voyage.m12-authorize-operator") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
+  const auth = projectionPrincipal(context); if (auth.error) return failure([auth.error], identities);
+  if (!nonBlank(value.sessionId) || !nonBlank(value.stationId)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
+  if (!pristineSession(resolved.match.session, resolved.match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const authorityDecision = deriveProjectionAuthority(auth, resolved.match.session, context);
+  const assignment = resolved.match.session.encounterState.stationAssignments.find((entry) => entry.stationId === value.stationId);
+  if (!assignment) return failure([diagnostic("m11-projection-not-authorized", "request.stationId")], identities);
+  const owned = authorityDecision.ownedOperators.find((entry) => entry.stationId === value.stationId);
+  const result = {
+    ok: true,
+    sessionId: resolved.match.session.sessionId,
+    stationId: value.stationId,
+    projectionRole: authorityDecision.role,
+    operatorId: assignment.operator?.id ?? null,
+    operatorUuid: assignment.operator?.uuid ?? null,
+    canAct: Boolean(owned?.canAct),
+    gmTakeover: Boolean(owned?.gmTakeover)
+  };
+  const isolated = capture(result);
+  return isolated.ok ? isolated.value : failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
 }
 
 /** Read the GM-only planning data needed by the M12 Event Manager. */

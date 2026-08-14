@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as runtime from "../../../scripts/voyage/foundry/event-session-runtime.js";
-import { createVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, recoverVoyageEventSession, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
+import { authorizeVoyageEventSessionOperator, createVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, recoverVoyageEventSession, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import { createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
 import { analyzeVoyageEncounterCloseoutPreview } from "../../../scripts/voyage/domain/closeout.js";
 import { analyzeVoyageEncounterCloseoutReview } from "../../../scripts/voyage/domain/closeout-review.js";
@@ -20,6 +20,7 @@ function request(definitionValue = definition(), encounterValue = encounter()) {
   return { kind: "voyage.m11-create-session", requestId: "request-1", sessionId: "session-1", eventId: "event-1", definitionSnapshotId: "definition-1", shipId: "ship-1", eventDefinition: definitionValue, initialEncounterState: encounterValue };
 }
 function command(overrides = {}) { return { kind: "voyage.m11-command", requestId: "command-1", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, commandKind: "pause", payload: {}, ...overrides }; }
+function multiplayerProjectionRequest(overrides = {}) { return { kind: "voyage.m12-read-multiplayer-projection", requestId: "m12-projection-1", sessionId: "session-1", expectedRevision: 0, ...overrides }; }
 function transferRequest(overrides = {}) { return { kind: "voyage.m11-transfer-control", requestId: "transfer-1", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, targetUserId: "gm-1", reason: "election" , ...overrides }; }
 function persistSession(document, payload) { document.__testSource.flags.arcflight.system.voyageSession = structuredClone(payload["flags.arcflight.system.voyageSession"]); return document; }
 function deferred() { let resolve, reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; }
@@ -242,7 +243,7 @@ async function task6CanonicalM10Fixture() {
   return { actor, fixture, run, previewRequest, preview };
 }
 
-test("M11 runtime exposes the audited boundaries and GM planning/read-resolution APIs", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "applyVoyageEncounterAbortTransition", "beginVoyageEventSessionResolution", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionPlanning", "readVoyageEventSessionProjection", "readVoyageEventSessionResolution", "recoverVoyageEventSession", "reloadVoyageEventSession", "resolveVoyageEventSessionStation", "runExclusiveSessionMutation", "transferVoyageEventSessionControl"]));
+test("M11 runtime exposes the audited boundaries and GM planning/read-resolution APIs", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "applyVoyageEncounterAbortTransition", "authorizeVoyageEventSessionOperator", "beginVoyageEventSessionResolution", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionMultiplayerProjection", "readVoyageEventSessionPlanning", "readVoyageEventSessionProjection", "readVoyageEventSessionResolution", "recoverVoyageEventSession", "reloadVoyageEventSession", "resolveVoyageEventSessionStation", "runExclusiveSessionMutation", "transferVoyageEventSessionControl"]));
 
 test("valid creation uses keepId and stores only pristine voyageSession state", async () => {
   const fixture = makeContext(); const result = await createVoyageEventSession(request(), fixture.context);
@@ -1941,4 +1942,108 @@ test("Task 7 recovery abort preserves its two-event response and rejects checkpo
   const invalidEncounter = reloadVoyageEventSession("session-1", fixture.context);
   assertFailure(invalidEncounter, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
   assert.equal(fixture.tracker.updates, 1);
+});
+
+test("M12 Slice A derives GM, operator, crew, and observer projections from trusted context", async () => {
+  const encounterValue = encounter();
+  encounterValue.stationAssignments = [
+    { stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" } },
+    { stationId: "watchmaster", operator: { kind: "actor", id: "actor-watch", uuid: "Actor.watch", name: "Watchmaster" } },
+    { stationId: "navigator", operator: { kind: "actor", id: "actor-nav", uuid: "Actor.navigator", name: "Navigator" } },
+    { stationId: "engineer", operator: { kind: "actor", id: "actor-eng", uuid: "Actor.engineer", name: "Engineer" } }
+  ];
+  const fixture = makeContext({ encounterValue });
+  assert.equal((await createVoyageEventSession(request(definition(), encounterValue), fixture.context)).ok, true);
+  const gm = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest(), fixture.context);
+  assert.equal(gm.ok, true); assert.equal(gm.projection.projectionRole, "gm");
+  assert.deepEqual(gm.projection.ownedOperators.map((entry) => entry.stationId), ["captain", "watchmaster", "navigator", "engineer"]);
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [
+    { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" },
+    { kind: "actor", id: "actor-watch", uuid: "Actor.watch", name: "Watchmaster" }
+  ] };
+  const player = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "player-projection" }), playerContext);
+  assert.equal(player.ok, true); assert.equal(player.projection.projectionRole, "operator");
+  assert.deepEqual(player.projection.ownedOperators.map((entry) => entry.stationId), ["captain", "watchmaster"]);
+  assert.deepEqual(player.projection.readOnlyStationIds, ["navigator", "engineer"]);
+  assert.equal(player.projection.authorityEpoch, undefined); assert.equal(player.projection.auditHistory, undefined);
+  const crew = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "crew-projection" }), { ...playerContext, resolveVoyageOperatorForPrincipal: () => ({ kind: "actor", id: "unassigned", uuid: "Actor.unassigned" }) });
+  assert.equal(crew.ok, true); assert.equal(crew.projection.projectionRole, "crew"); assert.deepEqual(crew.projection.ownedOperators, []);
+  const observer = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "observer-projection" }), { ...playerContext, resolveVoyageOperatorForPrincipal: () => [] });
+  assert.equal(observer.ok, true); assert.equal(observer.projection.projectionRole, "observer"); assert.deepEqual(observer.projection.ownedOperators, []);
+  player.projection.ownedOperators.push({ stationId: "forged" }); player.projection.stationAssignments[0].operator.name = "forged";
+  const repeat = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "repeat-projection" }), playerContext);
+  assert.equal(repeat.ok, true); assert.deepEqual(repeat.projection.ownedOperators.map((entry) => entry.stationId), ["captain", "watchmaster"]); assert.equal(repeat.projection.stationAssignments[0].operator.name, "Captain");
+  assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.creates, 1); assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("M12 Slice A owned-operator authorization is exact and caller identity cannot forge control", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" } }, { stationId: "navigator", operator: { kind: "actor", id: "actor-nav", uuid: "Actor.navigator", name: "Navigator" } }];
+  const fixture = makeContext({ encounterValue, update: persistSession }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }] };
+  const own = authorizeVoyageEventSessionOperator({ kind: "voyage.m12-authorize-operator", sessionId: "session-1", stationId: "captain" }, playerContext);
+  assert.equal(own.ok, true); assert.equal(own.canAct, true); assert.equal(own.operatorUuid, "Actor.captain");
+  const other = authorizeVoyageEventSessionOperator({ kind: "voyage.m12-authorize-operator", sessionId: "session-1", stationId: "navigator" }, playerContext);
+  assert.equal(other.ok, true); assert.equal(other.canAct, false);
+  const forged = readVoyageEventSessionMultiplayerProjection({ ...multiplayerProjectionRequest(), requestId: "forged", role: "gm", userId: "gm-1" }, playerContext);
+  assertFailure(forged, "m11-invalid-request-shape", "request", "Request shape, order, or root values are invalid.");
+  assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("M12 Slice A hostile trusted-operator evidence fails closed without elevation", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain" } }];
+  const fixture = makeContext({ encounterValue }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const shared = { kind: "actor", id: "actor-captain", uuid: "Actor.captain" };
+  const cycle = { kind: "actor", id: "actor-captain", uuid: "Actor.captain" }; cycle.self = cycle;
+  const inherited = Object.create({ kind: "actor", id: "actor-captain", uuid: "Actor.captain" });
+  const accessor = {}; Object.defineProperty(accessor, "kind", { get() { throw new Error("access"); }, enumerable: true });
+  const revoked = Proxy.revocable({ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }, {}); revoked.revoke();
+  const witnesses = [
+    () => [shared, shared],
+    () => cycle,
+    () => inherited,
+    () => accessor,
+    () => revoked.proxy,
+    () => [{ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }, { kind: "actor", id: "actor-captain", uuid: "Actor.captain" }],
+    () => ({ kind: "wrong", id: "actor-captain" }),
+    () => { throw new Error("resolver failure"); }
+  ];
+  for (const [index, resolver] of witnesses.entries()) {
+    const result = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: `hostile-${index}` }), { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: resolver });
+    assert.equal(result.ok, true); assert.equal(result.projection.projectionRole, "observer"); assert.deepEqual(result.projection.ownedOperators, []); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+  }
+});
+
+test("M12 Slice A unrelated Item ownership cannot authorize an Actor station", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain" } }];
+  const fixture = makeContext({ encounterValue }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", ownedItems: [{ id: "actor-captain", uuid: "Actor.captain" }], resolveVoyageOperatorForPrincipal: () => [] };
+  const projection = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "item-like-projection" }), playerContext);
+  assert.equal(projection.ok, true); assert.equal(projection.projection.projectionRole, "observer"); assert.deepEqual(projection.projection.ownedOperators, []);
+  const authorization = authorizeVoyageEventSessionOperator({ kind: "voyage.m12-authorize-operator", sessionId: "session-1", stationId: "captain" }, playerContext);
+  assert.equal(authorization.ok, true); assert.equal(authorization.canAct, false); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("M12 Slice A reflects session-level M11 control transfer without reassigning stations", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain" } }];
+  const fixture = makeContext({ encounterValue, update: persistSession }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const transfer = await transferVoyageEventSessionControl({ kind: "voyage.m11-transfer-control", requestId: "slice-a-transfer", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, targetUserId: "gm-2", reason: "temporary-control" }, { ...fixture.context, activeGmUserId: "gm-2", authenticatedUserId: "gm-2", authenticatedConnectionId: "connection-gm-2" });
+  assert.equal(transfer.ok, true, JSON.stringify(transfer.errors));
+  const transferredSession = fixtureSession(fixture); assert.equal(transferredSession.activeGmUserId, "gm-2"); assert.equal(transferredSession.encounterState.stationAssignments[0].stationId, "captain");
+  const newGm = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "new-gm" }), { ...fixture.context, activeGmUserId: "gm-2", authenticatedUserId: "gm-2", authenticatedConnectionId: "connection-gm-2" });
+  assert.equal(newGm.ok, true); assert.equal(newGm.projection.projectionRole, "gm"); assert.equal(newGm.projection.ownedOperators[0].gmTakeover, true); assert.equal(newGm.projection.ownedOperators[0].canAct, true);
+  const priorGm = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "prior-gm" }), { ...fixture.context, activeGmUserId: "gm-2", authenticatedUserId: "gm-1", authenticatedConnectionId: "connection-gm-1" });
+  assert.equal(priorGm.ok, true); assert.equal(priorGm.projection.projectionRole, "gm"); assert.equal(priorGm.projection.ownedOperators[0].gmTakeover, false); assert.equal(priorGm.projection.ownedOperators[0].canAct, false);
+  assert.equal(fixture.tracker.updates, 1);
+});
+
+test("M12 Slice A read failures resolve no role before valid evidence and remain write-free", async () => {
+  let missingCalls = 0;
+  const missing = makeContext({ operatorResolver: () => { missingCalls += 1; return { kind: "actor", id: "x" }; } });
+  assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest(), missing.context), "m11-session-document-not-found", "sessionId", "Exact Event Session document was not resolved."); assert.equal(missingCalls, 0); assert.equal(missing.tracker.updates, 0);
+  const ambiguous = makeContext(); await createVoyageEventSession(request(), ambiguous.context); ambiguous.journals.push(makeJournalDocument({ _id: "Journal.duplicate", flags: structuredClone(ambiguous.journals[0].__testSource.flags), ownership: {} }, ambiguous.tracker, [])); let ambiguousCalls = 0;
+  assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "ambiguous" }), { ...ambiguous.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => { ambiguousCalls += 1; return { kind: "actor", id: "x" }; } }), "m11-ambiguous-session-document", "sessionId", "More than one Event Session document matched."); assert.equal(ambiguousCalls, 0); assert.equal(ambiguous.tracker.updates, 0);
+  const invalid = makeContext(); await createVoyageEventSession(request(), invalid.context); fixtureSession(invalid).sessionState = "forged"; let invalidCalls = 0;
+  assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "invalid" }), { ...invalid.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => { invalidCalls += 1; return { kind: "actor", id: "x" }; } }), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(invalidCalls, 0); assert.equal(invalid.tracker.updates, 0);
+  const stale = makeContext(); await createVoyageEventSession(request(), stale.context); let staleCalls = 0;
+  assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "stale", expectedRevision: 1 }), { ...stale.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => { staleCalls += 1; return { kind: "actor", id: "x" }; } }), "m11-stale-session-revision", "expectedRevision", "Event Session revision is stale."); assert.equal(staleCalls, 1); assert.equal(stale.tracker.updates, 0);
 });
