@@ -1,6 +1,6 @@
 # Arcflight Event Runner — Canonical Gameplay Rules
 
-**Status:** Canonical design contract, Version 1
+**Status:** Canonical design contract, Version 2
 **Scope:** Arcflight Core event runner
 **Purpose:** Authoritative gameplay reference for implementation, testing, event authoring, UI, and future milestones.
 **Implementation authority:** [`ARCFLIGHT_GAMEPLAY_V3_CANONICAL_AUDIT_AND_MILESTONE_MAP.md`](ARCFLIGHT_GAMEPLAY_V3_CANONICAL_AUDIT_AND_MILESTONE_MAP.md)
@@ -72,7 +72,7 @@ The resolution window for one occupied station during a round, including pre-rol
 
 ### Risk Bid
 
-An optional authored increase of `+2`, `+5`, or `+8` to the selected action’s DC. The action and Risk Bid resolve from the same PF2e check.
+An optional authored increase of `+2`, `+5`, or `+8` to the selected action’s DC. The action and Risk Bid resolve from the same PF2e check. During the current playtest rules, the increased DC is itself the Risk Bid's downside; Failure or Critical Failure does not add an additional Risk-Bid-specific punishment beyond the action's ordinary failed-check consequences.
 
 ### Focus
 
@@ -255,11 +255,23 @@ Base DC +8
 
 Only tiers authored for that action are available. An action may offer no bids, one tier, or several tiers.
 
-### 7.2 Limits
+Risk Bid availability is intentionally scarce. Risk Bids should feel like special tactical opportunities that can influence the crew's station order, not like a generic difficulty slider attached to most actions.
+
+### 7.2 Availability and selection limits
+
+Risk Bid availability is limited at authoring time:
+
+- No more than **four action choices across the entire round** may offer any Risk Bid tier.
+- No station may have more than **two of its three round actions** offer a Risk Bid.
+- At least one of every station's three round actions therefore remains a normal non-Risk-Bid choice.
+
+Risk Bid selection is limited at play time:
 
 - Maximum one selected Risk Bid per station per round.
 - Maximum three selected Risk Bids across the entire round.
-- A station using the base action without a bid does not count toward the round limit.
+- A station using the base action without a bid does not count toward the selected-bid round limit.
+
+The availability cap and selected-bid cap are separate rules. Up to four actions may offer Risk Bids in a round, but the crew may select no more than three Risk Bids that round.
 
 ### 7.3 Single-roll resolution
 
@@ -271,30 +283,41 @@ The station makes one PF2e check. That single degree of success resolves:
 
 1. the station’s round success or failure units;
 2. the normal action benefit;
-3. the selected Risk Bid branch;
+3. the selected Risk Bid payoff when the authored success condition is met;
 4. standard Pressure gained from Failure or Critical Failure.
 
 There is never a separate Risk Bid roll.
 
-### 7.4 Outcome handling
+### 7.4 Risk is the increased DC
+
+During the current playtest rules, the voluntarily increased DC is sufficient Risk Bid downside.
 
 | Result | Normal Action | Risk Bid | Round Units |
 |---|---|---|---|
-| Critical Success | Critical Success benefit | Critical Success bid benefit | 2 success |
-| Success | Success benefit | Success bid benefit | 1 success |
-| Failure | No normal benefit; no extra normal-action punishment | Failure bid consequence | 1 failure |
-| Critical Failure | No normal benefit; no extra normal-action punishment | Critical Failure bid consequence | 2 failure |
+| Critical Success | Critical Success benefit | Critical Success bid payoff | 2 success |
+| Success | Success benefit | Success bid payoff | 1 success |
+| Failure | No normal benefit; no extra normal-action punishment | No Risk Bid payoff; no additional Risk-Bid-specific penalty | 1 failure |
+| Critical Failure | No normal benefit; no extra normal-action punishment | No Risk Bid payoff; no additional Risk-Bid-specific penalty | 2 failure |
 
-A failed action already harms the round and normally adds Pressure. Additional authored punishment comes from the voluntarily selected Risk Bid, not from a second generic normal-action failure branch.
+A failed Risk Bid check still harms the round normally and still gains standard Pressure when the ordinary action rules call for it. The player also loses the opportunity to gain the Risk Bid payoff. The Risk Bid does **not** add a second Failure or Critical Failure punishment during this playtest phase.
 
-### 7.5 Authored bid effects
+This may be revisited only through explicit playtest-driven design revision. Event authors must not secretly add Risk-Bid-specific Failure or Critical Failure punishment while this rule is active.
 
-Risk Bid effects are not universal by tier. They are written for the specific action and story.
+### 7.5 Payoff scales with the wager
 
-Valid examples include:
+Greater voluntary DC increases should offer greater potential mechanical payoff.
 
-- reduce a later station’s DC;
+The tiers are not rigid templates, but the expected power curve is:
+
+- `+2` Risk Bid: a modest tactical benefit.
+- `+5` Risk Bid: a significant benefit, often strong enough to help more than one later station or create a larger single-station advantage.
+- `+8` Risk Bid: a major encounter-shaping benefit that can materially alter a later station's outcome or the state of the round.
+
+Valid authored payoffs include:
+
 - grant a later station a roll bonus;
+- reduce a later station’s DC;
+- grant different bonuses to two later stations;
 - improve a later result by one degree;
 - allow a reroll;
 - roll twice and keep the better die;
@@ -307,17 +330,50 @@ Valid examples include:
 - create a next-round benefit;
 - change station-order restrictions.
 
+These are examples, not mandatory tier formulas. An author may use other effects of comparable power when they fit the action and story.
+
 Risk Bid rewards are inherent in the bid. They do not automatically add end-of-event treasure.
 
-### 7.6 Example tiers
+### 7.6 Example payoff curve
 
-An authored Engineer action might use:
+One valid example of the intended escalation is:
 
-- `+2`: reduce the Navigator’s later DC by 2;
-- `+5`: improve the Navigator’s final degree by one step;
-- `+8`: let the Navigator roll twice and keep the better die; on Critical Success, the Engineer also replenishes Focus.
+- `+2`: one later unresolved station gains `+1` to its next roll this round;
+- `+5`: one later unresolved station gains `+2` and a second later unresolved station gains `+1` to their next rolls this round;
+- `+8`: one later unresolved station improves its final degree of success by one step after rolling: Critical Failure → Failure → Success → Critical Success.
 
-These are examples, not mandatory tier templates.
+These examples demonstrate the expected relationship between risk and reward. They are **not** universal Risk Bid effects and should not be copied mechanically into every event.
+
+### 7.7 Cross-station specificity and order dependency
+
+When a Risk Bid helps another station, the authored benefit must state exactly:
+
+- which station or stations are affected;
+- the exact mechanical effect;
+- whether it modifies the roll, DC, degree, reroll state, Pressure, Focus, Hazard state, or another defined mechanic;
+- when the effect becomes active;
+- when it expires or is consumed;
+- whether the source station must resolve before the target station.
+
+Vague text such as “helps the Navigator” or “grants an advantage” is not sufficient.
+
+If the benefit requires the source station to resolve before the target station, station order is part of the tactical decision. The proposed and locked Resolution Order must show the dependency clearly enough that the crew can tell whether the current order allows the Risk Bid payoff to work.
+
+### 7.8 Required visual cues
+
+Any action that offers a Risk Bid must have a clear visual cue in Crew Planning before the player opens or commits the bid. The cue must distinguish a Risk-Bid-capable action from a normal action.
+
+For a cross-station Risk Bid, the planning and Resolution Order UI must show:
+
+- the source station and action;
+- the intended target station or stations;
+- the promised mechanical payoff;
+- any required source-before-target order;
+- whether the currently proposed order satisfies that dependency.
+
+After the source Risk Bid succeeds, the Resolution Order and active Resolution UI must visibly mark the earned benefit on every unresolved target station until it is consumed or expires. The target operator should be able to see that the bonus, DC change, degree improvement, reroll, or other effect is currently active before rolling.
+
+If the target station has already resolved or the chosen order makes the benefit unavailable, the UI must make that clear rather than silently discarding the interaction.
 
 ---
 
@@ -398,7 +454,7 @@ Focus does not convert into Momentum or rewards.
 Every occupied station resolves through an Action Segment:
 
 1. Reveal the acting station.
-2. Confirm its locked action, approach, Risk Bid, and target.
+2. Confirm its locked action, approach, Risk Bid, target, and any earned incoming Risk Bid benefits.
 3. Open valid pre-roll reaction windows.
 4. Make the station check.
 5. Open valid result-modification reaction windows.
@@ -430,6 +486,8 @@ Typical timings include:
 - when a Hazard would activate;
 - after an action fully resolves;
 - before the next station begins.
+
+Earned cross-station Risk Bid benefits are not reactions unless the authored effect explicitly says otherwise. They are pending effects that must remain visibly attached to their unresolved target until consumed or expired.
 
 ---
 
@@ -610,8 +668,10 @@ A Hazard may be created by:
 - a Pressure Breach;
 - an authored round or event development;
 - a Focus Failure or Critical Failure;
-- a Risk Bid consequence;
+- a future explicit Risk Bid consequence rule if playtesting later introduces one;
 - another Hazard escalating.
+
+Under the current Risk Bid playtest rules, ordinary Risk Bid Failure or Critical Failure does not create a Risk-Bid-specific Hazard or other extra penalty.
 
 A Pressure Breach creates both a Hazard and a Void Scar. Hazards from other sources do not automatically create a Void Scar.
 
@@ -767,7 +827,7 @@ Without a special repair resource, removing a Void Scar requires:
 The repair check modifies final cost and time. It does not make the Scar permanently unrepairable.
 
 | Repair Result | Final Gold Cost | Final Repair Time |
-|---|---:|---:|
+|---|---:|
 | Critical Success | 50% of base | 50% of base |
 | Success | 75% of base | 75% of base |
 | Failure | 125% of base | 125% of base |
@@ -1241,7 +1301,10 @@ Before resolution:
 - no more than three stations selected bids;
 - all required targets are valid;
 - every occupied station appears once in the order;
-- no unoccupied station appears in the order.
+- no unoccupied station appears in the order;
+- every selected cross-station Risk Bid has its target and order dependency available to the Resolution Order projection.
+
+A source-before-target Risk Bid is not silently discarded if the crew chooses the wrong order. The planning and order UI must explicitly show that the payoff will not be available under the proposed order. An event may choose to block plan lock for a mechanically impossible required target, but ordinary tactical order mistakes remain visible player decisions rather than hidden validation changes.
 
 ### 22.3 Pausing and resuming
 
@@ -1296,10 +1359,12 @@ Players normally see:
 - occupied stations;
 - selected actions;
 - selected approaches;
+- which actions offer Risk Bids;
 - selected Risk Bids;
 - required targets;
 - proposed resolution order;
 - known cross-station benefits;
+- source-to-target Risk Bid order dependencies;
 - current Momentum, Pressure, and revealed Hazards.
 
 ### 23.2 Choice transparency
@@ -1307,15 +1372,32 @@ Players normally see:
 Before committing to a Risk Bid or Focus ability, the acting player must see:
 
 - the check being attempted;
-- DC or DC adjustment;
+- base DC and final DC or exact DC adjustment;
 - intended benefit;
+- exact target or targets;
+- activation timing and expiration/consumption timing when relevant;
+- any source-before-target station-order dependency;
 - known Failure effect;
-- known Critical Failure effect;
-- target.
+- known Critical Failure effect.
+
+For current Risk Bid playtest rules, the displayed Failure and Critical Failure Risk Bid effect is explicitly: **no Risk Bid payoff and no additional Risk-Bid-specific penalty**. Ordinary action Failure/Critical Failure consequences, failure units, and Pressure still apply normally.
 
 GM-only information may conceal future narrative details, discoveries, or unrevealed escalation, but must not secretly replace the displayed mechanical stakes with unrelated punishment.
 
-### 23.3 GM authority
+### 23.3 Resolution-order transparency
+
+The Resolution Order interface must make cross-station Risk Bid dependencies readable before order lock.
+
+When a selected Risk Bid affects a later station, the order UI must visually identify:
+
+- the source station;
+- the target station or stations;
+- the exact promised effect;
+- whether the current proposed order allows the effect to activate.
+
+After the source Risk Bid succeeds, the order and resolution displays must visibly mark the earned effect as active on each unresolved target until it is consumed or expires.
+
+### 23.4 GM authority
 
 The GM-owned session is authoritative. Players submit selections and reactions, but the runtime validates and commits official state.
 
@@ -1345,7 +1427,11 @@ Every handcrafted event must include:
 - three actions for every potentially occupied station in every round;
 - one to two approaches per normal action, with a rare justified third approach;
 - base action outcome branches;
-- available Risk Bid tiers and all four bid branches;
+- no more than four Risk-Bid-offering actions across a round;
+- no more than two Risk-Bid-offering actions at any one station in a round;
+- available Risk Bid tiers and explicit success payoffs;
+- explicit no-extra-penalty Failure and Critical Failure bid branches while the current playtest rule is active;
+- exact target, timing, and order dependency for cross-station Risk Bid payoffs;
 - Focus abilities and reaction definitions;
 - Hazard definitions and closeout behavior;
 - reward options and enhancement tiers;
@@ -1420,15 +1506,18 @@ Every handcrafted event must include:
     failure: {},
     criticalFailure: {}
   },
+  riskBidCue,
   riskBids: [
     {
       tier: 2 | 5 | 8,
       target,
+      timing,
+      orderDependency,
       outcomes: {
-        criticalSuccess: {},
-        success: {},
-        failure: {},
-        criticalFailure: {}
+        criticalSuccess: { /* payoff */ },
+        success: { /* payoff */ },
+        failure: { /* no Risk-Bid-specific penalty during current playtest rule */ },
+        criticalFailure: { /* no Risk-Bid-specific penalty during current playtest rule */ }
       }
     }
   ],
@@ -1454,8 +1543,13 @@ An Event Definition is invalid unless:
 - an exceptional third approach declares a meaningful distinction;
 - every action has a valid PF2e check source and DC source;
 - every action defines all four outcomes;
+- no round contains more than four Risk-Bid-offering actions;
+- no station contains more than two Risk-Bid-offering actions in one round;
 - Risk Bid tiers are only 2, 5, or 8;
-- every Risk Bid defines all four outcomes;
+- every Risk Bid has a clear player-facing visual cue;
+- every Risk Bid defines Critical Success and Success payoffs;
+- every Risk Bid Failure and Critical Failure branch adds no Risk-Bid-specific penalty while the current playtest rule is active;
+- every cross-station Risk Bid defines exact targets, mechanical effects, timing, and order dependency;
 - every Focus ability defines trigger, timing, cost, target, DC, and four outcomes;
 - every Hazard defines activation, effect, response, and closeout behavior;
 - every Void Scar defines operational effects and repair requirements;
@@ -1470,7 +1564,7 @@ The validator should warn when:
 
 - an event repeatedly pressures one system without relief opportunities;
 - a round can create more Hazards than the crew can reasonably address;
-- Risk Bid risks are disproportionate to their benefits;
+- a higher Risk Bid tier does not provide meaningfully greater potential payoff than a lower tier;
 - no action can reduce Pressure or address a likely Hazard in a major event;
 - a long event lacks meaningful round-to-round action changes;
 - an authored branch or target is unreachable.
@@ -1485,9 +1579,12 @@ The GM event window should display:
 - session state;
 - station assignments;
 - three actions per occupied station;
+- clear visual cues on every Risk-Bid-capable action;
 - approach selections;
 - selected Risk Bids and round bid count;
 - locked station order;
+- cross-station Risk Bid source-to-target dependencies and whether the selected order satisfies them;
+- active earned Risk Bid effects attached to unresolved target stations;
 - current acting station;
 - legal reaction queue;
 - operator Focus;
@@ -1500,7 +1597,7 @@ The GM event window should display:
 - full audit history;
 - closeout preview before persistent application.
 
-Player interfaces should emphasize cinematic narration, current choices, known stakes, personal Focus, valid reactions, and relevant ship state without exposing GM-only branches.
+Player interfaces should emphasize cinematic narration, current choices, known stakes, Risk Bid cues and active cross-station benefits, personal Focus, valid reactions, and relevant ship state without exposing GM-only branches.
 
 ---
 
@@ -1513,9 +1610,11 @@ GM selects authored event and ship
 → begin Round 1 with Focus and Momentum 0
 → show round-specific cinematic and stakes
 → present 3 new actions per occupied station
+→ visibly identify the limited Risk-Bid-capable actions
 → choose action, approach, base DC or Risk Bid, and target when needed
+→ show cross-station Risk Bid dependencies while choosing station order
 → choose and lock station resolution order
-→ resolve each Action Segment with Focus, reactions, upgrades, and special abilities
+→ resolve each Action Segment with Focus, reactions, upgrades, special abilities, and earned Risk Bid effects
 → aggregate success/failure units
 → determine round result
 → update Momentum
@@ -1560,7 +1659,7 @@ Recommended dependency order:
 2. implement round action authoring validation;
 3. implement committed approach selection;
 4. implement player-committed station order;
-5. implement the canonical Risk Bid contract;
+5. implement the canonical Risk Bid contract, availability caps, payoff scaling, and order-visibility rules;
 6. align execution requests with the committed approach and final DC;
 7. complete action and Risk Bid outcome interpretation;
 8. implement round scoring and Momentum;
@@ -1578,4 +1677,4 @@ Recommended dependency order:
 
 **Canonical product statement:**
 
-> Arcflight Core is a GM-authoritative cinematic ship-event runner in which fixed station operators choose round-specific actions, skills, and optional Risk Bids; use risky Focus abilities and reactions; build ship-wide Momentum; manage system Pressure and tactical Hazards; suffer persistent Void Scars and Catastrophic Breakdowns; and resolve handcrafted rewards or Misfortunes through a recoverable session with explicit GM closeout approval.
+> Arcflight Core is a GM-authoritative cinematic ship-event runner in which fixed station operators choose round-specific actions, skills, and scarce optional Risk Bids; greater Risk Bid wagers offer greater potential payoffs; cross-station Risk Bid effects create visible station-order tactics; risky Focus abilities and reactions build alongside ship-wide Momentum, system Pressure, tactical Hazards, persistent Void Scars, Catastrophic Breakdowns, and handcrafted rewards or Misfortunes through a recoverable session with explicit GM closeout approval.
