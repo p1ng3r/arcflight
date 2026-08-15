@@ -4,6 +4,8 @@ import { launchVoyageEventSession } from "../../../scripts/voyage/foundry/event-
 import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID, M12_FOCUS_ABILITIES } from "../../../scripts/voyage/m12/event-definition.js";
 import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, beginVoyageEventSessionResolution, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionResolution, reloadVoyageEventSession, resolveVoyageEventSessionStation, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import { prepareVoyageEncounterActionExecutionRequests } from "../../../scripts/voyage/domain/resolution-execution-requests.js";
+import { getFoundrySessionMutationCoordinator } from "../../../scripts/voyage/foundry/session-coordinator.js";
+import { executeVoyagePlayerIntent, registerVoyageGmCommandTransport } from "../../../scripts/voyage/foundry/gm-command-transport.js";
 
 function actor(id, type = "character") {
   return { id, uuid: `Actor.${id}`, name: id, type, getFlag: () => true };
@@ -11,10 +13,10 @@ function actor(id, type = "character") {
 
 function fixture() {
   const journals = [];
-  const tracker = { creates: 0, updates: 0, actors: 0, distinctReread: false, jsonRoundTrip: false, throwUpdate: false, persistThenThrow: false };
+  const tracker = { creates: 0, updates: 0, gmJournalWrites: 0, actors: 0, distinctReread: false, jsonRoundTrip: false, throwUpdate: false, persistThenThrow: false };
   const document = (data, sharedSource = null) => {
     const source = sharedSource ?? { _id: data._id, flags: structuredClone(data.flags), name: "Session", pages: [] };
-    const entry = { id: source._id, __testSource: source, toObject: () => structuredClone(source), async update(payload) { tracker.updates += 1; source.flags.arcflight.system.voyageSession = structuredClone(payload["flags.arcflight.system.voyageSession"]); if (tracker.distinctReread) { const index = journals.indexOf(entry); if (index >= 0) journals[index] = document(tracker.jsonRoundTrip ? JSON.parse(JSON.stringify({ _id: source._id, flags: source.flags })) : { _id: source._id, flags: source.flags }, source); } if (tracker.throwUpdate) { if (!tracker.persistThenThrow) delete source.flags.arcflight.system.voyageSession; throw new Error("update failed"); } return this; }, async delete() { journals.splice(journals.indexOf(entry), 1); } };
+    const entry = { id: source._id, __testSource: source, toObject: () => structuredClone(source), async update(payload) { tracker.updates += 1; tracker.gmJournalWrites += 1; source.flags.arcflight.system.voyageSession = structuredClone(payload["flags.arcflight.system.voyageSession"]); if (tracker.distinctReread) { const index = journals.indexOf(entry); if (index >= 0) journals[index] = document(tracker.jsonRoundTrip ? JSON.parse(JSON.stringify({ _id: source._id, flags: source.flags })) : { _id: source._id, flags: source.flags }, source); } if (tracker.throwUpdate) { if (!tracker.persistThenThrow) delete source.flags.arcflight.system.voyageSession; throw new Error("update failed"); } return this; }, async delete() { journals.splice(journals.indexOf(entry), 1); } };
     return entry;
   };
   const actors = [actor("ship-1", "vehicle"), actor("captain"), actor("engineer"), actor("navigator")];
@@ -366,6 +368,96 @@ test("M12 Slice G follows multi-owned operator authority by current station", as
   assert.equal(executions, 2);
 });
 
+test("Slice H follows the current reaction opportunity for a player owning Captain and Watchmaster", async () => {
+  const fx = fixture(); fx.context.actors.push(actor("watchmaster"));
+  const captainFocus = structuredClone(M12_FOCUS_ABILITIES[0]);
+  const navigatorFocus = { ...captainFocus, focusAbilityId: "m12-focus-navigator-assist", name: "Navigator's Sounding", stationId: "navigator", targetStationId: "navigator", eligibleSource: { kind: "station", stationId: "navigator" }, targetRule: { kind: "current-station", stationId: "navigator" }, narration: "The navigator sounds the shoals." };
+  const watchmasterFocus = { ...captainFocus, focusAbilityId: "m12-focus-watchmaster-assist", name: "Watchmaster's Bearing", stationId: "watchmaster", targetStationId: "watchmaster", eligibleSource: { kind: "station", stationId: "watchmaster" }, targetRule: { kind: "current-station", stationId: "watchmaster" }, narration: "The watchmaster holds the bearing." };
+  fx.context.focusAbilities = [captainFocus, navigatorFocus, watchmasterFocus];
+  const sessionId = "slice-h-multi-owned-focus";
+  const locked = await launchAndLock(fx, sessionId, { captain: "captain", navigator: "navigator", watchmaster: "watchmaster" }, ["captain", "navigator", "watchmaster"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-h-multi-owned-begin", sessionId, expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const player = operatorContext(fx, "multi-focus-player", "connection-multi-focus", ["captain", "watchmaster"]);
+  const captainProjection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-multi-owned-captain-read", sessionId, expectedRevision: started.revision }, player);
+  assert.equal(captainProjection.projection.decisionOptions.length, 2);
+  const captainPass = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-multi-owned-captain-pass", sessionId, expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId: captainProjection.projection.decisionOptions[0].reactionId } }, player);
+  assert.equal(captainPass.ok, true, JSON.stringify(captainPass.errors));
+  const captainRoll = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-h-multi-owned-captain-roll", sessionId, expectedRevision: captainPass.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(captainRoll.ok, true, JSON.stringify(captainRoll.errors));
+  const navigatorProjection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-multi-owned-navigator-read", sessionId, expectedRevision: captainRoll.revision }, player);
+  assert.equal(navigatorProjection.projection.resolutionCurrentStationId, "navigator");
+  assert.equal(navigatorProjection.projection.hasPendingPlayerDecision, true);
+  assert.deepEqual(navigatorProjection.projection.decisionOptions, []);
+  const writes = fx.tracker.updates;
+  const foreignNavigatorPass = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-multi-owned-navigator-foreign", sessionId, expectedRevision: captainRoll.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId: navigatorProjection.projection.reactionWindow?.opportunities?.[0]?.reactionId ?? "navigator-reaction" } }, player);
+  assert.equal(foreignNavigatorPass.ok, false);
+  assert.equal(foreignNavigatorPass.errors[0].code, "m11-projection-not-authorized");
+  assert.equal(fx.tracker.updates, writes);
+  const gmNavigatorProjection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-multi-owned-navigator-gm-read", sessionId, expectedRevision: captainRoll.revision }, fx.context);
+  const gmNavigatorPass = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-multi-owned-navigator-pass", sessionId, expectedRevision: captainRoll.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId: gmNavigatorProjection.projection.decisionOptions[0].reactionId } }, fx.context);
+  assert.equal(gmNavigatorPass.ok, true, JSON.stringify(gmNavigatorPass.errors));
+  const navigatorRoll = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-h-multi-owned-navigator-roll", sessionId, expectedRevision: gmNavigatorPass.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(navigatorRoll.ok, true, JSON.stringify(navigatorRoll.errors));
+  const watchmasterProjection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-multi-owned-watchmaster-read", sessionId, expectedRevision: navigatorRoll.revision }, player);
+  assert.equal(watchmasterProjection.projection.resolutionCurrentStationId, "watchmaster");
+  assert.equal(watchmasterProjection.projection.decisionOptions.length, 2);
+  const watchmasterPass = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-multi-owned-watchmaster-pass", sessionId, expectedRevision: navigatorRoll.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId: watchmasterProjection.projection.decisionOptions[0].reactionId } }, player);
+  assert.equal(watchmasterPass.ok, true, JSON.stringify(watchmasterPass.errors));
+  const watchmasterRoll = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-h-multi-owned-watchmaster-roll", sessionId, expectedRevision: watchmasterPass.revision, authorityEpoch: 0 }, player);
+  assert.equal(watchmasterRoll.ok, true, JSON.stringify(watchmasterRoll.errors));
+});
+
+test("Slice H rejects a resolved old reaction window after station advancement", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "slice-h-old-window", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-h-old-window-begin", sessionId: "slice-h-old-window", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const before = readVoyageEventSessionResolution("slice-h-old-window", fx.context).projection;
+  const oldReactionId = before.reactionWindow.opportunities[0].reactionId;
+  const passed = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-old-window-pass", sessionId: "slice-h-old-window", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId: oldReactionId } }, fx.context);
+  assert.equal(passed.ok, true, JSON.stringify(passed.errors));
+  let stationCalls = 0;
+  const originalStation = fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { stationCalls += 1; return originalStation(pending); };
+  const rolled = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-h-old-window-roll", sessionId: "slice-h-old-window", expectedRevision: passed.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(rolled.ok, true, JSON.stringify(rolled.errors));
+  const writes = fx.tracker.updates;
+  const oldRequest = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-old-window-new-request", sessionId: "slice-h-old-window", expectedRevision: rolled.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId: oldReactionId } }, fx.context);
+  assert.equal(oldRequest.ok, false);
+  assert.equal(oldRequest.errors[0].code, "m11-command-not-allowed");
+  assert.equal(stationCalls, 1);
+  assert.equal(fx.tracker.updates, writes);
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.equal(stored.events.filter((event) => event.type === "voyage.m12-focus-reaction-pass").length, 1);
+  assert.equal(stored.encounterState.metadata.focusPools.find((entry) => entry.stationId === "captain")?.current, 1);
+});
+
+test("Slice H rejects invalid or foreign reaction IDs and caller-authored reaction fields without mutation", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "slice-h-hostile-reactions", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-h-hostile-begin", sessionId: "slice-h-hostile-reactions", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const participant = operatorContext(fx, "captain-player", "connection-captain", "captain");
+  const foreign = operatorContext(fx, "engineer-player", "connection-engineer", "engineer");
+  const projection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-hostile-read", sessionId: "slice-h-hostile-reactions", expectedRevision: started.revision }, participant);
+  const reactionId = projection.projection.decisionOptions[0].reactionId;
+  const writes = fx.tracker.updates;
+  const unknown = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-unknown-reaction", sessionId: "slice-h-hostile-reactions", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId: "unknown-reaction" } }, participant);
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.errors[0].code, "m11-projection-not-authorized");
+  const foreignResult = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-foreign-reaction", sessionId: "slice-h-hostile-reactions", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId } }, foreign);
+  assert.equal(foreignResult.ok, false);
+  assert.equal(foreignResult.errors[0].code, "m11-projection-not-authorized");
+  const injectedFields = ["stationId", "operatorId", "actorId", "userId", "principalId", "participantId", "focus", "focusBalance", "modifier", "degree", "degreeShift", "dc", "total", "result", "effect", "target", "isGM", "role", "ownership"];
+  for (const [index, field] of injectedFields.entries()) {
+    const result = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: `slice-h-injected-${index}`, sessionId: "slice-h-hostile-reactions", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId, [field]: field === "result" ? { forged: true } : 1 } }, participant);
+    assert.equal(result.ok, false, field);
+    assert.equal(result.errors[0].code, "m11-command-payload-invalid", field);
+  }
+  assert.equal(fx.tracker.updates, writes);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.metadata.focusPools.find((entry) => entry.stationId === "captain")?.current, 1);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.events.filter((event) => event.type === "voyage.m12-focus-reaction-pass").length, 0);
+});
+
 test("M12 Slice G player execution advances through the final station without Task 5", async () => {
   const fx = fixture();
   fx.context.actors.push(actor("watchmaster"));
@@ -713,6 +805,540 @@ test("M12 Task 4 opens and advances a pre-roll reaction window for each committe
   const rolledEngineer = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "focus-advance-roll-engineer", sessionId: "resolution-session", expectedRevision: passedEngineer.revision, authorityEpoch: 0 }, fx.context);
   assert.equal(rolledEngineer.ok, true, JSON.stringify(rolledEngineer.errors));
   assert.equal(readVoyageEventSessionResolution("resolution-session", fx.context).projection.completed, true);
+});
+
+test("M12 Slice H lets the eligible player resolve the canonical Focus decision exactly once", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "slice-h-player-focus", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-h-player-focus-begin", sessionId: "slice-h-player-focus", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const player = operatorContext(fx, "captain-player", "connection-captain", "captain");
+  const before = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-player-focus-read", sessionId: "slice-h-player-focus", expectedRevision: started.revision }, player);
+  assert.equal(before.ok, true, JSON.stringify(before.errors)); assert.equal(before.projection.hasPendingPlayerDecision, true);
+  assert.equal(before.projection.canUseFocus, true); assert.equal(before.projection.rollBlockedByDecision, true);
+  assert.equal(before.projection.decisionOptions[0].kind, "focus-reaction-use");
+  assert.equal("pendingCheckId" in before.projection, false); assert.equal("focusResults" in before.projection, false);
+  const reactionId = before.projection.decisionOptions[0].reactionId; const writes = fx.tracker.updates;
+  const used = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-player-focus-use", sessionId: "slice-h-player-focus", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, player);
+  assert.equal(used.ok, true, JSON.stringify(used.errors)); assert.equal(fx.tracker.updates, writes + 3);
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.equal(stored.encounterState.metadata.focusPools.find((entry) => entry.stationId === "captain").current, 0);
+  const replay = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-player-focus-use", sessionId: "slice-h-player-focus", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, player);
+  assert.deepEqual(replay, used); assert.equal(fx.tracker.updates, writes + 3);
+  const conflict = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-player-focus-use", sessionId: "slice-h-player-focus", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId: "changed-reaction" } }, player);
+  assert.equal(conflict.ok, false); assert.equal(conflict.errors[0].code, "m11-request-id-conflict"); assert.equal(fx.tracker.updates, writes + 3);
+  const disconnectedReplay = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-player-focus-use", sessionId: "slice-h-player-focus", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, { ...player, authenticatedConnectionId: null, trustedTransportContext: false });
+  assert.equal(disconnectedReplay.ok, false); assert.equal(disconnectedReplay.errors[0].code, "m11-authentication-required"); assert.equal(fx.tracker.updates, writes + 3);
+});
+
+test("M12 Slice H filters reaction authority and rejects changed or disconnected player decisions", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "slice-h-authority", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-h-authority-begin", sessionId: "slice-h-authority", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const captain = operatorContext(fx, "captain-player", "connection-captain", "captain");
+  const engineer = operatorContext(fx, "engineer-player", "connection-engineer", "engineer");
+  const observer = operatorContext(fx, "observer-player", "connection-observer", []);
+  const projection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-authority-read", sessionId: "slice-h-authority", expectedRevision: started.revision }, captain);
+  const reactionId = projection.projection.decisionOptions[0].reactionId;
+  const writes = fx.tracker.updates;
+  for (const [label, context] of [["foreign", engineer], ["observer", observer]]) {
+    const rejected = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: `slice-h-${label}`, sessionId: "slice-h-authority", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId } }, context);
+    assert.equal(rejected.ok, false, label); assert.equal(rejected.errors[0].code, "m11-projection-not-authorized", label); assert.equal(fx.tracker.updates, writes, label);
+  }
+  const disconnected = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-disconnected", sessionId: "slice-h-authority", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId } }, { ...captain, trustedTransportContext: false, authenticatedConnectionId: null });
+  assert.equal(disconnected.ok, false); assert.equal(disconnected.errors[0].code, "m11-authentication-required"); assert.equal(fx.tracker.updates, writes);
+  const changed = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-changed", sessionId: "slice-h-authority", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId: "forged-reaction" } }, captain);
+  assert.equal(changed.ok, false); assert.equal(changed.errors[0].code, "m11-projection-not-authorized"); assert.equal(fx.tracker.updates, writes);
+  const stale = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-stale", sessionId: "slice-h-authority", expectedRevision: started.revision - 1, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId } }, captain);
+  assert.equal(stale.ok, false); assert.equal(stale.errors[0].code, "m11-stale-session-revision"); assert.equal(fx.tracker.updates, writes);
+});
+
+test("M12 Slice H preserves one-winner Focus contention and no-refund reload", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "slice-h-contention", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-h-contention-begin", sessionId: "slice-h-contention", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  let focusCalls = 0; fx.context.executeVoyagePf2eFocusCheck = async (pending) => { focusCalls += 1; return fx.context.executeVoyagePf2ePendingCheck(pending); };
+  const player = operatorContext(fx, "captain-player", "connection-captain", "captain");
+  const projection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-contention-read", sessionId: "slice-h-contention", expectedRevision: started.revision }, player);
+  const reactionId = projection.projection.decisionOptions[0].reactionId;
+  const request = { kind: "voyage.m11-command", requestId: "slice-h-contention-player", sessionId: "slice-h-contention", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } };
+  const [playerResult, gmResult] = await Promise.all([dispatchVoyageEventSessionCommand(request, player), dispatchVoyageEventSessionCommand({ ...request, requestId: "slice-h-contention-gm" }, fx.context)]);
+  assert.equal(focusCalls, 1); assert.equal([playerResult, gmResult].filter((entry) => entry.ok).length, 1);
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.equal(stored.encounterState.metadata.focusPools.find((entry) => entry.stationId === "captain").current, 0);
+  assert.equal(stored.events.filter((entry) => entry.type === "voyage.m12-focus-reaction-use").length, 1);
+  assert.equal(reloadVoyageEventSession("slice-h-contention", fx.context).ok, true);
+});
+
+function realTransportFixture(fx, playerId = "captain-player", options = {}) {
+  const listeners = [];
+  let playerJournalWrites = 0;
+  const playerDocumentAdapter = {
+    update() { playerJournalWrites += 1; },
+    reset() { playerJournalWrites = 0; }
+  };
+  const users = options.users ?? [{ id: "gm-1", isGM: true, active: true }, { id: playerId, isGM: false, active: true }];
+  const game = {
+    user: { id: "gm-1", isGM: true, active: true },
+    users,
+    socket: { id: "gm-transport", on: (_channel, handler) => listeners.push(handler), emit: () => {} },
+    time: { serverTime: Date.parse("2026-08-13T12:00:00.000Z") }
+  };
+  const coordinator = getFoundrySessionMutationCoordinator(game);
+  fx.context.authenticatedConnectionId = "gm-transport";
+  fx.context.users = game.users;
+  fx.context.runExclusiveSessionMutation = coordinator;
+  const remoteContext = {
+    ...fx.context,
+    authenticatedUserId: playerId,
+    authenticatedConnectionId: "gm-transport",
+    trustedTransportContext: true,
+    activeGmUserId: "gm-1",
+    users: game.users,
+    resolveVoyageOperatorForPrincipal: options.resolveVoyageOperatorForPrincipal ?? (() => [{ kind: "actor", id: "captain", uuid: "Actor.captain", name: "Captain" }]),
+    runExclusiveSessionMutation: coordinator,
+    __trustedRemotePlayerIntent: true,
+    executingGmUserId: "gm-1"
+  };
+  let handler;
+  const socket = {
+    register: (_name, callback) => { handler = callback; },
+    async executeAsGM(_name, request) {
+      await options.beforeHandler?.(request);
+      if (typeof options.executeAsGM === "function") return options.executeAsGM(request, handler);
+      return handler.call({ socketdata: { userId: playerId } }, request);
+    }
+  };
+  return {
+    remoteContext,
+    socket,
+    game,
+    playerDocumentAdapter,
+    playerDocumentAdapterWasInstalled: true,
+    get playerJournalWrites() { return playerJournalWrites; },
+    register: (onIntent) => registerVoyageGmCommandTransport({ socketlib: { registerModule: () => socket }, onIntent })
+  };
+}
+
+test("real socketlib-shaped transport routes player station execution to the active GM coordinator", async () => {
+  const fx = fixture(); const locked = await launchAndLock(fx, "transport-station", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const transport = realTransportFixture(fx);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-begin", sessionId: "transport-station", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  let stationCalls = 0;
+  const originalStation = fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { stationCalls += 1; return originalStation(pending); };
+  transport.remoteContext.executeVoyagePf2ePendingCheck = fx.context.executeVoyagePf2ePendingCheck;
+  assert.equal(transport.register((request, origin) => {
+    assert.equal(origin.originatingUserId, "captain-player");
+    return resolveVoyageEventSessionStation(request, transport.remoteContext);
+  }), true);
+  const writes = fx.tracker.updates;
+  const gmWrites = fx.tracker.gmJournalWrites;
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m12-resolve-station", requestId: "transport-roll", sessionId: "transport-station", expectedRevision: started.revision, authorityEpoch: 0 }, transport.socket);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.errors.length, 0);
+  assert.equal(stationCalls, 1);
+  assert.equal(fx.tracker.updates, writes + 1);
+  assert.equal(transport.playerDocumentAdapterWasInstalled, true);
+  assert.equal(typeof transport.playerDocumentAdapter.update, "function");
+  transport.playerDocumentAdapter.update();
+  assert.equal(transport.playerJournalWrites, 1);
+  transport.playerDocumentAdapter.reset();
+  assert.equal(transport.playerJournalWrites, 0);
+  assert.equal(fx.tracker.gmJournalWrites, gmWrites + 1);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.events.filter((event) => event.type === "voyage.m12-action-segment").length, 1);
+  const replay = await executeVoyagePlayerIntent({ kind: "voyage.m12-resolve-station", requestId: "transport-roll", sessionId: "transport-station", expectedRevision: started.revision, authorityEpoch: 0 }, transport.socket);
+  assert.deepEqual(replay, result);
+  assert.equal(stationCalls, 1);
+  assert.equal(fx.tracker.updates, writes + 1);
+  const conflict = await executeVoyagePlayerIntent({ kind: "voyage.m12-resolve-station", requestId: "transport-roll", sessionId: "transport-station", expectedRevision: started.revision + 1, authorityEpoch: 0 }, transport.socket);
+  assert.equal(conflict.ok, false);
+  assert.equal(conflict.errors[0].code, "m11-request-id-conflict");
+  assert.equal(fx.tracker.updates, writes + 1);
+  const epochConflict = await executeVoyagePlayerIntent({ kind: "voyage.m12-resolve-station", requestId: "transport-roll", sessionId: "transport-station", expectedRevision: started.revision, authorityEpoch: 1 }, transport.socket);
+  assert.equal(epochConflict.ok, false);
+  assert.equal(epochConflict.errors[0].code, "m11-request-id-conflict");
+  assert.equal(stationCalls, 1);
+  assert.equal(fx.tracker.updates, writes + 1);
+});
+
+test("real socketlib-shaped transport routes player PASS without a PF2E roll and keeps the player principal", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "transport-focus", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const transport = realTransportFixture(fx);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-focus-begin", sessionId: "transport-focus", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const projection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "transport-focus-read", sessionId: "transport-focus", expectedRevision: started.revision }, { ...transport.remoteContext, resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "captain", uuid: "Actor.captain", name: "Captain" }] });
+  const reactionId = projection.projection.decisionOptions[0].reactionId;
+  const focusBefore = fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.metadata.focusPools.find((entry) => entry.stationId === "captain")?.current;
+  let focusSpecificCalls = 0; fx.context.executeVoyagePf2eFocusCheck = async () => { focusSpecificCalls += 1; return null; };
+  let stationActionSegmentCalls = 0;
+  const originalStation = fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { stationActionSegmentCalls += 1; return originalStation(pending); };
+  transport.remoteContext.executeVoyagePf2eFocusCheck = fx.context.executeVoyagePf2eFocusCheck;
+  transport.remoteContext.executeVoyagePf2ePendingCheck = fx.context.executeVoyagePf2ePendingCheck;
+  assert.equal(transport.register((request, origin) => {
+    assert.equal(origin.originatingUserId, "captain-player");
+    return dispatchVoyageEventSessionCommand(request, transport.remoteContext);
+  }), true);
+  const writes = fx.tracker.updates;
+  const gmWrites = fx.tracker.gmJournalWrites;
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "transport-focus-pass", sessionId: "transport-focus", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId } }, transport.socket);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(focusSpecificCalls, 0);
+  assert.equal(stationActionSegmentCalls, 0);
+  assert.equal(fx.tracker.updates, writes + 1);
+  assert.equal(transport.playerDocumentAdapterWasInstalled, true);
+  assert.equal(transport.playerJournalWrites, 0);
+  assert.equal(fx.tracker.gmJournalWrites, gmWrites + 1);
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.equal(stored.events.filter((event) => event.type === "voyage.m12-focus-reaction-pass").length, 1);
+  assert.equal(stored.auditHistory.filter((entry) => entry.kind === "m12-focus-reaction-passed").length, 1);
+  assert.equal(stored.encounterState.metadata.focusPools.find((entry) => entry.stationId === "captain")?.current, focusBefore);
+  const after = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "transport-focus-pass-after", sessionId: "transport-focus", expectedRevision: result.revision }, transport.remoteContext);
+  assert.equal(after.ok, true, JSON.stringify(after.errors));
+  assert.equal(after.projection.hasPendingPlayerDecision, false);
+  assert.equal(after.projection.canExecuteCurrentStation, true);
+  assert.equal(after.projection.rollBlockedByDecision, false);
+  const replay = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "transport-focus-pass", sessionId: "transport-focus", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId } }, transport.socket);
+  assert.equal(replay.ok, true);
+  assert.deepEqual(replay, result);
+  assert.equal(focusSpecificCalls, 0);
+  assert.equal(stationActionSegmentCalls, 0);
+  assert.equal(fx.tracker.updates, writes + 1);
+  const conflict = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "transport-focus-pass", sessionId: "transport-focus", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId: "changed-reaction" } }, transport.socket);
+  assert.equal(conflict.ok, false);
+  assert.equal(conflict.errors[0].code, "m11-request-id-conflict");
+  assert.equal(fx.tracker.updates, writes + 1);
+  const secondPass = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "transport-focus-pass-again", sessionId: "transport-focus", expectedRevision: result.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId } }, transport.socket);
+  assert.equal(secondPass.ok, false);
+  assert.ok(["m11-command-not-allowed", "m11-stale-session-revision", "m11-projection-not-authorized"].includes(secondPass.errors[0].code));
+  assert.equal(focusSpecificCalls, 0);
+  assert.equal(stationActionSegmentCalls, 0);
+  assert.equal(fx.tracker.updates, writes + 1);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.events.filter((event) => event.type === "voyage.m12-focus-reaction-pass").length, 1);
+});
+
+test("real socketlib-shaped transport routes player USE Focus through the GM exactly once", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "transport-focus-use", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const transport = realTransportFixture(fx);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-use-begin", sessionId: "transport-focus-use", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const projection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "transport-use-read", sessionId: "transport-focus-use", expectedRevision: started.revision }, transport.remoteContext);
+  const reactionId = projection.projection.decisionOptions[0].reactionId;
+  let focusCalls = 0; const originalFocus = fx.context.executeVoyagePf2eFocusCheck ?? fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2eFocusCheck = async (pending) => { focusCalls += 1; return originalFocus(pending); };
+  transport.remoteContext.executeVoyagePf2eFocusCheck = fx.context.executeVoyagePf2eFocusCheck;
+  assert.equal(transport.register((request, origin) => {
+    assert.equal(origin.originatingUserId, "captain-player");
+    return dispatchVoyageEventSessionCommand(request, transport.remoteContext);
+  }), true);
+  const writes = fx.tracker.updates;
+  const gmWrites = fx.tracker.gmJournalWrites;
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "transport-focus-use", sessionId: "transport-focus-use", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, transport.socket);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(focusCalls, 1);
+  assert.equal(fx.tracker.updates, writes + 3);
+  assert.equal(transport.playerDocumentAdapterWasInstalled, true);
+  assert.equal(transport.playerJournalWrites, 0);
+  assert.equal(fx.tracker.gmJournalWrites, gmWrites + 3);
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.equal(stored.events.filter((event) => event.type === "voyage.m12-focus-reaction-use").length, 1);
+  const replay = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "transport-focus-use", sessionId: "transport-focus-use", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, transport.socket);
+  assert.equal(replay.ok, true);
+  assert.equal(focusCalls, 1);
+  assert.equal(fx.tracker.updates, writes + 3);
+  const conflict = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "transport-focus-use", sessionId: "transport-focus-use", expectedRevision: started.revision + 1, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, transport.socket);
+  assert.equal(conflict.ok, false);
+  assert.equal(conflict.errors[0].code, "m11-request-id-conflict");
+  assert.equal(fx.tracker.updates, writes + 3);
+});
+
+test("transport preserves current connection validation when the sender disconnects before GM handling", async () => {
+  const fx = fixture(); const locked = await launchAndLock(fx, "transport-disconnected", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const transport = realTransportFixture(fx, "captain-player", {
+    users: [{ id: "gm-1", isGM: true, active: true }, { id: "captain-player", isGM: false, active: false }]
+  });
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-disconnected-begin", sessionId: "transport-disconnected", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  assert.equal(transport.register((request, origin) => {
+    assert.equal(origin.originatingUserId, "captain-player");
+    return resolveVoyageEventSessionStation(request, transport.remoteContext);
+  }), true);
+  const writes = fx.tracker.updates;
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m12-resolve-station", requestId: "transport-disconnected-roll", sessionId: "transport-disconnected", expectedRevision: started.revision, authorityEpoch: 0 }, transport.socket);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m11-authentication-required");
+  assert.equal(result.errors[0].path, "transport.user");
+  assert.equal(fx.tracker.updates, writes);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.events.filter((event) => event.type === "voyage.m12-action-segment").length, 0);
+});
+
+test("transport delivers a connected nonparticipant to the GM, where canonical authority rejects it", async () => {
+  const fx = fixture(); const locked = await launchAndLock(fx, "transport-nonparticipant", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const transport = realTransportFixture(fx, "player-b", { resolveVoyageOperatorForPrincipal: () => [] });
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-nonparticipant-begin", sessionId: "transport-nonparticipant", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  assert.equal(transport.register((request, origin) => {
+    assert.equal(origin.originatingUserId, "player-b");
+    return resolveVoyageEventSessionStation(request, transport.remoteContext);
+  }), true);
+  const writes = fx.tracker.updates;
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m12-resolve-station", requestId: "transport-nonparticipant-roll", sessionId: "transport-nonparticipant", expectedRevision: started.revision, authorityEpoch: 0 }, transport.socket);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m11-projection-not-authorized");
+  assert.equal(fx.tracker.updates, writes);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.events.filter((event) => event.type === "voyage.m12-action-segment").length, 0);
+});
+
+test("transport preserves caller revision during deterministic authoritative drift", async () => {
+  const fx = fixture(); const locked = await launchAndLock(fx, "transport-revision-drift", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-revision-drift-begin", sessionId: "transport-revision-drift", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  let stationCalls = 0;
+  const originalStation = fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { stationCalls += 1; return originalStation(pending); };
+  const request = { kind: "voyage.m12-resolve-station", requestId: "transport-revision-drift-roll", sessionId: "transport-revision-drift", expectedRevision: started.revision, authorityEpoch: 0 };
+  let capturedExpectedRevision = null;
+  const transport = realTransportFixture(fx, "captain-player", {
+    beforeHandler: async (routedRequest) => {
+      assert.equal(routedRequest.expectedRevision, started.revision);
+      const advanced = await resolveVoyageEventSessionStation({ ...request, requestId: "transport-revision-drift-advance" }, fx.context);
+      assert.equal(advanced.ok, true, JSON.stringify(advanced.errors));
+      assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.revision > started.revision, true);
+    }
+  });
+  assert.equal(transport.register((candidate) => {
+    capturedExpectedRevision = candidate.expectedRevision;
+    return resolveVoyageEventSessionStation(candidate, transport.remoteContext);
+  }), true);
+  const writes = fx.tracker.updates;
+  const stale = await executeVoyagePlayerIntent(request, transport.socket);
+  assert.equal(capturedExpectedRevision, started.revision);
+  assert.equal(stale.ok, false);
+  assert.equal(stale.errors[0].code, "m11-stale-session-revision");
+  assert.equal(stationCalls, 1);
+  // The deterministic pre-handler advance is the one expected canonical write;
+  // the stale transported request must not add another.
+  assert.equal(fx.tracker.updates, writes + 1);
+});
+
+test("transport preserves caller authority epoch when the active GM changes", async () => {
+  const fx = fixture(); const locked = await launchAndLock(fx, "transport-epoch-drift", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-epoch-drift-begin", sessionId: "transport-epoch-drift", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  let stationCalls = 0;
+  const originalStation = fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { stationCalls += 1; return originalStation(pending); };
+  let capturedAuthorityEpoch = null;
+  const transport = realTransportFixture(fx, "captain-player", {
+    beforeHandler: async (routedRequest) => {
+      assert.equal(routedRequest.authorityEpoch, 0);
+      const transition = await transferVoyageEventSessionControl({
+        kind: "voyage.m11-transfer-control",
+        requestId: "transport-epoch-drift-transfer",
+        sessionId: "transport-epoch-drift",
+        expectedRevision: started.revision,
+        authorityEpoch: 0,
+        targetUserId: "gm-1",
+        reason: "canonical epoch drift witness"
+      }, fx.context);
+      assert.equal(transition.ok, true, JSON.stringify(transition.errors));
+      assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.authorityEpoch, 1);
+    }
+  });
+  assert.equal(transport.register((candidate) => {
+    capturedAuthorityEpoch = candidate.authorityEpoch;
+    return resolveVoyageEventSessionStation(candidate, transport.remoteContext);
+  }), true);
+  const writes = fx.tracker.updates;
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m12-resolve-station", requestId: "transport-epoch-drift-roll", sessionId: "transport-epoch-drift", expectedRevision: started.revision, authorityEpoch: 0 }, transport.socket);
+  assert.equal(capturedAuthorityEpoch, 0);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m11-control-transfer-required");
+  assert.equal(stationCalls, 0);
+  // The canonical transfer is the one expected authority write; the drifted
+  // transported request must not add another.
+  assert.equal(fx.tracker.updates, writes + 1);
+});
+
+test("transported player and GM station contenders share one coordinator winner", async () => {
+  const fx = fixture(); const locked = await launchAndLock(fx, "transport-station-contention", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const transport = realTransportFixture(fx);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-station-contention-begin", sessionId: "transport-station-contention", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  let stationCalls = 0;
+  const executor = fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { stationCalls += 1; return executor(pending); };
+  transport.remoteContext.executeVoyagePf2ePendingCheck = fx.context.executeVoyagePf2ePendingCheck;
+  assert.equal(transport.register((request) => resolveVoyageEventSessionStation(request, transport.remoteContext)), true);
+  const request = { kind: "voyage.m12-resolve-station", requestId: "transport-station-contention-player", sessionId: "transport-station-contention", expectedRevision: started.revision, authorityEpoch: 0 };
+  const writes = fx.tracker.updates;
+  const [playerResult, gmResult] = await Promise.all([
+    executeVoyagePlayerIntent(request, transport.socket),
+    resolveVoyageEventSessionStation({ ...request, requestId: "transport-station-contention-gm" }, fx.context)
+  ]);
+  assert.equal(stationCalls, 1);
+  assert.equal([playerResult, gmResult].filter((entry) => entry.ok).length, 1);
+  assert.equal(fx.tracker.updates, writes + 1);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.events.filter((event) => event.type === "voyage.m12-action-segment").length, 1);
+});
+
+test("no active GM transport failure performs no local fallback or session write", async () => {
+  const fx = fixture(); const locked = await launchAndLock(fx, "transport-no-gm", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-no-gm-begin", sessionId: "transport-no-gm", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const writes = fx.tracker.updates;
+  const gmWrites = fx.tracker.gmJournalWrites;
+  const transport = realTransportFixture(fx, "captain-player", {
+    executeAsGM: async () => { const error = new Error("no GM"); error.name = "SocketlibNoGMConnectedError"; throw error; }
+  });
+  let stationPf2eExecutorCalls = 0;
+  let focusExecutorCalls = 0;
+  let reactionCommitCalls = 0;
+  fx.context.executeVoyagePf2ePendingCheck = async () => { stationPf2eExecutorCalls += 1; return null; };
+  fx.context.executeVoyagePf2eFocusCheck = async () => { focusExecutorCalls += 1; return null; };
+  fx.context.commitVoyageFocusReaction = async () => { reactionCommitCalls += 1; return null; };
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m12-resolve-station", requestId: "transport-no-gm-roll", sessionId: "transport-no-gm", expectedRevision: started.revision, authorityEpoch: 0 }, transport.socket);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m11-active-gm-unavailable");
+  assert.equal(result.errors[0].path, "transport.activeGm");
+  assert.equal(fx.tracker.updates, writes);
+  assert.equal(transport.playerDocumentAdapterWasInstalled, true);
+  assert.equal(typeof transport.playerDocumentAdapter.update, "function");
+  assert.equal(transport.playerJournalWrites, 0);
+  assert.equal(fx.tracker.gmJournalWrites, gmWrites);
+  assert.equal(stationPf2eExecutorCalls, 0);
+  assert.equal(focusExecutorCalls, 0);
+  assert.equal(reactionCommitCalls, 0);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.events.filter((event) => event.type === "voyage.m12-action-segment").length, 0);
+});
+
+test("real transport and GM-local Focus contenders serialize to one winner", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "transport-contention", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const transport = realTransportFixture(fx);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "transport-contention-begin", sessionId: "transport-contention", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const projection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "transport-contention-read", sessionId: "transport-contention", expectedRevision: started.revision }, transport.remoteContext);
+  const reactionId = projection.projection.decisionOptions[0].reactionId;
+  let focusCalls = 0; const originalFocus = fx.context.executeVoyagePf2eFocusCheck ?? fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2eFocusCheck = async (pending) => { focusCalls += 1; return originalFocus(pending); };
+  transport.remoteContext.executeVoyagePf2eFocusCheck = fx.context.executeVoyagePf2eFocusCheck;
+  assert.equal(transport.register((request) => dispatchVoyageEventSessionCommand(request, transport.remoteContext)), true);
+  const request = { kind: "voyage.m11-command", requestId: "transport-contention-player", sessionId: "transport-contention", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } };
+  const writes = fx.tracker.updates;
+  const [playerResult, gmResult] = await Promise.all([
+    executeVoyagePlayerIntent(request, transport.socket),
+    dispatchVoyageEventSessionCommand({ ...request, requestId: "transport-contention-gm" }, fx.context)
+  ]);
+  assert.equal([playerResult, gmResult].filter((entry) => entry.ok).length, 1);
+  assert.equal(focusCalls, 1);
+  assert.equal(fx.tracker.updates, writes + 3);
+});
+
+test("Slice H USE versus PASS contention resolves one shared reaction opportunity", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "slice-h-use-pass-contention", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const transport = realTransportFixture(fx);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-h-use-pass-begin", sessionId: "slice-h-use-pass-contention", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const before = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-use-pass-read", sessionId: "slice-h-use-pass-contention", expectedRevision: started.revision }, transport.remoteContext);
+  const reactionId = before.projection.decisionOptions[0].reactionId;
+  let focusCalls = 0;
+  const originalFocus = fx.context.executeVoyagePf2eFocusCheck ?? fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2eFocusCheck = async (pending) => { focusCalls += 1; return originalFocus(pending); };
+  transport.remoteContext.executeVoyagePf2eFocusCheck = fx.context.executeVoyagePf2eFocusCheck;
+  assert.equal(transport.register((request) => dispatchVoyageEventSessionCommand(request, transport.remoteContext)), true);
+  const writes = fx.tracker.updates;
+  const useRequest = { kind: "voyage.m11-command", requestId: "slice-h-use-contender", sessionId: "slice-h-use-pass-contention", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } };
+  const passRequest = { ...useRequest, requestId: "slice-h-pass-contender", commandKind: "focus-reaction-pass" };
+  const [useResult, passResult] = await Promise.all([
+    executeVoyagePlayerIntent(useRequest, transport.socket),
+    dispatchVoyageEventSessionCommand(passRequest, fx.context)
+  ]);
+  const results = [useResult, passResult];
+  assert.equal(results.filter((entry) => entry.ok).length, 1);
+  assert.equal(focusCalls <= 1, true);
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  const successfulEvents = stored.events.filter((event) => ["voyage.m12-focus-reaction-use", "voyage.m12-focus-reaction-pass"].includes(event.type));
+  const successfulAudits = stored.auditHistory.filter((entry) => ["m12-focus-reaction-used", "m12-focus-reaction-passed"].includes(entry.kind));
+  assert.equal(successfulEvents.length, 1);
+  assert.equal(successfulAudits.length, 1);
+  assert.equal(stored.encounterState.metadata.reactionWindow.resolved.includes(reactionId), true);
+  const useWon = successfulEvents[0].type === "voyage.m12-focus-reaction-use";
+  assert.equal(stored.encounterState.metadata.focusPools.find((entry) => entry.stationId === "captain")?.current, useWon ? 0 : 1);
+  assert.equal(fx.tracker.updates <= writes + 3, true);
+  assert.equal(reloadVoyageEventSession("slice-h-use-pass-contention", fx.context).ok, true);
+});
+
+test("Slice H transported reaction request preserves revision during deterministic drift", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "slice-h-revision-drift", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-h-revision-begin", sessionId: "slice-h-revision-drift", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const transport = realTransportFixture(fx, "captain-player", {
+    beforeHandler: async (routedRequest) => {
+      assert.equal(routedRequest.expectedRevision, started.revision);
+      const advanced = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-h-revision-advance", sessionId: "slice-h-revision-drift", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId } }, fx.context);
+      assert.equal(advanced.ok, true, JSON.stringify(advanced.errors));
+      assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.revision, started.revision + 1);
+    }
+  });
+  const before = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-revision-read", sessionId: "slice-h-revision-drift", expectedRevision: started.revision }, transport.remoteContext);
+  const reactionId = before.projection.decisionOptions[0].reactionId;
+  let capturedRevision = null; let focusCalls = 0; let stationCalls = 0;
+  const originalFocus = fx.context.executeVoyagePf2eFocusCheck ?? fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2eFocusCheck = async (pending) => { focusCalls += 1; return originalFocus(pending); };
+  const originalStation = fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { stationCalls += 1; return originalStation(pending); };
+  transport.remoteContext.executeVoyagePf2eFocusCheck = fx.context.executeVoyagePf2eFocusCheck;
+  transport.remoteContext.executeVoyagePf2ePendingCheck = fx.context.executeVoyagePf2ePendingCheck;
+  assert.equal(transport.register((request) => { capturedRevision = request.expectedRevision; return dispatchVoyageEventSessionCommand(request, transport.remoteContext); }), true);
+  const writes = fx.tracker.updates;
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "slice-h-revision-use", sessionId: "slice-h-revision-drift", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, transport.socket);
+  assert.equal(capturedRevision, started.revision);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m11-stale-session-revision");
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.revision, started.revision + 1);
+  assert.equal(focusCalls, 0);
+  assert.equal(stationCalls, 0);
+  assert.equal(fx.tracker.updates, writes + 1);
+});
+
+test("Slice H transported reaction request preserves authority epoch during canonical transfer drift", async () => {
+  const fx = fixture(); fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "slice-h-epoch-drift", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-h-epoch-begin", sessionId: "slice-h-epoch-drift", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const transport = realTransportFixture(fx, "captain-player", {
+    beforeHandler: async (routedRequest) => {
+      assert.equal(routedRequest.authorityEpoch, 0);
+      const transition = await transferVoyageEventSessionControl({ kind: "voyage.m11-transfer-control", requestId: "slice-h-epoch-transfer", sessionId: "slice-h-epoch-drift", expectedRevision: started.revision, authorityEpoch: 0, targetUserId: "gm-1", reason: "Slice H epoch drift witness" }, fx.context);
+      assert.equal(transition.ok, true, JSON.stringify(transition.errors));
+      assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.authorityEpoch, 1);
+    }
+  });
+  const before = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-h-epoch-read", sessionId: "slice-h-epoch-drift", expectedRevision: started.revision }, transport.remoteContext);
+  const reactionId = before.projection.decisionOptions[0].reactionId;
+  let capturedEpoch = null; let focusCalls = 0; let stationCalls = 0;
+  const originalFocus = fx.context.executeVoyagePf2eFocusCheck ?? fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2eFocusCheck = async (pending) => { focusCalls += 1; return originalFocus(pending); };
+  const originalStation = fx.context.executeVoyagePf2ePendingCheck;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { stationCalls += 1; return originalStation(pending); };
+  transport.remoteContext.executeVoyagePf2eFocusCheck = fx.context.executeVoyagePf2eFocusCheck;
+  transport.remoteContext.executeVoyagePf2ePendingCheck = fx.context.executeVoyagePf2ePendingCheck;
+  assert.equal(transport.register((request) => { capturedEpoch = request.authorityEpoch; return dispatchVoyageEventSessionCommand(request, transport.remoteContext); }), true);
+  const writes = fx.tracker.updates;
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "slice-h-epoch-use", sessionId: "slice-h-epoch-drift", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, transport.socket);
+  assert.equal(capturedEpoch, 0);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m11-control-transfer-required");
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.authorityEpoch, 1);
+  assert.equal(focusCalls, 0);
+  assert.equal(stationCalls, 0);
+  assert.equal(fx.tracker.updates, writes + 1);
 });
 
 test("M12 trusted Focus authoring rejects the legacy short schema", async () => {

@@ -152,12 +152,38 @@ export function buildVoyagePlayerEventModel(projection) {
     }))
     : stations.map((station, index) => ({ stationId: station.stationId, stationDisplayName: station.stationDisplayName, orderPosition: index + 1, status: "waiting", current: false, operatorName: station.operatorName }));
   const resolution = resolutionComplete
-    ? { stateLabel: "RESOLUTION COMPLETE", detail: "AWAITING ROUND CLOSEOUT", currentStation: null, ownedCurrent: false, waiting: false, started: true, order: Array.isArray(projection.resolutionOrder) ? [...projection.resolutionOrder] : [...sharedStationOrder], orderPosition: null, totalStations: projection.resolutionTotalStations ?? projectedResolutionStations.length, stations: projectedResolutionStations, canExecuteCurrentStation: false, currentExecutionState: "complete", currentExecution: null }
+      ? { stateLabel: "RESOLUTION COMPLETE", detail: "AWAITING ROUND CLOSEOUT", currentStation: null, ownedCurrent: false, waiting: false, started: true, order: Array.isArray(projection.resolutionOrder) ? [...projection.resolutionOrder] : [...sharedStationOrder], orderPosition: null, totalStations: projection.resolutionTotalStations ?? projectedResolutionStations.length, stations: projectedResolutionStations, canExecuteCurrentStation: false, currentExecutionState: "complete", currentExecution: null }
     : resolutionStarted
       ? { stateLabel: "RESOLUTION IN PROGRESS", detail: "CURRENT STATION IDENTIFIED — AWAITING STATION EXECUTION", currentStation, ownedCurrent: Boolean(currentStation?.owned), waiting: false, started: true, order: Array.isArray(projection.resolutionOrder) ? [...projection.resolutionOrder] : [...sharedStationOrder], orderPosition: projection.resolutionOrderPosition ?? null, totalStations: projection.resolutionTotalStations ?? projectedResolutionStations.length, stations: projectedResolutionStations, canExecuteCurrentStation: projection.canExecuteCurrentStation === true, currentExecutionState: projection.currentExecutionState ?? "waiting", waitingOnOperator: projection.currentExecutionState === "waiting-on-operator", currentExecution: projection.currentExecution ?? null }
       : planLocked
         ? { stateLabel: "PLAN LOCKED", detail: "Waiting for the GM to begin Resolution.", currentStation: null, ownedCurrent: false, waiting: true, started: false, order: [...sharedStationOrder], orderPosition: null, totalStations: sharedStationOrder.length, stations: projectedResolutionStations, canExecuteCurrentStation: false, currentExecutionState: "not-started", currentExecution: null }
-        : { stateLabel: "WAITING FOR RESOLUTION", detail: "Resolution has not begun.", currentStation: null, ownedCurrent: false, waiting: true, started: false, order: [...sharedStationOrder], orderPosition: null, totalStations: sharedStationOrder.length, stations: projectedResolutionStations, canExecuteCurrentStation: false, currentExecutionState: "not-started", currentExecution: null };
+      : { stateLabel: "WAITING FOR RESOLUTION", detail: "Resolution has not begun.", currentStation: null, ownedCurrent: false, waiting: true, started: false, order: [...sharedStationOrder], orderPosition: null, totalStations: sharedStationOrder.length, stations: projectedResolutionStations, canExecuteCurrentStation: false, currentExecutionState: "not-started", currentExecution: null };
+  const decision = {
+    pending: projection.hasPendingPlayerDecision === true,
+    phase: projection.decisionPhase ?? null,
+    required: projection.decisionRequired === true,
+    stationId: projection.decisionStationId ?? null,
+    stationName: projection.decisionStationName ?? null,
+    targetStationId: projection.decisionTargetStationId ?? null,
+    targetStationName: projection.decisionTargetStationName ?? null,
+    title: projection.decisionTitle ?? null,
+    description: projection.decisionDescription ?? null,
+    narration: projection.decisionNarration ?? null,
+    sourceOperatorName: projection.decisionSourceOperatorName ?? null,
+    cost: projection.decisionCost ?? null,
+    statisticLabel: projection.decisionStatisticLabel ?? null,
+    dc: projection.decisionDc ?? null,
+    visibility: projection.decisionVisibility ?? null,
+    outcomes: Array.isArray(projection.decisionOutcomes) ? projection.decisionOutcomes.map((entry) => ({ ...entry })) : [],
+    options: Array.isArray(projection.decisionOptions) ? projection.decisionOptions.map((entry) => ({ ...entry })) : [],
+    useReactionId: Array.isArray(projection.decisionOptions) ? projection.decisionOptions.find((entry) => entry?.kind === "focus-reaction-use")?.reactionId ?? null : null,
+    passReactionId: Array.isArray(projection.decisionOptions) ? projection.decisionOptions.find((entry) => entry?.kind === "focus-reaction-pass")?.reactionId ?? null : null,
+    canUseFocus: projection.canUseFocus === true,
+    canPassReaction: projection.canPassReaction === true,
+    rollBlocked: projection.rollBlockedByDecision === true
+  };
+  resolution.reactionDecision = decision;
+  resolution.rollBlockedByDecision = decision.rollBlocked;
   return {
     schemaVersion: 1,
     sessionId: projection.sessionId,
@@ -255,6 +281,32 @@ export class VoyagePlayerEventApp extends HandlebarsApplicationMixin(Application
     this.element.querySelectorAll("[data-player-planning-clear]").forEach((control) => control.addEventListener("click", () => this.#submitPlanning(control, true)));
     this.element.querySelectorAll("[data-player-order-move]").forEach((control) => control.addEventListener("click", () => this.#submitOrder(control)));
     this.element.querySelectorAll("[data-player-execute-current]").forEach((control) => control.addEventListener("click", () => this.#submitExecution(control)));
+    this.element.querySelectorAll("[data-player-reaction-command]").forEach((control) => control.addEventListener("click", () => this.#submitReaction(control)));
+  }
+
+  async #submitReaction(control) {
+    if (!this.#sessionId || control?.dataset?.reactionId === undefined) return;
+    const commandKind = control.dataset.playerReactionCommand;
+    if (!["focus-reaction-use", "focus-reaction-pass"].includes(commandKind)) return;
+    const request = {
+      kind: "voyage.m11-command",
+      requestId: randomId("m12-player-reaction"),
+      sessionId: this.#sessionId,
+      expectedRevision: this.#expectedRevision,
+      authorityEpoch: this.#authorityEpoch,
+      commandKind,
+      payload: { reactionId: control.dataset.reactionId }
+    };
+    const result = await game.arcflight?.dispatchVoyageEventSessionCommand?.(request);
+    if (result?.ok) {
+      this.#expectedRevision = result.revision;
+      this.#authorityEpoch = Number.isSafeInteger(result.authorityEpoch) ? result.authorityEpoch : this.#authorityEpoch;
+    } else {
+      const fresh = game.arcflight?.discoverVoyageEventSession?.();
+      if (fresh?.sessionId === this.#sessionId && Number.isSafeInteger(fresh.revision)) this.#expectedRevision = fresh.revision;
+      try { globalThis.ui?.notifications?.warn?.(result?.errors?.[0]?.message ?? "The reaction window changed. Refreshing the authoritative decision."); } catch { /* presentation only */ }
+    }
+    await this.render({ force: true });
   }
 
   async #submitExecution(control) {

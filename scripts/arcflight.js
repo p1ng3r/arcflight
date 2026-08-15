@@ -139,6 +139,7 @@ import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers
 import { launchVoyageEventSession as launchVoyageEventSessionInternal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections, buildVoyageEventManagerDashboardModel } from "./voyage/foundry/event-launcher.js";
 import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION, M12_FOCUS_ABILITIES } from "./voyage/m12/event-definition.js";
 import { getFoundrySessionMutationCoordinator } from "./voyage/foundry/session-coordinator.js";
+import { executeVoyagePlayerIntent, registerVoyageGmCommandTransport, voyagePlayerIntentTransportState } from "./voyage/foundry/gm-command-transport.js";
 import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, authorizeVoyageEventSessionOperator, beginVoyageEventSessionResolution, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
 import { executeVoyagePf2ePendingCheckInFoundry } from "./voyage/pf2e/runtime-execution.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
@@ -204,11 +205,42 @@ function trustedLaunchContext() {
   };
 }
 
+function trustedRemotePlayerContext(originatingUserId) {
+  const base = trustedLaunchContext();
+  const executingGmUserId = globalThis.game?.user?.id ?? null;
+  const connectionId = globalThis.game?.socket?.id ?? null;
+  return {
+    ...base,
+    authenticatedUserId: originatingUserId,
+    authenticatedConnectionId: connectionId,
+    trustedTransportContext: typeof connectionId === "string" && connectionId.length > 0,
+    __trustedRemotePlayerIntent: true,
+    originatingUserId,
+    executingGmUserId
+  };
+}
+
+async function handleVoyagePlayerIntent(request, { originatingUserId } = {}) {
+  if (typeof originatingUserId !== "string" || originatingUserId.length === 0) return null;
+  const context = trustedRemotePlayerContext(originatingUserId);
+  if (request.kind === "voyage.m12-resolve-station") return resolveVoyageEventSessionStation(request, context);
+  return dispatchVoyageEventSessionCommand(request, context);
+}
+
+Hooks.once("socketlib.ready", () => {
+  const registered = registerVoyageGmCommandTransport({ onIntent: handleVoyagePlayerIntent });
+  if (!registered) console.error("Arcflight | Required socketlib transport could not be registered.");
+});
+
 async function launchVoyageEventSessionFromPublicBoundary(request) {
   return launchVoyageEventSessionInternal(request, trustedLaunchContext());
 }
 
 function dispatchVoyageEventSessionCommandFromPublicBoundary(request) {
+  if (globalThis.game?.user?.isGM !== true && ["focus-reaction-use", "focus-reaction-pass"].includes(request?.commandKind)) return executeVoyagePlayerIntent(request);
+  if (globalThis.game?.user?.isGM !== true && request?.commandKind) {
+    return Promise.resolve({ ok: false, requestId: request?.requestId ?? null, sessionId: request?.sessionId ?? null, status: "failed", revision: null, authorityEpoch: null, projection: null, events: [], errors: [{ code: "m11-command-not-allowed", path: "request.commandKind", message: "Command is not allowed in the current session state.", severity: "error" }], warnings: [] });
+  }
   return dispatchVoyageEventSessionCommand(request, trustedLaunchContext());
 }
 
@@ -252,6 +284,7 @@ function readVoyageEventSessionResolutionFromPublicBoundary(sessionId) {
   return readVoyageEventSessionResolution(sessionId, trustedLaunchContext());
 }
 function resolveVoyageEventSessionStationFromPublicBoundary(request) {
+  if (globalThis.game?.user?.isGM !== true) return executeVoyagePlayerIntent(request);
   return resolveVoyageEventSessionStation(request, trustedLaunchContext());
 }
 function beginVoyageEventSessionResolutionFromPublicBoundary(request) {
@@ -488,6 +521,8 @@ Hooks.once("init", () => {
     validateVoyageEncounterState,
     launchVoyageEventSession: launchVoyageEventSessionFromPublicBoundary,
     dispatchVoyageEventSessionCommand: dispatchVoyageEventSessionCommandFromPublicBoundary,
+    executeVoyagePlayerIntent,
+    voyagePlayerIntentTransportState,
     readVoyageEventSessionProjection: readVoyageEventSessionProjectionFromPublicBoundary,
     readVoyageEventSessionMultiplayerProjection: readVoyageEventSessionMultiplayerProjectionFromPublicBoundary,
     discoverVoyageEventSession: discoverVoyageEventSessionFromPublicBoundary,

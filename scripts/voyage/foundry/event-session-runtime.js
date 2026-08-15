@@ -92,7 +92,11 @@ const MULTIPLAYER_PROJECTION_FIELDS = Object.freeze([
   "sharedStationOrder", "planReady", "planLocked", "canMutateSharedOrder",
   "resolutionStarted", "resolutionOrder", "resolutionCurrentStationId", "resolutionCurrentOperator",
   "resolutionOrderPosition", "resolutionTotalStations", "resolutionStations", "resolutionComplete",
-  "canExecuteCurrentStation", "currentStationOwnedByViewer", "currentExecutionState", "currentExecution"
+  "canExecuteCurrentStation", "currentStationOwnedByViewer", "currentExecutionState", "currentExecution",
+  "hasPendingPlayerDecision", "decisionPhase", "decisionRequired", "decisionStationId", "decisionStationName",
+  "decisionTargetStationId", "decisionTargetStationName", "decisionTitle", "decisionDescription", "decisionNarration",
+  "decisionSourceOperatorName", "decisionCost", "decisionStatisticLabel", "decisionDc", "decisionVisibility",
+  "decisionOutcomes", "decisionOptions", "canUseFocus", "canPassReaction", "rollBlockedByDecision"
 ]);
 const MULTIPLAYER_AUTHORIZATION_FIELDS = Object.freeze(["kind", "sessionId", "stationId"]);
 const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
@@ -1130,7 +1134,7 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
         const domainEvent = eventIndex > 0 ? session.events[eventIndex - 1] : null;
         const tuple = parseStoredFingerprint(record.fingerprint);
         const task3Valid = validM12Task3Record(record, session, audit, domainEvent, runtimeEvent);
-        if (!audit || !runtimeEvent || !domainEvent || (record.commandKind !== "action-segment" && record.principalUserId !== owner) || !tuple.ok || tuple.value[3] !== expectedAuthorityEpoch || record.resultRevision <= 0 || !task3Valid) return false;
+        if (!audit || !runtimeEvent || !domainEvent || (record.commandKind !== "action-segment" && !FOCUS_COMMANDS.has(record.commandKind) && record.commandKind !== FOCUS_PENDING_COMMAND_KIND && record.principalUserId !== owner) || !tuple.ok || tuple.value[3] !== expectedAuthorityEpoch || record.resultRevision <= 0 || !task3Valid) return false;
       } else return false;
       requestIds.add(record.requestId);
     }
@@ -1297,13 +1301,16 @@ function transferCoordinator(context) {
   } catch { return { error: diagnostic("m11-cross-client-coordinator-required", "transport.coordinator") };
   }
 }
-function coordinatorDescriptor(value, documentIdValue, authorityContext) {
+function coordinatorDescriptor(value, documentIdValue, authorityContext, context = {}) {
+  const executingUserId = context?.__trustedRemotePlayerIntent === true
+    ? (nonBlank(context.executingGmUserId) ? context.executingGmUserId : authorityContext.activeGmUserId)
+    : authorityContext.authenticatedUserId;
   const descriptor = {
     sessionId: value.sessionId,
     sessionDocumentId: documentIdValue,
     expectedRevision: value.expectedRevision,
     expectedAuthorityEpoch: value.authorityEpoch,
-    authenticatedUserId: authorityContext.authenticatedUserId,
+    authenticatedUserId: executingUserId,
     connectionId: authorityContext.authenticatedConnectionId,
     activeGmUserId: authorityContext.activeGmUserId
   };
@@ -1315,6 +1322,12 @@ function canonicalOperator(value) {
   if (!captured.ok || captured.value === null) return null;
   const report = analyzeVoyageStationAssignments([{ stationId: "captain", operator: captured.value }]);
   return report.valid && report.assignments.length === 1 ? report.assignments[0].operator : null;
+}
+function coordinatorIdentityMatches(auth, descriptor, context = {}) {
+  const expectedUserId = context?.__trustedRemotePlayerIntent === true ? auth.activeGmUserId : auth.authenticatedUserId;
+  return descriptor.authenticatedUserId === expectedUserId
+    && auth.authenticatedConnectionId === descriptor.connectionId
+    && auth.activeGmUserId === descriptor.activeGmUserId;
 }
 function canonicalOperators(value) {
   const captured = capture(value);
@@ -2983,6 +2996,54 @@ function multiplayerExecutionPresentation(session, authority, resolution) {
     };
   }
 }
+function reactionParticipantForAuthority(session, authority, reactionId) {
+  try {
+    const window = session?.encounterState?.metadata?.reactionWindow;
+    const opportunity = window?.opportunities?.find((entry) => entry?.reactionId === reactionId);
+    if (!opportunity || window.status !== "open" || window.resolved?.includes(reactionId)) return null;
+    if (authority?.role === "gm") return opportunity;
+    if (authority?.role !== "operator") return null;
+    return authority.ownedOperators?.some((entry) => entry.stationId === opportunity.stationId
+      && [entry.operatorId, entry.operatorUuid].includes(opportunity.operatorId)) ? opportunity : null;
+  } catch { return null; }
+}
+function multiplayerReactionPresentation(session, authority) {
+  const empty = {
+    hasPendingPlayerDecision: false, decisionPhase: null, decisionRequired: false, decisionStationId: null,
+    decisionStationName: null, decisionTargetStationId: null, decisionTargetStationName: null, decisionTitle: null,
+    decisionDescription: null, decisionNarration: null, decisionSourceOperatorName: null, decisionCost: null,
+    decisionStatisticLabel: null, decisionDc: null, decisionVisibility: null, decisionOutcomes: [], decisionOptions: [],
+    canUseFocus: false, canPassReaction: false, rollBlockedByDecision: false
+  };
+  try {
+    const state = session.encounterState;
+    const window = state.metadata?.reactionWindow;
+    if (!window || window.status !== "open" || !Array.isArray(window.opportunities)) return empty;
+    const pending = window.opportunities.find((entry) => !window.resolved?.includes(entry.reactionId));
+    if (!pending) return empty;
+    const eligible = reactionParticipantForAuthority(session, authority, pending.reactionId);
+    if (!eligible) return { ...empty, hasPendingPlayerDecision: true, decisionPhase: "waiting-reaction", decisionRequired: true, rollBlockedByDecision: true };
+    const ability = state.metadata?.focusAbilities?.find((entry) => entry.focusAbilityId === pending.focusAbilityId);
+    const assignment = state.stationAssignments?.find((entry) => entry.stationId === pending.stationId);
+    const targetAssignment = state.stationAssignments?.find((entry) => entry.stationId === pending.targetStationId);
+    const pool = state.metadata?.focusPools?.find((entry) => entry.stationId === pending.stationId && entry.operatorId === pending.operatorId);
+    if (!ability || !assignment || !pool) return { ...empty, hasPendingPlayerDecision: true, decisionPhase: "waiting-reaction", decisionRequired: true, rollBlockedByDecision: true };
+    const privateVisible = ability.visibility === "public" || ability.secrecy === "public";
+    const outcomes = privateVisible ? ["criticalSuccess", "success", "failure", "criticalFailure"].map((key) => ({ key, text: ability.outcomeNarration?.[key] ?? null })) : [];
+    const options = [{ reactionId: pending.reactionId, kind: "focus-reaction-use", label: "USE FOCUS" }];
+    options.push({ reactionId: pending.reactionId, kind: "focus-reaction-pass", label: "PASS" });
+    return {
+      hasPendingPlayerDecision: true, decisionPhase: "before-roll", decisionRequired: true,
+      decisionStationId: pending.stationId, decisionStationName: assignment.stationId,
+      decisionTargetStationId: pending.targetStationId, decisionTargetStationName: targetAssignment?.stationId ?? pending.targetStationId,
+      decisionTitle: ability.name, decisionDescription: ability.description, decisionNarration: ability.narration,
+      decisionSourceOperatorName: assignment.operator?.name ?? pending.operatorId, decisionCost: ability.cost,
+      decisionStatisticLabel: ability.statisticSlugOrAbilityId, decisionDc: privateVisible ? ability.dc : null,
+      decisionVisibility: ability.visibility ?? ability.secrecy, decisionOutcomes: outcomes, decisionOptions: options,
+      canUseFocus: pool.current >= ability.cost, canPassReaction: true, rollBlockedByDecision: true
+    };
+  } catch { return empty; }
+}
 function buildMultiplayerProjection(session, authority) {
   const common = buildSessionProjection(session, authority.role);
   if (!common || !authority || !["gm", "operator", "crew", "observer"].includes(authority.role)) return null;
@@ -2996,6 +3057,7 @@ function buildMultiplayerProjection(session, authority) {
   const planLocked = PLAN_LOCKED_SESSION_STATES.has(session.sessionState);
   const resolution = multiplayerResolutionState(session);
   const execution = multiplayerExecutionPresentation(session, authority, resolution);
+  const reaction = multiplayerReactionPresentation(session, authority);
   const projection = {
     ...common,
     projectionRole: authority.role,
@@ -3008,7 +3070,8 @@ function buildMultiplayerProjection(session, authority) {
     canMutateSharedOrder: authority.role === "operator" && session.sessionState === "crew-planning" && encounter.phase === "crew-planning",
     currentActingStationId: resolution.resolutionCurrentStationId,
     ...resolution,
-    ...execution
+    ...execution,
+    ...reaction
   };
   const isolated = capture(projection);
   return isolated.ok && exactKeys(isolated.value, MULTIPLAYER_PROJECTION_FIELDS) ? isolated.value : null;
@@ -3063,13 +3126,13 @@ function createResolvedRiskBidEffects(prior, candidate, commandValue) {
 }
 
 async function dispatchTask3Command(value, identities, initialAuth, initialMatch, context) {
-  const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth);
+  const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth, context);
   if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
   return runExclusiveSessionMutation(context, descriptor, async (trustedWitness) => withTransferLock(value.sessionId, async () => {
     const auth = context?.__trustedResolutionOperator === true
       ? authenticatedContext(context)
       : authority(context, { requireConnection: true });
-    if (auth.error || auth.authenticatedUserId !== descriptor.authenticatedUserId || auth.authenticatedConnectionId !== descriptor.connectionId || auth.activeGmUserId !== descriptor.activeGmUserId) return failure([auth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
+    if (auth.error || !coordinatorIdentityMatches(auth, descriptor, context)) return failure([auth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
     const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
     if (resolved.match.documentId !== descriptor.sessionDocumentId || !pristineSession(resolved.match.session, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
     const prior = resolved.match.session;
@@ -3153,6 +3216,13 @@ async function dispatchTask3Command(value, identities, initialAuth, initialMatch
 }
 
 function focusPayloadValid(payload) { return isPlainObject(payload) && exactKeys(payload, ["reactionId"]) && nonBlank(payload.reactionId); }
+function focusParticipantAuthorized(auth, session, reactionId, context) {
+  try {
+    if (auth.user?.isGM === true && auth.authenticatedUserId === auth.activeGmUserId) return true;
+    const authorityDecision = deriveProjectionAuthority(auth, session, context);
+    return reactionParticipantForAuthority(session, authorityDecision, reactionId) !== null;
+  } catch { return false; }
+}
 function validPendingFocusCheck(check, session) {
   try {
     return isPlainObject(check) && exactKeys(check, ["pendingCheckId", "targetPendingCheckId", "sequence", "status", "mode", "source", "approachId", "statisticSlugOrAbilityId", "finalDc", "momentumRollBonus", "secrecy", "reactionId", "focusAbilityId", "sourceStationId", "targetStationId", "executionStatus", "executionReceipt"])
@@ -3168,9 +3238,9 @@ function validPendingFocusCheck(check, session) {
 function validFocusPendingRecord(record, session, audit, event) {
   try {
     if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || record.commandKind !== FOCUS_PENDING_COMMAND_KIND || record.resultKind !== FOCUS_PENDING_RESULT_KIND
-      || record.projectionKind !== "gm" || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision
+      || !["gm", "operator"].includes(record.projectionKind) || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision
       || !isPlainObject(record.response) || !audit || audit.kind !== FOCUS_PENDING_AUDIT_KIND || !event || event.type !== "voyage.m12-focus-reaction-committed") return false;
-    const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[0] !== session.sessionId || tuple.value[1] !== record.principalUserId || tuple.value[2] !== "gm"
+    const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[0] !== session.sessionId || tuple.value[1] !== record.principalUserId || tuple.value[2] !== record.projectionKind
       || !safeInteger(tuple.value[3]) || !safeInteger(tuple.value[4]) || tuple.value[4] + 1 !== record.resultRevision || tuple.value[5] !== FOCUS_PENDING_COMMAND_KIND || !focusPayloadValid(tuple.value[6])) return false;
     const pending = session.encounterState.metadata?.focusPendingCheck;
     const ok = (!pending || validPendingFocusCheck(pending, session)) && (!pending || pending.reactionId === tuple.value[6].reactionId)
@@ -3185,10 +3255,10 @@ function validFocusPendingRecord(record, session, audit, event) {
 }
 function validFocusRecord(record, session, audit, event) {
   try {
-    if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || record.projectionKind !== "gm" || !FOCUS_COMMANDS.has(record.commandKind)
+    if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !["gm", "operator"].includes(record.projectionKind) || !FOCUS_COMMANDS.has(record.commandKind)
       || record.resultKind !== FOCUS_RESULT_KINDS[record.commandKind] || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision
       || !isPlainObject(record.response) || !audit || audit.kind !== FOCUS_AUDIT_KINDS[record.commandKind] || !event || event.type !== `voyage.m12-${record.commandKind}`) return false;
-    const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[0] !== session.sessionId || tuple.value[1] !== record.principalUserId || tuple.value[2] !== "gm" || !safeInteger(tuple.value[3]) || !safeInteger(tuple.value[4]) || ![tuple.value[4] + 1, tuple.value[4] + 2].includes(record.resultRevision) || tuple.value[5] !== record.commandKind || !focusPayloadValid(tuple.value[6])) return false;
+    const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[0] !== session.sessionId || tuple.value[1] !== record.principalUserId || tuple.value[2] !== record.projectionKind || !safeInteger(tuple.value[3]) || !safeInteger(tuple.value[4]) || ![tuple.value[4] + 1, tuple.value[4] + 2].includes(record.resultRevision) || tuple.value[5] !== record.commandKind || !focusPayloadValid(tuple.value[6])) return false;
     let focusEvidenceValid = true;
     if (record.commandKind === "focus-reaction-use") {
       const stored = session.encounterState.metadata?.focusResults?.find((entry) => entry.reactionId === tuple.value[6].reactionId);
@@ -3224,7 +3294,7 @@ async function persistDurableFocusReceipt(document, value, descriptor, prior, pe
   } catch { return failure([diagnostic("m11-recovery-required", "recovery")], identities); }
 }
 
-async function completePersistedFocusUse(value, identities, descriptor, auth, pendingSession, context, trustedWitness, { allowExecution = false } = {}) {
+async function completePersistedFocusUse(value, identities, descriptor, auth, pendingSession, context, trustedWitness, { allowExecution = false, projectionKind = "gm" } = {}) {
   try {
     let pending = pendingSession.encounterState.metadata?.focusPendingCheck;
     const focus = focusMetadata(pendingSession.encounterState, context);
@@ -3271,9 +3341,9 @@ async function completePersistedFocusUse(value, identities, descriptor, auth, pe
     candidate.events.push(runtimeEvent);
     const audit = { auditId: auditId(candidate.sessionId, candidate.auditHistory.length, FOCUS_AUDIT_KINDS["focus-reaction-use"]), kind: FOCUS_AUDIT_KINDS["focus-reaction-use"], sessionId: candidate.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision: prior.revision, revision: candidate.revision, occurredAt: trustedWitness.occurredAt, details: { transitionKind: "focus-reaction-use", previousSessionState: prior.sessionState, nextSessionState: prior.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, eventCount: candidate.events.length } };
     candidate.auditHistory.push(audit);
-    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
+    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
     const response = successWithEvents(candidate, value.requestId, [runtimeEvent]);
-    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fp, commandKind: value.commandKind, resultKind: FOCUS_RESULT_KINDS[value.commandKind], resultRevision: candidate.revision, response });
+    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind, fingerprint: fp, commandKind: value.commandKind, resultKind: FOCUS_RESULT_KINDS[value.commandKind], resultRevision: candidate.revision, response });
     if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
     try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch {
       return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response });
@@ -3283,18 +3353,25 @@ async function completePersistedFocusUse(value, identities, descriptor, auth, pe
 }
 
 async function dispatchFocusReactionCommand(value, identities, initialAuth, initialMatch, context) {
-  const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth);
+  const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth, context);
   if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
   return runExclusiveSessionMutation(context, descriptor, async (trustedWitness) => withTransferLock(value.sessionId, async () => {
-    const auth = authority(context, { requireConnection: true });
-    if (auth.error || auth.authenticatedUserId !== descriptor.authenticatedUserId || auth.authenticatedConnectionId !== descriptor.connectionId) return failure([auth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
+    const auth = authenticatedContext(context);
+    if (auth.error || !coordinatorIdentityMatches(auth, descriptor, context)) return failure([auth.error ?? diagnostic("m11-authentication-required", "transport.user")], identities);
     const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
     const prior = resolved.match.session;
     if (resolved.match.documentId !== descriptor.sessionDocumentId || !pristineSession(prior, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
-    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
-    const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, "gm", fp, identities); if (replay) return replay;
+    const isGm = auth.user?.isGM === true && auth.authenticatedUserId === auth.activeGmUserId;
+    const projectionKind = isGm ? "gm" : deriveProjectionKind(auth, prior, context);
+    if (!isGm && (projectionKind !== "operator" || !focusParticipantAuthorized(auth, prior, value.payload.reactionId, context))) return failure([diagnostic("m11-projection-not-authorized", "request.payload.reactionId")], identities);
+    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
+    const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, projectionKind, fp, identities); if (replay) return replay;
     const existingPending = prior.encounterState.metadata?.focusPendingCheck;
-    if (value.commandKind === "focus-reaction-use" && existingPending?.reactionId === value.payload.reactionId) return completePersistedFocusUse(value, identities, descriptor, auth, prior, context, trustedWitness);
+    if (value.commandKind === "focus-reaction-use" && existingPending?.reactionId === value.payload.reactionId) {
+      if (value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+      if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+      return completePersistedFocusUse(value, identities, descriptor, auth, prior, context, trustedWitness, { projectionKind });
+    }
     if (prior.sessionState !== "station-resolution" || prior.encounterState.phase !== "resolution" || value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
     if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
     const window = prior.encounterState.metadata?.reactionWindow;
@@ -3317,14 +3394,14 @@ async function dispatchFocusReactionCommand(value, identities, initialAuth, init
       candidate.events.push(pendingEvent);
       candidate.auditHistory.push({ auditId: auditId(candidate.sessionId, candidate.auditHistory.length, FOCUS_PENDING_AUDIT_KIND), kind: FOCUS_PENDING_AUDIT_KIND, sessionId: candidate.sessionId, requestId: `${value.requestId}:pending`, actorUserId: auth.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision: prior.revision, revision: candidate.revision, occurredAt: trustedWitness.occurredAt, details: { transitionKind: FOCUS_PENDING_COMMAND_KIND, previousSessionState: prior.sessionState, nextSessionState: prior.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, eventCount: candidate.events.length } });
       const pendingRequestId = `${value.requestId}:pending`;
-      const pendingFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, FOCUS_PENDING_COMMAND_KIND, { reactionId: value.payload.reactionId });
+      const pendingFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, FOCUS_PENDING_COMMAND_KIND, { reactionId: value.payload.reactionId });
       const pendingResponse = successWithEvents(candidate, pendingRequestId, [pendingEvent]);
-      candidate.processedRequests.push({ requestId: pendingRequestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: pendingFingerprint, commandKind: FOCUS_PENDING_COMMAND_KIND, resultKind: FOCUS_PENDING_RESULT_KIND, resultRevision: candidate.revision, response: pendingResponse });
+      candidate.processedRequests.push({ requestId: pendingRequestId, principalUserId: auth.authenticatedUserId, projectionKind, fingerprint: pendingFingerprint, commandKind: FOCUS_PENDING_COMMAND_KIND, resultKind: FOCUS_PENDING_RESULT_KIND, resultRevision: candidate.revision, response: pendingResponse });
       if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
       let pendingWrite; try { pendingWrite = await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { const classified = sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, pendingRequestId, context, { successResponse: pendingResponse }); if (!classified.ok) return classified; }
       if (pendingWrite !== undefined) { const classified = sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, pendingRequestId, context, { successResponse: pendingResponse }); if (!classified.ok) return classified; }
       const refreshed = resolveSessionDocument(value.sessionId, context); if (refreshed.error) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
-      return completePersistedFocusUse(value, identities, descriptor, auth, refreshed.match.session, context, trustedWitness, { allowExecution: true });
+      return completePersistedFocusUse(value, identities, descriptor, auth, refreshed.match.session, context, trustedWitness, { allowExecution: true, projectionKind });
     }
     let focusResult = null, modifier = 0;
     if (value.commandKind === "focus-reaction-use") {
@@ -3359,7 +3436,7 @@ async function dispatchFocusReactionCommand(value, identities, initialAuth, init
     candidate.events.push(runtimeEvent);
     candidate.auditHistory.push({ auditId: auditId(candidate.sessionId, candidate.auditHistory.length, FOCUS_AUDIT_KINDS[value.commandKind]), kind: FOCUS_AUDIT_KINDS[value.commandKind], sessionId: candidate.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision: prior.revision, revision, occurredAt: trustedWitness.occurredAt, details: { transitionKind: value.commandKind, previousSessionState: prior.sessionState, nextSessionState: prior.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, eventCount: candidate.events.length } });
     const response = successWithEvents(candidate, value.requestId, [runtimeEvent]);
-    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fp, commandKind: value.commandKind, resultKind: FOCUS_RESULT_KINDS[value.commandKind], resultRevision: revision, response });
+    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind, fingerprint: fp, commandKind: value.commandKind, resultKind: FOCUS_RESULT_KINDS[value.commandKind], resultRevision: revision, response });
     if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
     try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response }); }
     return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response });
@@ -3651,6 +3728,7 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
   if (value.kind !== "voyage.m11-command") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
   const auth = authenticatedContext(context); if (auth.error) return failure([auth.error], identities);
   if (!nonBlank(value.sessionId) || !nonBlank(value.commandKind) || !safeInteger(value.expectedRevision) || !safeInteger(value.authorityEpoch) || !isPlainObject(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+  if (FOCUS_COMMANDS.has(value.commandKind) && (auth.trustedTransportContext !== true || !nonBlank(auth.authenticatedConnectionId))) return failure([diagnostic("m11-authentication-required", "transport.user")], identities);
   const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
   const match = resolved.match; if (!pristineSession(match.session, match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
   if (match.session.activeGmUserId !== auth.activeGmUserId) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
@@ -3683,7 +3761,8 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
     return dispatchTask3Command(value, identities, auth, match, context);
   }
   if (FOCUS_COMMANDS.has(value.commandKind)) {
-    if (auth.user?.isGM !== true || auth.authenticatedUserId !== auth.activeGmUserId || !focusPayloadValid(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    if (!focusPayloadValid(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    if (!focusParticipantAuthorized(auth, match.session, value.payload.reactionId, context)) return failure([diagnostic("m11-projection-not-authorized", "request.payload.reactionId")], identities);
     return dispatchFocusReactionCommand(value, identities, auth, match, context);
   }
   if (CLOSEOUT_COMMANDS.has(value.commandKind)) return dispatchCloseoutCommand(value, identities, auth, match, context);

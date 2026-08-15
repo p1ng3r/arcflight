@@ -165,7 +165,7 @@ test("Slice F presents the shared current station and owned-active indicator wit
   assert.deepEqual(model.resolution.order, ["captain", "watchmaster"]);
   assert.equal(model.resolution.orderPosition, 1);
   assert.deepEqual(model.resolution.stations.map((entry) => [entry.stationDisplayName, entry.status]), [["Captain", "current"], ["Watchmaster", "waiting"]]);
-  assert.doesNotMatch(template, /ROLL CHECK|data-player-roll|data-player-focus|data-player-reaction/);
+  assert.equal(model.resolution.reactionDecision.pending, false);
   assert.match(template, /YOUR STATION IS ACTIVE/);
   const complete = buildVoyagePlayerEventModel({ ...source, resolutionComplete: true });
   assert.equal(complete.resolution.stateLabel, "RESOLUTION COMPLETE");
@@ -181,9 +181,75 @@ test("Slice F player resolution exposes no functional Begin, planning, lock, rol
   const model = buildVoyagePlayerEventModel(source);
   assert.equal(model.ownedPlanningOptions.length, 0); assert.equal(model.canMutateSharedOrder, false); assert.equal(model.planLocked, true);
   assert.equal(model.resolution.started, true); assert.equal(model.resolution.ownedCurrent, true);
-  assert.doesNotMatch(template, /BEGIN RESOLUTION|LOCK PLAN|UNLOCK PLAN|data-player-focus|data-player-reaction|data-player-roll/);
+  assert.equal(model.resolution.reactionDecision.pending, false);
   assert.equal(model.crewPlan.some((entry) => entry.planning?.editable === true), false);
   assert.equal(model.ownedStations.some((entry) => entry.canMoveUp || entry.canMoveDown), false);
+});
+
+test("Slice H renders the bounded participant reaction decision and keeps the roll gate presentation", () => {
+  const source = projection("operator", [{ stationId: "captain", operatorId: "actor-captain", operatorUuid: "Actor.captain" }]);
+  Object.assign(source, {
+    sessionState: "station-resolution", phase: "resolution", planLocked: true,
+    resolutionStarted: true, resolutionCurrentStationId: "captain", currentActingStationId: "captain",
+    hasPendingPlayerDecision: true, decisionPhase: "before-roll", decisionRequired: true,
+    decisionStationId: "captain", decisionStationName: "Captain", decisionTargetStationId: "engineer", decisionTargetStationName: "Engineer",
+    decisionTitle: "Steady the Line", decisionDescription: "Spend Focus to aid the next check.", decisionNarration: "The ship shudders.",
+    decisionSourceOperatorName: "Captain", decisionCost: 1, decisionStatisticLabel: "diplomacy", decisionDc: 18,
+    decisionVisibility: "public", decisionOutcomes: [{ key: "success", text: "The line holds." }],
+    decisionOptions: [{ reactionId: "reaction-1", kind: "focus-reaction-use", label: "USE FOCUS" }, { reactionId: "reaction-1", kind: "focus-reaction-pass", label: "PASS" }],
+    canUseFocus: true, canPassReaction: true, rollBlockedByDecision: true
+  });
+  const model = buildVoyagePlayerEventModel(source);
+  assert.equal(model.resolution.reactionDecision.pending, true);
+  assert.equal(model.resolution.reactionDecision.useReactionId, "reaction-1");
+  assert.equal(model.resolution.reactionDecision.passReactionId, "reaction-1");
+  assert.equal(model.resolution.reactionDecision.rollBlocked, true);
+  assert.match(template, /PRE-ROLL DECISION REQUIRED/);
+  assert.match(template, /data-player-reaction-command="focus-reaction-use"/);
+  assert.match(template, /data-player-reaction-command="focus-reaction-pass"/);
+  assert.match(runtime, /dispatchVoyageEventSessionCommand/);
+  model.resolution.reactionDecision.options[0].label = "mutated";
+  assert.equal(source.decisionOptions[0].label, "USE FOCUS");
+});
+
+test("Slice H returns the Player Event roll control only after USE or PASS closes the pre-roll gate", () => {
+  const base = projection("operator", [{ stationId: "captain", operatorId: "actor-captain", operatorUuid: "Actor.captain" }]);
+  Object.assign(base, {
+    sessionState: "station-resolution", phase: "resolution", planLocked: true,
+    resolutionStarted: true, resolutionCurrentStationId: "captain", currentActingStationId: "captain",
+    currentExecutionState: "waiting-reaction", canExecuteCurrentStation: false,
+    currentExecution: { stationId: "captain", actionName: "Command the Opening", approachName: "Diplomacy", statisticLabel: "diplomacy", riskBidLabel: "NO BID", waitingForReaction: true },
+    hasPendingPlayerDecision: true, decisionPhase: "before-roll", decisionRequired: true,
+    decisionStationId: "captain", decisionTargetStationId: "captain", decisionTitle: "Captain's Clear Line",
+    decisionDescription: "Choose how to handle the pre-roll opportunity.", decisionSourceOperatorName: "Captain",
+    decisionCost: 1, decisionStatisticLabel: "perception", decisionDc: 18,
+    decisionOptions: [{ reactionId: "reaction-1", kind: "focus-reaction-use", label: "USE FOCUS" }, { reactionId: "reaction-1", kind: "focus-reaction-pass", label: "PASS" }],
+    canUseFocus: true, canPassReaction: true, rollBlockedByDecision: true
+  });
+  const before = buildVoyagePlayerEventModel(base);
+  assert.equal(before.resolution.reactionDecision.pending, true);
+  assert.equal(before.resolution.rollBlockedByDecision, true);
+  assert.equal(before.resolution.canExecuteCurrentStation, false);
+  assert.match(template, /PRE-ROLL DECISION REQUIRED/);
+  assert.match(template, /ROLL STATION CHECK/);
+  for (const resultKind of ["focus-reaction-use", "focus-reaction-pass"]) {
+    const after = buildVoyagePlayerEventModel({ ...base, hasPendingPlayerDecision: false, decisionRequired: false, decisionOptions: [], canUseFocus: false, canPassReaction: false, rollBlockedByDecision: false, currentExecutionState: "available", canExecuteCurrentStation: true, currentExecution: { ...base.currentExecution, waitingForReaction: false } });
+    assert.equal(after.resolution.reactionDecision.pending, false, resultKind);
+    assert.equal(after.resolution.rollBlockedByDecision, false, resultKind);
+    assert.equal(after.resolution.canExecuteCurrentStation, true, resultKind);
+    assert.equal(after.resolution.currentExecutionState, "available", resultKind);
+  }
+});
+
+test("Slice H non-participant projection keeps the waiting state without private reaction choices", () => {
+  const source = projection("crew");
+  Object.assign(source, { hasPendingPlayerDecision: true, decisionPhase: "waiting-reaction", decisionRequired: true, rollBlockedByDecision: true, decisionOptions: [], canUseFocus: false, canPassReaction: false });
+  const model = buildVoyagePlayerEventModel(source);
+  assert.equal(model.resolution.reactionDecision.pending, true);
+  assert.deepEqual(model.resolution.reactionDecision.options, []);
+  assert.equal(model.resolution.reactionDecision.canUseFocus, false);
+  assert.equal(model.resolution.reactionDecision.canPassReaction, false);
+  assert.equal(model.resolution.rollBlockedByDecision, true);
 });
 
 test("Slice F owned-active markers follow the authoritative current station matrix", () => {
