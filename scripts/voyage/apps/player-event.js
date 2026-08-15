@@ -152,12 +152,12 @@ export function buildVoyagePlayerEventModel(projection) {
     }))
     : stations.map((station, index) => ({ stationId: station.stationId, stationDisplayName: station.stationDisplayName, orderPosition: index + 1, status: "waiting", current: false, operatorName: station.operatorName }));
   const resolution = resolutionComplete
-    ? { stateLabel: "RESOLUTION COMPLETE", detail: "AWAITING ROUND CLOSEOUT", currentStation: null, ownedCurrent: false, waiting: false, started: true, order: Array.isArray(projection.resolutionOrder) ? [...projection.resolutionOrder] : [...sharedStationOrder], orderPosition: null, totalStations: projection.resolutionTotalStations ?? projectedResolutionStations.length, stations: projectedResolutionStations }
+    ? { stateLabel: "RESOLUTION COMPLETE", detail: "AWAITING ROUND CLOSEOUT", currentStation: null, ownedCurrent: false, waiting: false, started: true, order: Array.isArray(projection.resolutionOrder) ? [...projection.resolutionOrder] : [...sharedStationOrder], orderPosition: null, totalStations: projection.resolutionTotalStations ?? projectedResolutionStations.length, stations: projectedResolutionStations, canExecuteCurrentStation: false, currentExecutionState: "complete", currentExecution: null }
     : resolutionStarted
-      ? { stateLabel: "RESOLUTION IN PROGRESS", detail: "CURRENT STATION IDENTIFIED — AWAITING STATION EXECUTION", currentStation, ownedCurrent: Boolean(currentStation?.owned), waiting: false, started: true, order: Array.isArray(projection.resolutionOrder) ? [...projection.resolutionOrder] : [...sharedStationOrder], orderPosition: projection.resolutionOrderPosition ?? null, totalStations: projection.resolutionTotalStations ?? projectedResolutionStations.length, stations: projectedResolutionStations }
+      ? { stateLabel: "RESOLUTION IN PROGRESS", detail: "CURRENT STATION IDENTIFIED — AWAITING STATION EXECUTION", currentStation, ownedCurrent: Boolean(currentStation?.owned), waiting: false, started: true, order: Array.isArray(projection.resolutionOrder) ? [...projection.resolutionOrder] : [...sharedStationOrder], orderPosition: projection.resolutionOrderPosition ?? null, totalStations: projection.resolutionTotalStations ?? projectedResolutionStations.length, stations: projectedResolutionStations, canExecuteCurrentStation: projection.canExecuteCurrentStation === true, currentExecutionState: projection.currentExecutionState ?? "waiting", waitingOnOperator: projection.currentExecutionState === "waiting-on-operator", currentExecution: projection.currentExecution ?? null }
       : planLocked
-        ? { stateLabel: "PLAN LOCKED", detail: "Waiting for the GM to begin Resolution.", currentStation: null, ownedCurrent: false, waiting: true, started: false, order: [...sharedStationOrder], orderPosition: null, totalStations: sharedStationOrder.length, stations: projectedResolutionStations }
-        : { stateLabel: "WAITING FOR RESOLUTION", detail: "Resolution has not begun.", currentStation: null, ownedCurrent: false, waiting: true, started: false, order: [...sharedStationOrder], orderPosition: null, totalStations: sharedStationOrder.length, stations: projectedResolutionStations };
+        ? { stateLabel: "PLAN LOCKED", detail: "Waiting for the GM to begin Resolution.", currentStation: null, ownedCurrent: false, waiting: true, started: false, order: [...sharedStationOrder], orderPosition: null, totalStations: sharedStationOrder.length, stations: projectedResolutionStations, canExecuteCurrentStation: false, currentExecutionState: "not-started", currentExecution: null }
+        : { stateLabel: "WAITING FOR RESOLUTION", detail: "Resolution has not begun.", currentStation: null, ownedCurrent: false, waiting: true, started: false, order: [...sharedStationOrder], orderPosition: null, totalStations: sharedStationOrder.length, stations: projectedResolutionStations, canExecuteCurrentStation: false, currentExecutionState: "not-started", currentExecution: null };
   return {
     schemaVersion: 1,
     sessionId: projection.sessionId,
@@ -188,6 +188,7 @@ export class VoyagePlayerEventApp extends HandlebarsApplicationMixin(Application
   #authorityEpoch = 0;
   #activeTab = "round";
   #scrollTop = 0;
+  #executionInFlight = false;
 
   static DEFAULT_OPTIONS = {
     id: "arcflight-player-event",
@@ -253,6 +254,33 @@ export class VoyagePlayerEventApp extends HandlebarsApplicationMixin(Application
     this.element.querySelectorAll("[data-player-planning-field]").forEach((control) => control.addEventListener("change", () => this.#submitPlanning(control)));
     this.element.querySelectorAll("[data-player-planning-clear]").forEach((control) => control.addEventListener("click", () => this.#submitPlanning(control, true)));
     this.element.querySelectorAll("[data-player-order-move]").forEach((control) => control.addEventListener("click", () => this.#submitOrder(control)));
+    this.element.querySelectorAll("[data-player-execute-current]").forEach((control) => control.addEventListener("click", () => this.#submitExecution(control)));
+  }
+
+  async #submitExecution(control) {
+    if (this.#executionInFlight || !this.#sessionId) return;
+    this.#executionInFlight = true;
+    const request = {
+      kind: "voyage.m12-resolve-station",
+      requestId: randomId("m12-player-execute"),
+      sessionId: this.#sessionId,
+      expectedRevision: this.#expectedRevision,
+      authorityEpoch: this.#authorityEpoch
+    };
+    try {
+      const result = await game.arcflight?.resolveVoyageEventSessionStation?.(request);
+      if (result?.ok) {
+        this.#expectedRevision = result.revision;
+        this.#authorityEpoch = Number.isSafeInteger(result.authorityEpoch) ? result.authorityEpoch : this.#authorityEpoch;
+      } else {
+        const fresh = game.arcflight?.discoverVoyageEventSession?.();
+        if (fresh?.sessionId === this.#sessionId && Number.isSafeInteger(fresh.revision)) this.#expectedRevision = fresh.revision;
+        try { globalThis.ui?.notifications?.warn?.(result?.errors?.[0]?.message ?? "The current station changed. Refreshing the authoritative result."); } catch { /* presentation only */ }
+      }
+      await this.render({ force: true });
+    } finally {
+      this.#executionInFlight = false;
+    }
   }
 
   async #submitOrder(control) {

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { launchVoyageEventSession } from "../../../scripts/voyage/foundry/event-launcher.js";
 import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID, M12_FOCUS_ABILITIES } from "../../../scripts/voyage/m12/event-definition.js";
-import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, beginVoyageEventSessionResolution, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionResolution, reloadVoyageEventSession, resolveVoyageEventSessionStation } from "../../../scripts/voyage/foundry/event-session-runtime.js";
+import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, beginVoyageEventSessionResolution, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionResolution, reloadVoyageEventSession, resolveVoyageEventSessionStation, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import { prepareVoyageEncounterActionExecutionRequests } from "../../../scripts/voyage/domain/resolution-execution-requests.js";
 
 function actor(id, type = "character") {
@@ -46,6 +46,29 @@ async function launchAndLock(fixtureValue, sessionId = "resolution-session", ope
   return locked;
 }
 
+function operatorContext(fx, userId = "operator-1", connectionId = "connection-operator-1", operatorId = "navigator") {
+  const operatorIds = Array.isArray(operatorId) ? operatorId : [operatorId];
+  return {
+    ...fx.context,
+    authenticatedUserId: userId,
+    authenticatedConnectionId: connectionId,
+    users: [{ id: "gm-1", isGM: true, active: true }, { id: userId, isGM: false, active: true }],
+    resolveVoyageOperatorForPrincipal: () => operatorIds.map((id) => ({ kind: "actor", id, uuid: `Actor.${id}`, name: id })),
+    async runExclusiveSessionMutation(descriptor, callback) { return callback({ connectionId: descriptor.connectionId, occurredAt: "2026-08-13T12:00:00.000Z" }); }
+  };
+}
+
+function snapshotEntry(source) {
+  return { id: source._id, toObject: () => structuredClone(source), update: async () => { throw new Error("unexpected drift-test update"); } };
+}
+
+function contextWithRereadDrift(base, beforeSource, afterSource, switchAt = 4) {
+  const context = { ...base };
+  let reads = 0;
+  Object.defineProperty(context, "journalEntries", { configurable: true, get: () => { reads += 1; return [snapshotEntry(reads < switchAt ? beforeSource : afterSource)]; } });
+  return context;
+}
+
 test("M12 Task 3 enters Resolution, persists pending checks, rolls once, and reloads", async () => {
   const fx = fixture(); const locked = await launchAndLock(fx); assert.equal(locked.status, "plan-locked");
   const lockedProjection = readVoyageEventSessionResolution("resolution-session", fx.context);
@@ -68,7 +91,8 @@ test("M12 Task 3 enters Resolution, persists pending checks, rolls once, and rel
   assert.equal(projection.projection.stations[0].result.degreeOfSuccessSlug, "success");
   assert.equal(projection.projection.stations[0].result.dc, 18);
   const replay = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "resolve-1", sessionId: "resolution-session", expectedRevision: started.revision, authorityEpoch: 0 }, fx.context);
-  assert.equal(replay.ok, false);
+  assert.equal(replay.ok, true);
+  assert.deepEqual(replay, result);
   assert.equal(reloadVoyageEventSession("resolution-session", fx.context).ok, true);
   assert.equal(fx.tracker.actors, 0);
 });
@@ -144,6 +168,245 @@ test("M12 Slice F keeps Begin Resolution GM-authoritative and does not add playe
   assert.equal(stored.sessionState, "station-resolution");
   assert.equal(stored.encounterState.pendingChecks.some((entry) => entry.result), false);
   assert.equal(stored.events.filter((entry) => entry.type === "voyage.m12-resolution-start").length, 1);
+});
+
+test("M12 Slice G current operator executes through the canonical Task 3 path exactly once", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-g-player", { navigator: "navigator", captain: "captain", engineer: "engineer" }, ["navigator", "captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-begin", sessionId: "slice-g-player", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  let executions = 0;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { executions += 1; return { ok: true, status: "rolled", pendingCheckId: pending.pendingCheckId, sequence: pending.sequence, sourceKind: "character", sourceUuid: pending.source.uuid, statisticSlug: pending.statisticSlugOrAbilityId, dc: pending.finalDc, rollMode: "public", result: { total: pending.finalDc, degreeOfSuccess: 2, degreeOfSuccessSlug: "success" }, errors: [], warnings: [] }; };
+  const player = operatorContext(fx);
+  const projection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-g-player-read", sessionId: "slice-g-player", expectedRevision: started.revision }, player);
+  assert.equal(projection.ok, true, JSON.stringify(projection.errors));
+  assert.equal(projection.projection.projectionRole, "operator");
+  assert.equal(projection.projection.canExecuteCurrentStation, true);
+  assert.equal(projection.projection.currentExecution.stationId, "navigator");
+  assert.ok(projection.projection.currentExecution.actionName);
+  assert.ok(projection.projection.currentExecution.approachName);
+  assert.ok(projection.projection.currentExecution.statisticLabel);
+  assert.equal("pendingCheckId" in projection.projection.currentExecution, false);
+  const request = { kind: "voyage.m12-resolve-station", requestId: "slice-g-player-roll", sessionId: "slice-g-player", expectedRevision: started.revision, authorityEpoch: 0 };
+  const rolled = await resolveVoyageEventSessionStation(request, player);
+  assert.equal(rolled.ok, true, JSON.stringify(rolled.errors));
+  assert.equal(executions, 1);
+  const replay = await resolveVoyageEventSessionStation(request, player);
+  assert.equal(replay.ok, true, JSON.stringify(replay.errors));
+  assert.deepEqual(replay, rolled);
+  assert.equal(executions, 1);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.pendingChecks.find((entry) => entry.stationId === "navigator").status, "resolved");
+  const writes = fx.tracker.updates;
+  const secondRequest = await resolveVoyageEventSessionStation({ ...request, requestId: "slice-g-player-roll-again", expectedRevision: rolled.revision }, player);
+  assert.equal(secondRequest.ok, false);
+  assert.equal(secondRequest.errors[0].code, "m11-projection-not-authorized");
+  assert.equal(executions, 1);
+  assert.equal(fx.tracker.updates, writes);
+});
+
+test("M12 Slice G replays only for a connected exact fingerprint", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-g-replay", { navigator: "navigator", captain: "captain" }, ["navigator", "captain"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-replay-begin", sessionId: "slice-g-replay", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  let executions = 0;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { executions += 1; return { ok: true, status: "rolled", pendingCheckId: pending.pendingCheckId, sequence: pending.sequence, sourceKind: "character", sourceUuid: pending.source.uuid, statisticSlug: pending.statisticSlugOrAbilityId, dc: pending.finalDc, rollMode: "public", result: { total: pending.finalDc, degreeOfSuccess: 2, degreeOfSuccessSlug: "success" }, errors: [], warnings: [] }; };
+  const player = operatorContext(fx);
+  const request = { kind: "voyage.m12-resolve-station", requestId: "slice-g-replay-roll", sessionId: "slice-g-replay", expectedRevision: started.revision, authorityEpoch: 0 };
+  const first = await resolveVoyageEventSessionStation(request, player);
+  assert.equal(first.ok, true, JSON.stringify(first.errors));
+  const writes = fx.tracker.updates;
+  const stored = structuredClone(fx.journals[0].__testSource.flags.arcflight.system.voyageSession);
+  const exact = await resolveVoyageEventSessionStation(request, player);
+  assert.deepEqual(exact, first);
+  assert.equal(executions, 1);
+  assert.equal(fx.tracker.updates, writes);
+  const changedRevision = await resolveVoyageEventSessionStation({ ...request, expectedRevision: first.revision }, player);
+  assert.equal(changedRevision.ok, false);
+  assert.equal(changedRevision.errors[0].code, "m11-request-id-conflict");
+  const changedEpoch = await resolveVoyageEventSessionStation({ ...request, authorityEpoch: 1 }, player);
+  assert.equal(changedEpoch.ok, false);
+  assert.equal(changedEpoch.errors[0].code, "m11-request-id-conflict");
+  const disconnected = await resolveVoyageEventSessionStation(request, { ...player, authenticatedConnectionId: null, trustedTransportContext: false });
+  assert.equal(disconnected.ok, false);
+  assert.equal(disconnected.errors[0].code, "m11-authentication-required");
+  assert.equal(executions, 1);
+  assert.equal(fx.tracker.updates, writes);
+  assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession, stored);
+});
+
+test("M12 Slice G rejects foreign, future, crew, observer, forged, and stale station execution intents", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-g-authority", { navigator: "navigator", captain: "captain", engineer: "engineer" }, ["navigator", "captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-authority-begin", sessionId: "slice-g-authority", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const captain = operatorContext(fx, "captain-player", "connection-captain", "captain");
+  const engineer = operatorContext(fx, "engineer-player", "connection-engineer", "engineer");
+  const crew = { ...operatorContext(fx, "crew-player", "connection-crew", "unassigned"), resolveVoyageOperatorForPrincipal: () => ({ kind: "actor", id: "unassigned", uuid: "Actor.unassigned", name: "unassigned" }) };
+  const observer = { ...crew, authenticatedUserId: "observer-player", authenticatedConnectionId: "connection-observer", users: [...crew.users, { id: "observer-player", isGM: false, active: true }], resolveVoyageOperatorForPrincipal: () => [] };
+  const request = (requestId, context, extra = {}) => resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId, sessionId: "slice-g-authority", expectedRevision: started.revision, authorityEpoch: 0, ...extra }, context);
+  for (const [label, context] of [["captain", captain], ["engineer", engineer], ["crew", crew], ["observer", observer]]) {
+    const result = await request(`slice-g-${label}`, context);
+    assert.equal(result.ok, false, label);
+    assert.ok(["m11-projection-not-authorized", "m11-active-gm-required"].includes(result.errors[0].code), label);
+  }
+  const forged = await request("slice-g-forged-station", operatorContext(fx), { stationId: "captain" });
+  assert.equal(forged.ok, false);
+  assert.equal(forged.errors[0].code, "m11-invalid-request-shape");
+  const stale = await request("slice-g-stale", operatorContext(fx), {});
+  assert.equal(stale.ok, true, JSON.stringify(stale.errors));
+  const staleAgain = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-g-stale-new", sessionId: "slice-g-authority", expectedRevision: started.revision, authorityEpoch: 0 }, operatorContext(fx));
+  assert.equal(staleAgain.ok, false);
+  assert.equal(staleAgain.errors[0].code, "m11-stale-session-revision");
+});
+
+test("M12 Slice G GM execution remains canonical and player/GM contention rolls once", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-g-contention", { navigator: "navigator", captain: "captain" }, ["navigator", "captain"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-contention-begin", sessionId: "slice-g-contention", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  let executions = 0;
+  fx.context.executeVoyagePf2ePendingCheck = async (pending) => { executions += 1; await new Promise((resolve) => setTimeout(resolve, 5)); return { ok: true, status: "rolled", pendingCheckId: pending.pendingCheckId, sequence: pending.sequence, sourceKind: "character", sourceUuid: pending.source.uuid, statisticSlug: pending.statisticSlugOrAbilityId, dc: pending.finalDc, rollMode: "public", result: { total: pending.finalDc, degreeOfSuccess: 2, degreeOfSuccessSlug: "success" }, errors: [], warnings: [] }; };
+  const player = operatorContext(fx);
+  const request = { kind: "voyage.m12-resolve-station", requestId: "slice-g-contention-player", sessionId: "slice-g-contention", expectedRevision: started.revision, authorityEpoch: 0 };
+  const [playerResult, gmResult] = await Promise.all([
+    resolveVoyageEventSessionStation(request, player),
+    resolveVoyageEventSessionStation({ ...request, requestId: "slice-g-contention-gm" }, fx.context)
+  ]);
+  assert.equal(executions, 1);
+  assert.equal([playerResult, gmResult].filter((entry) => entry.ok).length, 1);
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.equal(stored.encounterState.pendingChecks.filter((entry) => entry.status === "resolved").length, 1);
+  assert.equal(stored.events.filter((entry) => entry.type === "voyage.m12-action-segment").length, 1);
+});
+
+test("M12 Slice G preserves the caller revision through deterministic reread drift", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-g-revision-drift", { navigator: "navigator", captain: "captain" }, ["navigator", "captain"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-revision-begin", sessionId: "slice-g-revision-drift", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const beforeSource = structuredClone(fx.journals[0].__testSource);
+  const advanced = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-g-revision-advance", sessionId: "slice-g-revision-drift", expectedRevision: started.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(advanced.ok, true, JSON.stringify(advanced.errors));
+  const afterSource = structuredClone(fx.journals[0].__testSource);
+  assert.equal(afterSource.flags.arcflight.system.voyageSession.revision, started.revision + 1);
+  fx.journals[0].__testSource.flags = structuredClone(beforeSource.flags);
+  let playerExecutions = 0;
+  const player = operatorContext(fx);
+  const executor = player.executeVoyagePf2ePendingCheck;
+  player.executeVoyagePf2ePendingCheck = async (...args) => { playerExecutions += 1; return executor(...args); };
+  const drifted = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-g-revision-stale", sessionId: "slice-g-revision-drift", expectedRevision: started.revision, authorityEpoch: 0 }, contextWithRereadDrift(player, beforeSource, afterSource));
+  assert.equal(drifted.ok, false);
+  assert.equal(drifted.errors[0].code, "m11-stale-session-revision");
+  assert.equal(playerExecutions, 0);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.revision, started.revision);
+});
+
+test("M12 Slice G preserves the caller authority epoch through deterministic drift", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-g-epoch-drift", { navigator: "navigator", captain: "captain" }, ["navigator", "captain"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-epoch-begin", sessionId: "slice-g-epoch-drift", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const beforeSource = structuredClone(fx.journals[0].__testSource);
+  const transferred = await transferVoyageEventSessionControl({ kind: "voyage.m11-transfer-control", requestId: "slice-g-epoch-advance", sessionId: "slice-g-epoch-drift", expectedRevision: started.revision, authorityEpoch: 0, targetUserId: "gm-1", reason: "epoch drift witness" }, fx.context);
+  assert.equal(transferred.ok, true, JSON.stringify(transferred.errors));
+  const afterSource = structuredClone(fx.journals[0].__testSource);
+  assert.equal(afterSource.flags.arcflight.system.voyageSession.authorityEpoch, 1);
+  fx.journals[0].__testSource.flags = structuredClone(beforeSource.flags);
+  let playerExecutions = 0;
+  const player = operatorContext(fx);
+  const executor = player.executeVoyagePf2ePendingCheck;
+  player.executeVoyagePf2ePendingCheck = async (...args) => { playerExecutions += 1; return executor(...args); };
+  const drifted = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-g-epoch-stale", sessionId: "slice-g-epoch-drift", expectedRevision: started.revision, authorityEpoch: 0 }, contextWithRereadDrift(player, beforeSource, afterSource));
+  assert.equal(drifted.ok, false);
+  assert.equal(drifted.errors[0].code, "m11-control-transfer-required");
+  assert.equal(playerExecutions, 0);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.authorityEpoch, 0);
+});
+
+test("M12 Slice G applies the existing pre-roll Focus gate to player execution", async () => {
+  const fx = fixture();
+  fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const locked = await launchAndLock(fx, "slice-g-player-focus", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-player-focus-begin", sessionId: "slice-g-player-focus", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const player = operatorContext(fx, "captain-player", "connection-captain", "captain");
+  let executions = 0;
+  const executor = player.executeVoyagePf2ePendingCheck;
+  player.executeVoyagePf2ePendingCheck = async (...args) => { executions += 1; return executor(...args); };
+  const blocked = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-g-player-focus-blocked", sessionId: "slice-g-player-focus", expectedRevision: started.revision, authorityEpoch: 0 }, player);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.errors[0].code, "m11-command-not-allowed");
+  assert.equal(executions, 0);
+  const projection = readVoyageEventSessionResolution("slice-g-player-focus", fx.context).projection;
+  const passed = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-g-player-focus-pass", sessionId: "slice-g-player-focus", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId: projection.reactionWindow.opportunities[0].reactionId } }, fx.context);
+  assert.equal(passed.ok, true, JSON.stringify(passed.errors));
+  const retried = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-g-player-focus-retry", sessionId: "slice-g-player-focus", expectedRevision: passed.revision, authorityEpoch: 0 }, player);
+  assert.equal(retried.ok, true, JSON.stringify(retried.errors));
+  assert.equal(executions, 1);
+});
+
+test("M12 Slice G follows multi-owned operator authority by current station", async () => {
+  const fx = fixture();
+  fx.context.actors.push(actor("watchmaster"));
+  const locked = await launchAndLock(fx, "slice-g-multi-owned", { captain: "captain", navigator: "navigator", watchmaster: "watchmaster" }, ["captain", "navigator", "watchmaster"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-multi-owned-begin", sessionId: "slice-g-multi-owned", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const player = operatorContext(fx, "operator-1", "connection-operator-1", ["captain", "watchmaster"]);
+  let executions = 0;
+  const executor = player.executeVoyagePf2ePendingCheck;
+  player.executeVoyagePf2ePendingCheck = async (...args) => { executions += 1; return executor(...args); };
+  const captain = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-g-multi-owned-captain", sessionId: "slice-g-multi-owned", expectedRevision: started.revision, authorityEpoch: 0 }, player);
+  assert.equal(captain.ok, true, JSON.stringify(captain.errors));
+  const navigatorProjection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-g-multi-owned-nav-read", sessionId: "slice-g-multi-owned", expectedRevision: captain.revision }, player);
+  assert.equal(navigatorProjection.projection.resolutionCurrentStationId, "navigator");
+  assert.equal(navigatorProjection.projection.canExecuteCurrentStation, false);
+  const navigator = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-g-multi-owned-navigator", sessionId: "slice-g-multi-owned", expectedRevision: captain.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(navigator.ok, true, JSON.stringify(navigator.errors));
+  const watchmasterProjection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-g-multi-owned-watch-read", sessionId: "slice-g-multi-owned", expectedRevision: navigator.revision }, player);
+  assert.equal(watchmasterProjection.projection.resolutionCurrentStationId, "watchmaster");
+  assert.equal(watchmasterProjection.projection.canExecuteCurrentStation, true);
+  const watchmaster = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "slice-g-multi-owned-watchmaster", sessionId: "slice-g-multi-owned", expectedRevision: navigator.revision, authorityEpoch: 0 }, player);
+  assert.equal(watchmaster.ok, true, JSON.stringify(watchmaster.errors));
+  assert.equal(executions, 2);
+});
+
+test("M12 Slice G player execution advances through the final station without Task 5", async () => {
+  const fx = fixture();
+  fx.context.actors.push(actor("watchmaster"));
+  const locked = await launchAndLock(fx, "slice-g-player-final", { captain: "captain", navigator: "navigator", watchmaster: "watchmaster" }, ["captain", "navigator", "watchmaster"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-player-final-begin", sessionId: "slice-g-player-final", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const player = operatorContext(fx, "operator-1", "connection-operator-1", ["captain", "navigator", "watchmaster"]);
+  let executions = 0;
+  const executor = player.executeVoyagePf2ePendingCheck;
+  player.executeVoyagePf2ePendingCheck = async (...args) => { executions += 1; return executor(...args); };
+  let revision = started.revision;
+  for (const stationId of ["captain", "navigator", "watchmaster"]) {
+    const result = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: `slice-g-player-final-${stationId}`, sessionId: "slice-g-player-final", expectedRevision: revision, authorityEpoch: 0 }, player);
+    assert.equal(result.ok, true, `${stationId}: ${JSON.stringify(result.errors)}`);
+    revision = result.revision;
+  }
+  assert.equal(executions, 3);
+  const projection = readVoyageEventSessionMultiplayerProjection({ kind: "voyage.m12-read-multiplayer-projection", requestId: "slice-g-player-final-read", sessionId: "slice-g-player-final", expectedRevision: revision }, player);
+  assert.equal(projection.projection.resolutionComplete, true);
+  assert.equal(projection.projection.sessionState, "station-resolution");
+  assert.equal(projection.projection.phase, "resolution");
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.momentum, 0);
+});
+
+test("M12 Slice G rejects player rule and result injection before execution", async () => {
+  const fields = ["stationId", "operatorId", "actorId", "statistic", "actionId", "approach", "riskBid", "total", "dieResult", "degree", "dc", "result", "outcome"];
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-g-injection", { navigator: "navigator", captain: "captain" }, ["navigator", "captain"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-g-injection-begin", sessionId: "slice-g-injection", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const player = operatorContext(fx);
+  let executions = 0;
+  const executor = player.executeVoyagePf2ePendingCheck;
+  player.executeVoyagePf2ePendingCheck = async (...args) => { executions += 1; return executor(...args); };
+  const writes = fx.tracker.updates;
+  for (const [index, field] of fields.entries()) {
+    const result = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: `slice-g-injection-${index}`, sessionId: "slice-g-injection", expectedRevision: started.revision, authorityEpoch: 0, [field]: field === "result" ? { ok: true } : 1 }, player);
+    assert.equal(result.ok, false, field);
+    assert.equal(result.errors[0].code, "m11-invalid-request-shape", field);
+  }
+  assert.equal(executions, 0);
+  assert.equal(fx.tracker.updates, writes);
+  assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.revision, started.revision);
 });
 
 test("M12 Slice F rejects a new Begin after resolution starts without resetting evidence", async () => {

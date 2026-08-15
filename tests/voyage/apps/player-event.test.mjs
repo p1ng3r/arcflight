@@ -181,7 +181,7 @@ test("Slice F player resolution exposes no functional Begin, planning, lock, rol
   const model = buildVoyagePlayerEventModel(source);
   assert.equal(model.ownedPlanningOptions.length, 0); assert.equal(model.canMutateSharedOrder, false); assert.equal(model.planLocked, true);
   assert.equal(model.resolution.started, true); assert.equal(model.resolution.ownedCurrent, true);
-  assert.doesNotMatch(template, /BEGIN RESOLUTION|LOCK PLAN|UNLOCK PLAN|ROLL CHECK|FOCUS|REACTION/);
+  assert.doesNotMatch(template, /BEGIN RESOLUTION|LOCK PLAN|UNLOCK PLAN|data-player-focus|data-player-reaction|data-player-roll/);
   assert.equal(model.crewPlan.some((entry) => entry.planning?.editable === true), false);
   assert.equal(model.ownedStations.some((entry) => entry.canMoveUp || entry.canMoveDown), false);
 });
@@ -323,4 +323,40 @@ test("Slice D Player Event consumes projected planLocked without re-inferring ph
   assert.equal(locked.resolution.stateLabel, "PLAN LOCKED");
   const tampered = buildVoyagePlayerEventModel({ ...projection("observer"), sessionState: "crew-planning", phase: "lock-readiness", committedStationOrder: ["watchmaster", "captain"], planLocked: false });
   assert.equal(tampered.planLocked, false);
+});
+
+test("Slice G exposes only the current operator execution control and safe public context", () => {
+  const source = {
+    ...projection("operator", [{ stationId: "captain", canAct: true }]),
+    sessionState: "station-resolution",
+    phase: "resolution",
+    planLocked: true,
+    resolutionStarted: true,
+    resolutionOrder: ["captain", "watchmaster"],
+    resolutionCurrentStationId: "captain",
+    currentActingStationId: "captain",
+    resolutionOrderPosition: 1,
+    resolutionTotalStations: 2,
+    resolutionStations: [
+      { stationId: "captain", orderPosition: 1, status: "current", current: true, operator: { name: "Captain" } },
+      { stationId: "watchmaster", orderPosition: 2, status: "waiting", current: false, operator: { name: "Watchmaster" } }
+    ],
+    canExecuteCurrentStation: true,
+    currentStationOwnedByViewer: true,
+    currentExecutionState: "available",
+    currentExecution: { stationId: "captain", stationName: "captain", actionName: "Command the Opening", approachName: "Diplomacy", statisticLabel: "diplomacy", riskBidLabel: "NO BID", waitingForReaction: false }
+  };
+  const model = buildVoyagePlayerEventModel(source);
+  assert.equal(model.resolution.canExecuteCurrentStation, true);
+  assert.equal(model.resolution.currentExecution.actionName, "Command the Opening");
+  assert.equal(model.resolution.currentExecution.approachName, "Diplomacy");
+  assert.equal(model.resolution.currentExecution.riskBidLabel, "NO BID");
+  assert.match(template, /data-player-execute-current/);
+  assert.match(template, /ROLL STATION CHECK/);
+  assert.match(runtime, /m12-player-execute/);
+  assert.match(runtime, /resolveVoyageEventSessionStation/);
+  for (const privateField of ["pendingCheckId", "authorityEpoch", "auditHistory", "processedRequests", "rawEventSession"]) assert.equal(privateField in model.resolution.currentExecution, false);
+  const waiting = buildVoyagePlayerEventModel({ ...source, projectionRole: "observer", canExecuteCurrentStation: false, currentStationOwnedByViewer: false, currentExecutionState: "waiting-on-operator" });
+  assert.equal(waiting.resolution.canExecuteCurrentStation, false);
+  assert.equal(waiting.resolution.waitingOnOperator, true);
 });
