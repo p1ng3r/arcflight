@@ -37,8 +37,10 @@ receipt, raw event, secret, or persistence internals are returned.
 `ownedPlanningOptions` is populated only for the authenticated GM or for
 stations owned by the authenticated operator. Crew, observer, and unowned
 stations receive no action catalogue. Slice C defines the exact filtered
-option fields and reuses the existing station-selection command path; this
-field does not grant player order or Plan Lock authority.
+option fields and reuses the existing station-selection command path. Slice D
+may add the derived `sharedStationOrder`, `planReady`, `planLocked`, and
+`canMutateSharedOrder` fields for its shared-order UI; those fields do not
+grant Plan Lock authority, which remains GM-only in the current roadmap.
 
 `authorizeVoyageEventSessionOperator` is a read-only trusted authorization
 helper. It accepts `{ kind, sessionId, stationId }` with kind

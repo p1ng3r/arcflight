@@ -67,5 +67,6 @@ read-only; DOM state is not a security boundary. Multiple owned stations are
 independent, and the M11 revision/coordinator/idempotency rules prevent stale
 overwrites.
 
-Slice D owns collaborative station order and player Plan Lock. Later slices own
-resolution, execution, reactions, recovery, and closeout.
+Slice D owns collaborative station order; Plan Lock remains GM-only under the
+current roadmap authority. Slice E owns Unlock/Relock recovery. Later slices
+own resolution, execution, reactions, recovery, and closeout.

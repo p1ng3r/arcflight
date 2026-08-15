@@ -133,9 +133,9 @@ test("player model is projection-only and does not fabricate absent authored nar
 test("round, plan-lock, current-station, and completed resolution states are presentation-only", () => {
   const waiting = buildVoyagePlayerEventModel(projection("observer"));
   assert.equal(waiting.resolution.stateLabel, "WAITING FOR RESOLUTION");
-  const lockedProjection = projection("observer"); lockedProjection.sessionState = "plan-locked"; lockedProjection.phase = "lock-readiness";
+  const lockedProjection = projection("observer"); lockedProjection.sessionState = "plan-locked"; lockedProjection.phase = "lock-readiness"; lockedProjection.planLocked = true;
   assert.equal(buildVoyagePlayerEventModel(lockedProjection).resolution.stateLabel, "PLAN LOCKED");
-  const activeProjection = projection("operator", [{ stationId: "captain" }]); activeProjection.sessionState = "station-resolution"; activeProjection.phase = "resolution"; activeProjection.currentActingStationId = "captain";
+  const activeProjection = projection("operator", [{ stationId: "captain" }]); activeProjection.sessionState = "station-resolution"; activeProjection.phase = "resolution"; activeProjection.planLocked = true; activeProjection.currentActingStationId = "captain";
   const active = buildVoyagePlayerEventModel(activeProjection);
   assert.equal(active.resolution.currentStation.stationId, "captain");
   assert.equal(active.resolution.ownedCurrent, true);
@@ -210,4 +210,38 @@ test("extra opener arguments cannot replace trusted discovery", () => {
   const app = openVoyagePlayerEvent("historical-or-foreign");
   app._prepareContext();
   assert.equal(requestedSession, "trusted-active");
+});
+
+test("Slice D presents the authoritative shared order and operator-only move controls", () => {
+  const source = projection("operator", [{ stationId: "captain" }]);
+  source.sharedStationOrder = ["watchmaster", "captain"];
+  source.planReady = true;
+  source.planLocked = false;
+  source.canMutateSharedOrder = true;
+  const model = buildVoyagePlayerEventModel(source);
+  assert.deepEqual(model.sharedStationOrder, ["watchmaster", "captain"]);
+  assert.deepEqual(model.crewPlan.map((entry) => entry.stationId), ["watchmaster", "captain"]);
+  assert.equal(model.crewPlan[0].canMoveDown, true);
+  assert.equal(model.crewPlan[1].canMoveUp, true);
+  assert.match(template, /data-player-order-move/);
+  assert.match(template, /Shared Station Order/);
+  const locked = buildVoyagePlayerEventModel({ ...source, planLocked: true, canMutateSharedOrder: true });
+  assert.equal(locked.canMutateSharedOrder, false);
+  assert.equal(locked.crewPlan.some((entry) => entry.canMoveUp || entry.canMoveDown), false);
+  const observer = buildVoyagePlayerEventModel({ ...source, projectionRole: "observer", canMutateSharedOrder: false });
+  assert.equal(observer.canMutateSharedOrder, false);
+  assert.equal(observer.crewPlan.some((entry) => entry.canMoveUp || entry.canMoveDown), false);
+});
+
+test("Slice D Player Event consumes projected planLocked without re-inferring phase or order", () => {
+  const paused = buildVoyagePlayerEventModel({ ...projection("observer"), sessionState: "paused", phase: "lock-readiness", committedStationOrder: ["captain", "watchmaster"], planLocked: false });
+  assert.equal(paused.planLocked, false);
+  assert.notEqual(paused.crewPlan.length, 0);
+  const recovery = buildVoyagePlayerEventModel({ ...projection("observer"), sessionState: "recovery-required", phase: "lock-readiness", committedStationOrder: ["captain", "watchmaster"], planLocked: false });
+  assert.equal(recovery.planLocked, false);
+  const locked = buildVoyagePlayerEventModel({ ...projection("observer"), sessionState: "station-resolution", phase: "resolution", planLocked: true });
+  assert.equal(locked.planLocked, true);
+  assert.equal(locked.resolution.stateLabel, "PLAN LOCKED");
+  const tampered = buildVoyagePlayerEventModel({ ...projection("observer"), sessionState: "crew-planning", phase: "lock-readiness", committedStationOrder: ["watchmaster", "captain"], planLocked: false });
+  assert.equal(tampered.planLocked, false);
 });

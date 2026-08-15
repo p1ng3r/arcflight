@@ -22,6 +22,7 @@ import {
   applyVoyageEncounterStationOrderProposalClear
 } from "../domain/station-order-proposal.js";
 import { applyVoyageEncounterCrewPlanningLock } from "../domain/crew-planning-lock.js";
+import { prepareVoyageEncounterCrewPlanningReadiness } from "../domain/crew-planning-readiness.js";
 import { validateVoyageHazardRecord } from "../domain/hazard-schema.js";
 import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../domain/constants.js";
 import { analyzeVoyagePressureBreachCloseoutTransaction } from "../domain/pressure-breach.js";
@@ -77,6 +78,7 @@ const RECOVERY_RESULT_KIND = "recovered";
 const RECOVERY_ACTIONS = new Set(["rebuild-latest", "reconcile-closeout", "abort"]);
 const CHECKPOINT_KINDS = new Set(["before-plan-lock", "before-action-segment", "before-reaction", "before-round-closeout", "before-emergency-response", "before-persistent-application", "after-recovery"]);
 const SESSION_STATES = new Set(["setup", "round-introduction", "crew-planning", "plan-locked", "station-resolution", "round-closeout", "next-round", "event-closeout-review", "persistent-application", "completed", "paused", "emergency-response", "aborted", "recovery-required"]);
+const PLAN_LOCKED_SESSION_STATES = new Set(["plan-locked", "station-resolution", "round-closeout", "next-round", "event-closeout-review", "persistent-application", "completed"]);
 const TRANSFER_REQUEST_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision", "authorityEpoch", "targetUserId", "reason"]);
 const READ_PROJECTION_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision"]);
 const PROJECTION_FIELDS = Object.freeze([
@@ -86,7 +88,8 @@ const PROJECTION_FIELDS = Object.freeze([
 ]);
 const MULTIPLAYER_PROJECTION_FIELDS = Object.freeze([
   ...PROJECTION_FIELDS,
-  "projectionRole", "ownedOperators", "readOnlyStationIds", "ownedPlanningOptions"
+  "projectionRole", "ownedOperators", "readOnlyStationIds", "ownedPlanningOptions",
+  "sharedStationOrder", "planReady", "planLocked", "canMutateSharedOrder"
 ]);
 const MULTIPLAYER_AUTHORIZATION_FIELDS = Object.freeze(["kind", "sessionId", "stationId"]);
 const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
@@ -1889,8 +1892,13 @@ async function dispatchTask2Command(value, identities, initialAuth, initialMatch
     const prior = resolved.match.session;
     const authorityDecision = deriveProjectionAuthority(auth, prior, context);
     const projectionKind = auth.user?.isGM === true ? "gm" : authorityDecision.role;
-    if (auth.user?.isGM !== true && (!operatorAllowedCommand(value.commandKind) || projectionKind !== "operator" || !authorityDecision.ownedOperators.some((entry) => entry.stationId === value.payload.stationId))) {
-      return failure([diagnostic("m11-projection-not-authorized", "request.payload.stationId")], identities);
+    if (auth.user?.isGM !== true) {
+      const authorizedOrder = value.commandKind === "station-order"
+        ? authorityDecision.ownedOperators.length > 0
+        : authorityDecision.ownedOperators.some((entry) => entry.stationId === value.payload.stationId);
+      if (!operatorAllowedCommand(value.commandKind) || projectionKind !== "operator" || !authorizedOrder) {
+        return failure([diagnostic("m11-projection-not-authorized", value.commandKind === "station-order" ? "request.payload.stationOrder" : "request.payload.stationId")], identities);
+      }
     }
     const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
     const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, projectionKind, requestFingerprint, identities);
@@ -2607,12 +2615,12 @@ function task2PayloadValid(commandKind, payload) {
   return nonBlank(payload.phaseStartSnapshotId) && !UNSAFE_KEYS.has(payload.phaseStartSnapshotId);
 }
 function operatorAllowedCommand(commandKind) {
-  return commandKind === "station-selection" || commandKind === "station-selection-clear";
+  return commandKind === "station-selection" || commandKind === "station-selection-clear" || commandKind === "station-order";
 }
 
 function validM12Task2Record(record, session, audit, event, checkpoint = null) {
   try {
-    const operatorRecord = record.commandKind === "station-selection" || record.commandKind === "station-selection-clear";
+    const operatorRecord = record.commandKind === "station-selection" || record.commandKind === "station-selection-clear" || record.commandKind === "station-order";
     if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId)
       || !["gm", ...(operatorRecord ? ["operator"] : [])].includes(record.projectionKind) || !TASK2_COMMANDS.has(record.commandKind)
       || record.resultKind !== TASK2_RESULT_KINDS[record.commandKind] || !safeInteger(record.resultRevision)
@@ -2622,7 +2630,11 @@ function validM12Task2Record(record, session, audit, event, checkpoint = null) {
     if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== record.projectionKind
       || !safeInteger(tuple[3]) || !safeInteger(tuple[4]) || tuple[3] > session.authorityEpoch || tuple[4] !== record.resultRevision - 1
       || tuple[5] !== record.commandKind || !task2PayloadValid(record.commandKind, tuple[6])) return false;
-    if ((record.projectionKind === "operator") && !session.encounterState.stationAssignments.some((entry) => entry?.stationId === tuple[6].stationId)) return false;
+    if (record.projectionKind === "operator") {
+      if (record.commandKind === "station-order") {
+        if (!Array.isArray(tuple[6].stationOrder) || !tuple[6].stationOrder.every((stationId) => session.encounterState.stationAssignments.some((entry) => entry?.stationId === stationId))) return false;
+      } else if (!session.encounterState.stationAssignments.some((entry) => entry?.stationId === tuple[6].stationId)) return false;
+    }
     if (!validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch)
       || record.response.status !== (record.commandKind === "plan-lock" ? "plan-locked" : "crew-planning")
       || record.response.authorityEpoch !== tuple[3] || record.response.events.length !== 1) return false;
@@ -2835,12 +2847,24 @@ function ownedPlanningOptions(session, authority) {
 function buildMultiplayerProjection(session, authority) {
   const common = buildSessionProjection(session, authority.role);
   if (!common || !authority || !["gm", "operator", "crew", "observer"].includes(authority.role)) return null;
+  const encounter = session.encounterState;
+  const assignedOrder = Array.isArray(encounter.stationAssignments) ? encounter.stationAssignments.map((entry) => entry?.stationId).filter((entry) => nonBlank(entry)) : [];
+  const proposedOrder = Array.isArray(encounter.proposedStationOrder) ? encounter.proposedStationOrder : [];
+  const committedOrder = Array.isArray(encounter.committedStationOrder) ? encounter.committedStationOrder : [];
+  const sharedStationOrder = committedOrder.length > 0 ? [...committedOrder] : proposedOrder.length > 0 ? [...proposedOrder] : [...assignedOrder];
+  let planReady = false;
+  try { planReady = session.sessionState === "crew-planning" && prepareVoyageEncounterCrewPlanningReadiness(encounter).readyToLock === true; } catch { planReady = false; }
+  const planLocked = PLAN_LOCKED_SESSION_STATES.has(session.sessionState);
   const projection = {
     ...common,
     projectionRole: authority.role,
     ownedOperators: authority.ownedOperators,
     readOnlyStationIds: authority.readOnlyStationIds,
-    ownedPlanningOptions: ownedPlanningOptions(session, authority)
+    ownedPlanningOptions: ownedPlanningOptions(session, authority),
+    sharedStationOrder,
+    planReady,
+    planLocked,
+    canMutateSharedOrder: authority.role === "operator" && session.sessionState === "crew-planning" && encounter.phase === "crew-planning"
   };
   const isolated = capture(projection);
   return isolated.ok && exactKeys(isolated.value, MULTIPLAYER_PROJECTION_FIELDS) ? isolated.value : null;
@@ -3447,7 +3471,10 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
     if (!task2PayloadValid(value.commandKind, value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
     if (auth.user?.isGM !== true) {
       const authorityDecision = deriveProjectionAuthority(auth, match.session, context);
-      if (authorityDecision.role !== "operator" || !authorityDecision.ownedOperators.some((entry) => entry.stationId === value.payload.stationId)) return failure([diagnostic("m11-projection-not-authorized", "request.payload.stationId")], identities);
+      const authorizedOrder = value.commandKind === "station-order"
+        ? authorityDecision.ownedOperators.length > 0
+        : authorityDecision.ownedOperators.some((entry) => entry.stationId === value.payload.stationId);
+      if (authorityDecision.role !== "operator" || !authorizedOrder) return failure([diagnostic("m11-projection-not-authorized", value.commandKind === "station-order" ? "request.payload.stationOrder" : "request.payload.stationId")], identities);
     }
     return dispatchTask2Command(value, identities, auth, match, context);
   }

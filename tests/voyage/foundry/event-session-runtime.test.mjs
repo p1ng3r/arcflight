@@ -2104,3 +2104,49 @@ test("M12 Slice C reuses station-selection for an owned operator and rejects for
   assert.equal(foreign.errors[0].code, "m11-projection-not-authorized");
   assert.equal(fixture.tracker.updates, 3);
 });
+
+test("M12 Slice D lets an assigned operator mutate the one shared order while preserving GM-only Plan Lock", async () => {
+  const fixture = makeContext({ update: persistSession });
+  fixture.context.users = [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }, { id: "player-2", isGM: false, active: true }];
+  const actor = (id, type = "character") => ({ id, uuid: `Actor.${id}`, name: id, type, getFlag: (_module, key) => key === "enabled" ? true : "arcflightShip" });
+  fixture.context.actors = [actor("ship-1", "vehicle"), actor("captain"), actor("navigator")];
+  fixture.context.resolveEventDefinitionSnapshot = async () => getM12EventDefinition();
+  const launch = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "slice-d-launch", sessionId: "slice-d-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", navigator: "navigator" } }, fixture.context);
+  assert.equal(launch.ok, true, JSON.stringify(launch.errors));
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "captain", uuid: "Actor.captain" }] };
+  const ordered = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-order", sessionId: "slice-d-session", expectedRevision: 5, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["navigator", "captain"] } }, playerContext);
+  assert.equal(ordered.ok, true, JSON.stringify(ordered.errors));
+  assert.deepEqual(fixture.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.proposedStationOrder.slice(0, 2), ["navigator", "captain"]);
+  const projection = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ sessionId: "slice-d-session", requestId: "slice-d-projection", expectedRevision: 6 }), playerContext);
+  assert.equal(projection.ok, true, JSON.stringify(projection.errors));
+  assert.deepEqual(projection.projection.sharedStationOrder.slice(0, 2), ["navigator", "captain"]);
+  const secondOperator = { ...playerContext, authenticatedUserId: "player-2", authenticatedConnectionId: "connection-player-2", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "navigator", uuid: "Actor.navigator" }] };
+  const secondOrder = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-order-2", sessionId: "slice-d-session", expectedRevision: 6, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["captain", "navigator"] } }, secondOperator);
+  assert.equal(secondOrder.ok, true, JSON.stringify(secondOrder.errors));
+  const crew = { ...secondOperator, resolveVoyageOperatorForPrincipal: () => [] };
+  const unauthorized = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-crew", sessionId: "slice-d-session", expectedRevision: 7, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["captain", "navigator"] } }, crew);
+  assert.equal(unauthorized.ok, false); assert.equal(unauthorized.errors[0].code, "m11-projection-not-authorized");
+  const malformed = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-malformed", sessionId: "slice-d-session", expectedRevision: 7, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["captain", "captain"] } }, playerContext);
+  assert.equal(malformed.ok, false); assert.equal(malformed.errors[0].code, "m11-command-payload-invalid");
+  const playerLock = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-lock", sessionId: "slice-d-session", expectedRevision: 7, authorityEpoch: 0, commandKind: "plan-lock", payload: { phaseStartSnapshotId: "snapshot-forged" } }, playerContext);
+  assert.equal(playerLock.ok, false); assert.equal(playerLock.errors[0].code, "m11-active-gm-required");
+  const stale = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-stale", sessionId: "slice-d-session", expectedRevision: 6, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["navigator", "captain"] } }, playerContext);
+  assert.equal(stale.ok, false); assert.equal(stale.errors[0].code, "m11-stale-session-revision");
+  assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("M12 Slice D runtime projection does not treat paused or recovery phase evidence as Plan Lock", async () => {
+  const paused = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), paused.context);
+  const stored = task6ActiveSession(paused);
+  stored.sessionState = "paused";
+  stored.encounterState.lifecycleState = "paused";
+  stored.encounterState.phase = "cleanup-advance";
+  stored.checkpoints[0] = { checkpointId: `arcflight-voyage-checkpoint:${JSON.stringify([stored.sessionId, "before-action-segment", 1])}`, kind: "before-action-segment", sessionId: stored.sessionId, revision: 1, encounterRevision: stored.encounterState.revision, eventCount: 1, sessionState: "paused", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout), authorityEpoch: 0, invalidated: false };
+  paused.context.trustedReplayDependencies = true;
+  paused.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "paused", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  const pausedProjection = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "slice-d-paused-projection", expectedRevision: stored.revision }), paused.context);
+  assert.equal(pausedProjection.ok, true, JSON.stringify(pausedProjection.errors));
+  assert.equal(pausedProjection.projection.planLocked, false);
+  assert.equal(paused.tracker.updates, 0);
+});

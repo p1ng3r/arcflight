@@ -113,10 +113,23 @@ export function buildVoyagePlayerEventModel(projection) {
   const ownedStationIds = new Set(ownedOperators.map((entry) => entry?.stationId).filter((entry) => typeof entry === "string"));
   const planningOptions = new Map((Array.isArray(projection.ownedPlanningOptions) ? projection.ownedPlanningOptions : []).map((entry) => [entry?.stationId, planningView(entry)]));
   const committedOrder = Array.isArray(projection.committedStationOrder) ? projection.committedStationOrder.filter((entry) => typeof entry === "string") : [];
-  const orderIndex = new Map(committedOrder.map((stationId, index) => [stationId, index]));
-  const stations = assignments.map((assignment) => stationView(assignment, ownedStationIds, orderIndex));
+  const assignedOrder = assignments.map((assignment) => assignment?.stationId).filter((entry) => typeof entry === "string");
+  const sharedStationOrder = Array.isArray(projection.sharedStationOrder) && projection.sharedStationOrder.length > 0
+    ? projection.sharedStationOrder.filter((entry) => typeof entry === "string")
+    : (committedOrder.length > 0 ? committedOrder : assignedOrder);
+  const orderIndex = new Map(sharedStationOrder.map((stationId, index) => [stationId, index]));
+  const byId = new Map(assignments.map((assignment) => [assignment?.stationId, assignment]));
+  const orderedAssignments = [...sharedStationOrder.map((stationId) => byId.get(stationId)).filter(Boolean), ...assignments.filter((assignment) => !orderIndex.has(assignment?.stationId))];
+  const stations = orderedAssignments.map((assignment) => stationView(assignment, ownedStationIds, orderIndex));
+  const planLocked = projection.planLocked === true;
+  const canMutateSharedOrder = projection.canMutateSharedOrder === true && !planLocked;
+  stations.forEach((station) => {
+    station.canMoveUp = canMutateSharedOrder && station.orderNumber > 1;
+    station.canMoveDown = canMutateSharedOrder && station.orderNumber !== null && station.orderNumber < sharedStationOrder.length;
+  });
   const ownedStations = stations.filter((station) => station.owned).map((station) => {
-    const planning = planningOptions.get(station.stationId);
+    const sourcePlanning = planningOptions.get(station.stationId);
+    const planning = sourcePlanning && planLocked ? { ...sourcePlanning, editable: false } : sourcePlanning;
     return { ...station, planning, readOnly: planning ? !planning.editable : true, stateLabel: planning?.ready ? "READY" : planning?.editable ? "PLANNING" : station.stateLabel };
   });
   const role = ["gm", "operator", "crew", "observer"].includes(projection.projectionRole) ? projection.projectionRole : "observer";
@@ -124,7 +137,6 @@ export function buildVoyagePlayerEventModel(projection) {
   const currentStationId = typeof projection.currentActingStationId === "string" ? projection.currentActingStationId : null;
   const currentStation = stations.find((station) => station.stationId === currentStationId) ?? null;
   const resolutionComplete = projection.sessionState === "round-closeout" || projection.sessionState === "completed";
-  const planLocked = projection.sessionState === "plan-locked" || projection.sessionState === "station-resolution" || projection.phase === "lock-readiness" || projection.phase === "resolution";
   const resolution = resolutionComplete
     ? { stateLabel: "RESOLUTION COMPLETE", detail: "AWAITING ROUND CLOSEOUT", currentStation, ownedCurrent: Boolean(currentStation?.owned), waiting: false }
     : planLocked
@@ -142,6 +154,10 @@ export function buildVoyagePlayerEventModel(projection) {
     ownedPlanningOptions: ownedStations.map((station) => station.planning).filter(Boolean),
     hasOwnedStation: ownedStations.length > 0,
     crewPlan: stations,
+    sharedStationOrder,
+    planReady: projection.planReady === true,
+    planLocked,
+    canMutateSharedOrder,
     committedOrder,
     resolution,
     activeTab: "round",
@@ -220,6 +236,38 @@ export class VoyagePlayerEventApp extends HandlebarsApplicationMixin(Application
     });
     this.element.querySelectorAll("[data-player-planning-field]").forEach((control) => control.addEventListener("change", () => this.#submitPlanning(control)));
     this.element.querySelectorAll("[data-player-planning-clear]").forEach((control) => control.addEventListener("click", () => this.#submitPlanning(control, true)));
+    this.element.querySelectorAll("[data-player-order-move]").forEach((control) => control.addEventListener("click", () => this.#submitOrder(control)));
+  }
+
+  async #submitOrder(control) {
+    const stationId = control?.dataset?.stationId;
+    const direction = control?.dataset?.direction;
+    if (!stationId || !["up", "down"].includes(direction) || !this.#sessionId) return;
+    const rows = [...this.element.querySelectorAll("[data-player-order-station]")];
+    const stationOrder = rows.map((row) => row.dataset.stationId).filter((entry) => typeof entry === "string" && entry.length > 0);
+    const index = stationOrder.indexOf(stationId);
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || target < 0 || target >= stationOrder.length) return;
+    [stationOrder[index], stationOrder[target]] = [stationOrder[target], stationOrder[index]];
+    const request = {
+      kind: "voyage.m11-command",
+      requestId: randomId("m12-player-order"),
+      sessionId: this.#sessionId,
+      expectedRevision: this.#expectedRevision,
+      authorityEpoch: this.#authorityEpoch,
+      commandKind: "station-order",
+      payload: { stationOrder }
+    };
+    const result = await game.arcflight?.dispatchVoyageEventSessionCommand?.(request);
+    if (result?.ok) {
+      this.#expectedRevision = result.revision;
+      this.#authorityEpoch = Number.isSafeInteger(result.authorityEpoch) ? result.authorityEpoch : this.#authorityEpoch;
+    } else {
+      const fresh = game.arcflight?.discoverVoyageEventSession?.();
+      if (fresh?.sessionId === this.#sessionId && Number.isSafeInteger(fresh.revision)) this.#expectedRevision = fresh.revision;
+      try { globalThis.ui?.notifications?.warn?.(result?.errors?.[0]?.message ?? "Crew planning changed. Review the current order."); } catch { /* presentation only */ }
+    }
+    await this.render({ force: true });
   }
 
   async #submitPlanning(control, clear = false) {
