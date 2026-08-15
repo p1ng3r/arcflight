@@ -1087,9 +1087,11 @@ Exact request keys:
 }
 ```
 
-`kind` is exactly `voyage.m11-correct-session`. The closed
+`kind` is exactly `voyage.m11-correct-session`. The M11 Task 7 closed
 `correctionKind` vocabulary is exactly `"station-selection"` and
-`"station-order"`; no other value is accepted. Both `targetRequestId` and
+`"station-order"`; no other Task 7 value is accepted. M12 Multiplayer Slice E
+adds the separately specified pre-resolution `"plan-unlock"` extension under
+its own contract; it does not broaden the Task 7 correction semantics. Both `targetRequestId` and
 `targetCheckpointId` must be literal `null`. The target is
 the existing corresponding selection or proposal in the freshly reread
 current `crew-planning` state, identified by the replacement payload and
@@ -1898,8 +1900,10 @@ invalidated.
 
 #### Correction semantics and dependencies
 
-The only legal correction kinds are `station-selection` and `station-order`.
-Both require `sessionState: "crew-planning"`, require
+The M11 Task 7 legal correction kinds are `station-selection` and
+`station-order`. M12 Multiplayer Slice E separately defines the
+pre-resolution `plan-unlock` extension. Task 7 correction kinds both require
+`sessionState: "crew-planning"`, require
 `targetRequestId: null` and `targetCheckpointId: null`, and require that no
 `before-plan-lock` checkpoint exists yet.
 
@@ -1952,6 +1956,11 @@ Its runtime event has exact ordered shape:
 unique, and its encounter revision pair binds to the canonical domain event.
 `targetRequestId` is literal `null`; the event binds its target through
 `correctionKind` and the canonical replacement payload recorded in the audit.
+For the M12 Slice E `plan-unlock` extension, there is no replacement domain
+event: its encounter-revision pair must instead bind to the immediately
+preceding canonical `voyage.m12-plan-lock` runtime event, with the unlock
+starting from that event's encounter revision and advancing it exactly once.
+Agreement between the unlock event and audit alone is insufficient.
 
 #### Recovery abort
 

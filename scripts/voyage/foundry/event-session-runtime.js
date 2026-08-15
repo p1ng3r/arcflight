@@ -833,7 +833,7 @@ function validRuntimeEvent(event, session, index) {
   if (event.type === "voyage.m11-recovery-rebuilt") return nonBlank(event.sourceCheckpointId) && safeInteger(event.sourceCheckpointRevision) && nonBlank(event.recoveryAuthorityUserId);
   if (event.type === "voyage.m11-recovery-aborted") return exactKeys(event, RECOVERY_ABORT_EVENT_FIELDS) && nonBlank(event.sourceCheckpointId) && safeInteger(event.sourceCheckpointRevision) && nonBlank(event.recoveryAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
   if (event.type === "voyage.m11-session-aborted") return exactKeys(event, ABORT_EVENT_FIELDS) && ["setup-cancellation", "active-event"].includes(event.abortScope) && nonBlank(event.abortAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
-  if (event.type === "voyage.m11-session-corrected") return exactKeys(event, CORRECTION_EVENT_FIELDS) && ["station-selection", "station-order"].includes(event.correctionKind) && event.targetRequestId === null && nonBlank(event.correctionAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
+  if (event.type === "voyage.m11-session-corrected") return exactKeys(event, CORRECTION_EVENT_FIELDS) && ["station-selection", "station-order", "plan-unlock"].includes(event.correctionKind) && event.targetRequestId === null && nonBlank(event.correctionAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
   if (event.type === "voyage.m11-closeout-review-accepted") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
   if (event.type === "voyage.m11-closeout-session-reserved") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
   if (event.type === "voyage.m11-closeout-session-commit-pending") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
@@ -2185,9 +2185,12 @@ function recoveryCheckpointJournalValid(envelope) {
     for (const checkpoint of envelope.checkpoints) {
       if (!recoveryCheckpointValid(checkpoint, envelope)) return false;
       if (ids.has(checkpoint.checkpointId) || checkpoint.revision <= previousRevision || checkpoint.authorityEpoch < previousAuthorityEpoch || checkpoint.eventCount < previousEventCount
-        || (previousRevision >= 0 && checkpoint.revision !== previousRevision + 1
-          && !Array.from({ length: checkpoint.revision - previousRevision - 1 }, (_, offset) => previousRevision + offset + 1)
-            .every((revision) => envelope.events.some((event) => !event?.type?.startsWith("voyage.m11-") && !isM12RuntimeEvent(event) && storedEventRevisionPair(event)[1] === revision)))
+         || (previousRevision >= 0 && checkpoint.revision !== previousRevision + 1
+           && !Array.from({ length: checkpoint.revision - previousRevision - 1 }, (_, offset) => previousRevision + offset + 1)
+             .every((revision) => envelope.events.some((event) => {
+               const pair = isM12RuntimeEvent(event) ? [event.previousRevision, event.revision] : storedEventRevisionPair(event);
+               return safeInteger(pair[1]) && pair[1] === revision;
+             })))
         || !recoveryInvalidationValid(checkpoint, envelope)) return false;
       for (let index = 0; index < checkpoint.eventCount; index += 1) {
         const event = envelope.events[index];
@@ -2412,7 +2415,9 @@ function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = nu
         const eventType = record.commandKind === "abort-session" ? "voyage.m11-session-aborted" : "voyage.m11-session-corrected";
         const responseEvent = envelope.events.find((event) => event?.type === eventType && event.revision === record.resultRevision && event.previousRevision === record.resultRevision - 1);
         const audit = envelope.auditHistory[auditIndex];
-        if (!responseEvent || !audit || !validTask7Record(record, sessionEvidence, audit, responseEvent) || record.response.events.length !== 2 || !equal(record.response.events[1], responseEvent)) return false;
+        const correctionTuple = record.commandKind === "correct-session" ? parseStoredFingerprint(record.fingerprint) : null;
+        const planUnlock = correctionTuple?.ok === true && correctionTuple.value[6]?.correctionKind === "plan-unlock";
+        if (!responseEvent || !audit || !validTask7Record(record, sessionEvidence, audit, responseEvent) || record.response.events.length !== (planUnlock ? 1 : 2) || !equal(record.response.events[planUnlock ? 0 : 1], responseEvent)) return false;
         auditIndex += 1;
       } else return false;
       ids.add(record.requestId);
@@ -2552,6 +2557,20 @@ async function buildRecoveryAbortCandidate(baseSession, envelope, source, replay
     return { candidate, event: runtimeEvent, response };
   } catch { return null; }
 }
+function validPlanUnlockPredecessor(session, runtimeEvent) {
+  try {
+    const predecessor = session.events.find((event) => event?.revision === runtimeEvent.previousRevision);
+    return predecessor
+      && validM12RuntimeEvent(predecessor, session)
+      && predecessor.type === "voyage.m12-plan-lock"
+      && predecessor.transitionKind === "plan-lock"
+      && predecessor.previousSessionState === "crew-planning"
+      && predecessor.nextSessionState === "plan-locked"
+      && runtimeEvent.previousEncounterRevision === predecessor.encounterRevision
+      && runtimeEvent.encounterRevision === predecessor.encounterRevision + 1;
+  } catch { return false; }
+}
+
 function validTask7Record(record, session, audit, runtimeEvent) {
   try {
     if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId) || record.projectionKind !== "gm" || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision || !isPlainObject(record.response)) return false;
@@ -2566,9 +2585,19 @@ function validTask7Record(record, session, audit, runtimeEvent) {
       return exactKeys(audit.details, fields) && audit.details.abortScope === runtimeEvent.abortScope && audit.details.nextSessionState === "aborted" && audit.details.reason === payload.reason && audit.details.previousSessionState !== "aborted" && audit.details.nextLifecycleState === (audit.kind === "setup-cancelled" ? "discarded" : "abandoned") && (audit.kind === "setup-cancelled" || audit.details.persistentConsequence === false);
     }
     if (record.commandKind === "correct-session") {
-      if (record.resultKind !== "corrected" || parsed.value[5] !== "correct-session" || !exactKeys(payload, ["correctionKind", "targetRequestId", "targetCheckpointId", "replacementPayload", "reason", "confirmation"]) || !["station-selection", "station-order"].includes(payload.correctionKind) || !exactKeys(payload.replacementPayload, payload.correctionKind === "station-selection" ? ["stationId", "actionId"] : ["stationOrder"]) || payload.targetRequestId !== null || payload.targetCheckpointId !== null || payload.confirmation !== true || !validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) || record.response.status !== "crew-planning" || record.response.events.length !== 2 || audit.details?.previousSessionState !== "crew-planning" || audit.details?.nextSessionState !== "crew-planning" || session.checkpoints.some((checkpoint) => checkpoint.kind === "before-plan-lock" && checkpoint.revision <= record.resultRevision - 1)) return false;
-      if (!validRuntimeEvent(runtimeEvent, session, session.events.indexOf(runtimeEvent)) || runtimeEvent.type !== "voyage.m11-session-corrected" || runtimeEvent.correctionAuthorityUserId !== record.principalUserId || !validTask7DomainPair(record.response.events[0], runtimeEvent, session) || !equal(record.response.events[1], runtimeEvent)) return false;
-      return audit && exactKeys(audit, AUDIT_FIELDS) && audit.kind === "correction-applied" && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId && safeInteger(audit.authorityEpoch) && parsed.value[3] === audit.authorityEpoch && audit.authorityEpoch === record.response.authorityEpoch && audit.revision === record.resultRevision && audit.previousRevision === record.resultRevision - 1 && validIsoTimestamp(audit.occurredAt) && exactKeys(audit.details, TASK7_CORRECTION_AUDIT_DETAILS) && audit.details.correctionKind === payload.correctionKind && audit.details.targetRequestId === null && audit.details.previousSessionState === "crew-planning" && audit.details.nextSessionState === "crew-planning" && audit.details.reason === payload.reason && audit.details.previousEncounterRevision === runtimeEvent.previousEncounterRevision && audit.details.encounterRevision === runtimeEvent.encounterRevision;
+      const unlock = payload.correctionKind === "plan-unlock";
+      if (record.resultKind !== "corrected" || parsed.value[5] !== "correct-session" || !exactKeys(payload, ["correctionKind", "targetRequestId", "targetCheckpointId", "replacementPayload", "reason", "confirmation"]) || !["station-selection", "station-order", "plan-unlock"].includes(payload.correctionKind)
+        || !exactKeys(payload.replacementPayload, unlock ? [] : payload.correctionKind === "station-selection" ? ["stationId", "actionId"] : ["stationOrder"])
+        || payload.targetRequestId !== null || payload.targetCheckpointId !== null || payload.confirmation !== true || !validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch)
+        || record.response.status !== "crew-planning" || record.response.events.length !== (unlock ? 1 : 2)
+        || audit.details?.previousSessionState !== (unlock ? "plan-locked" : "crew-planning") || audit.details?.nextSessionState !== "crew-planning"
+        || (!unlock && session.checkpoints.some((checkpoint) => checkpoint.kind === "before-plan-lock" && checkpoint.revision <= record.resultRevision - 1))) return false;
+      if (!validRuntimeEvent(runtimeEvent, session, session.events.indexOf(runtimeEvent)) || runtimeEvent.type !== "voyage.m11-session-corrected" || runtimeEvent.correctionAuthorityUserId !== record.principalUserId
+        || runtimeEvent.correctionKind !== payload.correctionKind
+        || (unlock && !validPlanUnlockPredecessor(session, runtimeEvent))
+        || (unlock ? !equal(record.response.events[0], runtimeEvent) : (!validTask7DomainPair(record.response.events[0], runtimeEvent, session) || !equal(record.response.events[1], runtimeEvent)))) return false;
+      const unlockAuditValid = audit && exactKeys(audit, AUDIT_FIELDS) && audit.kind === "correction-applied" && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId && safeInteger(audit.authorityEpoch) && parsed.value[3] === audit.authorityEpoch && audit.authorityEpoch === record.response.authorityEpoch && audit.revision === record.resultRevision && audit.previousRevision === record.resultRevision - 1 && validIsoTimestamp(audit.occurredAt) && exactKeys(audit.details, TASK7_CORRECTION_AUDIT_DETAILS) && audit.details.correctionKind === payload.correctionKind && audit.details.targetRequestId === null && audit.details.previousSessionState === (unlock ? "plan-locked" : "crew-planning") && audit.details.nextSessionState === "crew-planning" && audit.details.reason === payload.reason && audit.details.previousEncounterRevision === runtimeEvent.previousEncounterRevision && audit.details.encounterRevision === runtimeEvent.encounterRevision;
+      return unlockAuditValid;
     }
     return false;
   } catch { return false; }
@@ -2646,7 +2675,7 @@ function validM12Task2Record(record, session, audit, event, checkpoint = null) {
       || audit.auditId !== auditId(session.sessionId, session.auditHistory.indexOf(audit), audit.kind)
       || audit.sessionId !== session.sessionId || audit.requestId !== record.requestId || audit.actorUserId !== record.principalUserId
       || audit.authorityEpoch !== tuple[3] || audit.previousRevision !== record.resultRevision - 1 || audit.revision !== record.resultRevision
-      || !validIsoTimestamp(audit.occurredAt) || !exactKeys(audit.details, M12_AUDIT_DETAILS_FIELDS)
+       || !validIsoTimestamp(audit.occurredAt) || !exactKeys(audit.details, M12_AUDIT_DETAILS_FIELDS)
       || audit.details.transitionKind !== record.commandKind
       || audit.details.previousSessionState !== (record.commandKind === "plan-lock" ? "crew-planning" : "crew-planning")
       || audit.details.nextSessionState !== record.response.status
@@ -2659,7 +2688,7 @@ function validM12Task2Record(record, session, audit, event, checkpoint = null) {
         || checkpoint.encounterState?.phase !== "crew-planning" || checkpoint.encounterState?.revision !== event.previousEncounterRevision
         || !validCheckpoint(checkpoint, session, session.events, session.checkpoints.indexOf(checkpoint))) return false;
       const matching = session.checkpoints.filter((entry) => entry?.kind === "before-plan-lock");
-      if (matching.length !== 1) return false;
+      if (matching.filter((entry) => entry.revision === record.resultRevision - 1).length !== 1) return false;
     } else if (checkpoint !== null) return false;
     return true;
   } catch { return false; }
@@ -3293,11 +3322,36 @@ async function task7CorrectionWithinExclusive(value, identities, descriptor, tru
     if (value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
     if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
     if (value.confirmation !== true) return failure([diagnostic("m11-correction-confirmation-required", "confirmation")], identities);
-    if (value.correctionKind !== "station-selection" && value.correctionKind !== "station-order") return failure([diagnostic("m11-command-payload-invalid", "correctionKind")], identities);
+    if (!["station-selection", "station-order", "plan-unlock"].includes(value.correctionKind)) return failure([diagnostic("m11-command-payload-invalid", "correctionKind")], identities);
     if (value.targetRequestId !== null || value.targetCheckpointId !== null || !nonBlank(value.reason) || containsForbiddenPayloadAuthority(value.replacementPayload)) return failure([diagnostic("m11-command-payload-invalid", "replacementPayload")], identities);
-    if (prior.sessionState !== "crew-planning" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "crew-planning" || prior.checkpoints.some((checkpoint) => checkpoint.kind === "before-plan-lock")) return failure([diagnostic("m11-command-not-allowed", "request.kind")], identities);
-    const fields = value.correctionKind === "station-selection" ? ["stationId", "actionId"] : ["stationOrder"];
+    const unlock = value.correctionKind === "plan-unlock";
+    if (unlock) {
+      if (prior.sessionState !== "plan-locked" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "lock-readiness") return failure([diagnostic("m11-command-not-allowed", "request.kind")], identities);
+    } else if (prior.sessionState !== "crew-planning" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "crew-planning" || prior.checkpoints.some((checkpoint) => checkpoint.kind === "before-plan-lock")) return failure([diagnostic("m11-command-not-allowed", "request.kind")], identities);
+    const fields = unlock ? [] : value.correctionKind === "station-selection" ? ["stationId", "actionId"] : ["stationOrder"];
     if (!exactKeys(value.replacementPayload, fields)) return failure([diagnostic("m11-command-payload-invalid", "replacementPayload")], identities);
+    if (unlock) {
+      if (containsForbiddenPayloadAuthority(value.replacementPayload)) return failure([diagnostic("m11-command-payload-invalid", "replacementPayload")], identities);
+      if (!Array.isArray(prior.encounterState.committedStationOrder) || prior.encounterState.committedStationOrder.length === 0) return failure([diagnostic("m11-command-not-allowed", "request.kind")], identities);
+      const candidate = capture(prior).value, previousRevision = prior.revision, revision = previousRevision + 1;
+      candidate.revision = revision;
+      candidate.sessionState = "crew-planning";
+      candidate.encounterState.lifecycleState = "active";
+      candidate.encounterState.phase = "crew-planning";
+      candidate.encounterState.proposedStationOrder = [...prior.encounterState.committedStationOrder];
+      candidate.encounterState.committedStationOrder = [];
+      candidate.encounterState.revision = prior.encounterState.revision + 1;
+      if (!validEncounterState(candidate.encounterState, prior)) return failure([diagnostic("m11-correction-invalid", "replacementPayload")], identities);
+      if (!trustedWitness?.occurredAt) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+      const runtimeEvent = task7CorrectionEvent(candidate, value, auth, previousRevision, revision, prior.encounterState.revision, candidate.encounterState.revision);
+      candidate.events.push(runtimeEvent);
+      candidate.auditHistory.push({ auditId: auditId(candidate.sessionId, candidate.auditHistory.length, "correction-applied"), kind: "correction-applied", sessionId: candidate.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision, revision, occurredAt: trustedWitness.occurredAt, details: { correctionKind: value.correctionKind, targetRequestId: null, previousSessionState: prior.sessionState, nextSessionState: candidate.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, reason: value.reason } });
+      const response = successWithEvents(candidate, value.requestId, [runtimeEvent]);
+      candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fp, commandKind: "correct-session", resultKind: "corrected", resultRevision: revision, response });
+      if (!pristineSession(candidate, resolved.match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+      try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(resolved.match.document, value.sessionId, resolved.match.documentId, candidate, prior, value.requestId, context, { successResponse: response }); }
+      return sessionWriteClassification(resolved.match.document, value.sessionId, resolved.match.documentId, candidate, prior, value.requestId, context, { successResponse: response });
+    }
     const api = m10Function(context, value.correctionKind === "station-selection" ? "applyVoyageEncounterStationActionSelectionChange" : "applyVoyageEncounterStationOrderProposalChange", value.correctionKind === "station-selection" ? applyVoyageEncounterStationActionSelectionChange : applyVoyageEncounterStationOrderProposalChange);
     let result = null;
     try { result = typeof api === "function" ? await api(capture(prior.encounterState).value, capture(value.replacementPayload).value) : null; result = capture(result).ok ? capture(result).value : null; } catch { result = null; }

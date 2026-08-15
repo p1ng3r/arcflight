@@ -46,6 +46,13 @@ function eventContext() {
   };
 }
 function randomId(prefix) { return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`; }
+async function confirmPlanUnlock() {
+  const content = "<p>Unlock this plan for correction?</p><p>Existing crew selections and station order will be preserved.</p>";
+  const dialogV2 = foundry.applications.api.DialogV2;
+  if (typeof dialogV2?.confirm === "function") return dialogV2.confirm({ window: { title: "Unlock Plan" }, content, rejectClose: false });
+  if (typeof globalThis.Dialog?.confirm === "function") return globalThis.Dialog.confirm({ title: "Unlock Plan", content, defaultYes: false });
+  return globalThis.confirm?.("Unlock this plan for correction? Existing crew selections and station order will be preserved.") === true;
+}
 
 function riskBidEffectText(effect) {
   if (effect?.effectKind === "roll-bonus") return `+${effect.value} to the next unresolved station roll this round`;
@@ -275,6 +282,7 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     const normalized = normalizeVoyageEventOperatorSelections(this.#operatorSelections, allActors);
     const planningProjection = planning?.ok ? planning.projection : null;
     const planLocked = planningProjection?.sessionState === "plan-locked" || planningProjection?.sessionState === "station-resolution";
+    const planUnlockAvailable = Boolean(this.#mode === "live" && planLocked && planningProjection?.sessionState === "plan-locked" && game.user?.isGM === true && activeGmId() === game.user?.id);
     const planningStations = planningProjection ? buildPlanningStations(planningProjection, planLocked, this.#expandedStationId) : [];
     const proposedOrder = planningProjection ? buildVoyagePlanningOrder(planningProjection) : [];
     const planReady = isVoyagePlanReady(planningProjection, planningStations, proposedOrder);
@@ -341,6 +349,7 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
       tabIds: EVENT_MANAGER_TAB_IDS,
       planReady,
       planLocked,
+      planUnlockAvailable,
       abandoned: planningProjection?.sessionState === "aborted",
       abandonEnabled: Boolean(dashboard && !["completed", "aborted"].includes(dashboard.sessionState)),
       ...resolutionPresentation,
@@ -423,6 +432,7 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     });
     this.element.querySelectorAll("[data-m12-order-move]").forEach((button) => button.addEventListener("click", (event) => this.#moveOrder(event.currentTarget)));
     this.element.querySelector("[data-m12-plan-lock]")?.addEventListener("click", () => this.#dispatchPlanning("plan-lock", { phaseStartSnapshotId: randomId("m12-plan-lock") }));
+    this.element.querySelector("[data-m12-plan-unlock]")?.addEventListener("click", () => this.#unlockPlan());
     this.element.querySelector("[data-m12-go-resolution]")?.addEventListener("click", () => this.#navigateToTab("resolution"));
     this.element.querySelector("[data-m12-resolution-start]")?.addEventListener("click", () => this.#beginResolution());
     this.element.querySelector("[data-m12-roll-check]")?.addEventListener("click", () => this.#resolveStation());
@@ -635,6 +645,32 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     }
     const reread = reloadVoyageEventSession(this.#sessionId, eventContext());
     if (!reread.ok) return reread;
+    this.#expectedRevision = reread.revision;
+    this.#authorityEpoch = reread.authorityEpoch;
+    this.#pendingViewState = viewState;
+    this.render();
+    return result;
+  }
+
+  async #unlockPlan() {
+    if (this.#mode !== "live" || !this.#sessionId) return;
+    const confirmed = await confirmPlanUnlock();
+    if (!confirmed) return;
+    const viewState = this.#captureViewState();
+    const result = await game.arcflight?.correctVoyageEventSession?.({ kind: "voyage.m11-correct-session", requestId: randomId("m12-plan-unlock"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision, authorityEpoch: this.#authorityEpoch, correctionKind: "plan-unlock", targetRequestId: null, targetCheckpointId: null, replacementPayload: {}, reason: "GM unlocked plan for correction", confirmation: true });
+    if (!result?.ok) {
+      ui.notifications?.error?.(result?.errors?.[0]?.message ?? "The plan unlock was rejected.");
+      this.#pendingViewState = viewState;
+      this.render();
+      return result;
+    }
+    const reread = reloadVoyageEventSession(this.#sessionId, eventContext());
+    if (!reread.ok) {
+      ui.notifications?.error?.("The plan unlock was persisted but could not be verified.");
+      this.#pendingViewState = viewState;
+      this.render();
+      return reread;
+    }
     this.#expectedRevision = reread.revision;
     this.#authorityEpoch = reread.authorityEpoch;
     this.#pendingViewState = viewState;

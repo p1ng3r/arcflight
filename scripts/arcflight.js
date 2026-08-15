@@ -139,7 +139,7 @@ import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers
 import { launchVoyageEventSession as launchVoyageEventSessionInternal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections, buildVoyageEventManagerDashboardModel } from "./voyage/foundry/event-launcher.js";
 import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION, M12_FOCUS_ABILITIES } from "./voyage/m12/event-definition.js";
 import { getFoundrySessionMutationCoordinator } from "./voyage/foundry/session-coordinator.js";
-import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, authorizeVoyageEventSessionOperator, beginVoyageEventSessionResolution, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
+import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, authorizeVoyageEventSessionOperator, beginVoyageEventSessionResolution, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
 import { executeVoyagePf2ePendingCheckInFoundry } from "./voyage/pf2e/runtime-execution.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 
@@ -259,6 +259,9 @@ function beginVoyageEventSessionResolutionFromPublicBoundary(request) {
 }
 function abortVoyageEventSessionFromPublicBoundary(request) {
   return abortVoyageEventSession(request, trustedLaunchContext());
+}
+function correctVoyageEventSessionFromPublicBoundary(request) {
+  return correctVoyageEventSession(request, trustedLaunchContext());
 }
 import {
   backfillInstallStateForAllShips,
@@ -494,6 +497,7 @@ Hooks.once("init", () => {
     beginVoyageEventSessionResolution: beginVoyageEventSessionResolutionFromPublicBoundary,
     resolveVoyageEventSessionStation: resolveVoyageEventSessionStationFromPublicBoundary,
     abortVoyageEventSession: abortVoyageEventSessionFromPublicBoundary,
+    correctVoyageEventSession: correctVoyageEventSessionFromPublicBoundary,
     listVoyageEventLaunchShips,
     normalizeVoyageEventOperatorSelections,
     buildVoyageEventManagerDashboardModel,
@@ -638,6 +642,7 @@ export {
   beginVoyageEventSessionResolutionFromPublicBoundary as beginVoyageEventSessionResolution,
   resolveVoyageEventSessionStationFromPublicBoundary as resolveVoyageEventSessionStation,
   abortVoyageEventSessionFromPublicBoundary as abortVoyageEventSession,
+  correctVoyageEventSessionFromPublicBoundary as correctVoyageEventSession,
   listVoyageEventLaunchShips,
   normalizeVoyageEventOperatorSelections,
   buildVoyageEventManagerDashboardModel,
