@@ -73,5 +73,7 @@ later visibility contract explicitly adds it.
 
 ## Slice C handoff
 
-Player Action, Approach, Risk Bid, target, order, Plan Lock, resolution,
-reaction, and roll commands remain deferred to Slice C and later slices.
+Slice C may add owned-station Action, Approach, Risk Bid, target, and clear
+controls through the existing authenticated command boundary. Order, Plan Lock,
+resolution, reaction, and roll commands remain deferred to Slice D and later
+slices; the Slice B shell must not gain those authorities.

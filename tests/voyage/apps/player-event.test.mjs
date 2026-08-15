@@ -12,7 +12,7 @@ const template = readFileSync(new URL("../../../templates/voyage/player-event.hb
 const runtime = readFileSync(new URL("../../../scripts/voyage/apps/player-event.js", import.meta.url), "utf8");
 const arcflight = readFileSync(new URL("../../../scripts/arcflight.js", import.meta.url), "utf8");
 
-function projection(role = "observer", ownedOperators = []) {
+function projection(role = "observer", ownedOperators = [], ownedPlanningOptions = []) {
   return {
     schemaVersion: 1,
     sessionId: "session-player",
@@ -36,7 +36,8 @@ function projection(role = "observer", ownedOperators = []) {
     recoveryStatus: "none",
     projectionRole: role,
     ownedOperators,
-    readOnlyStationIds: ["watchmaster"]
+    readOnlyStationIds: ["watchmaster"],
+    ownedPlanningOptions
   };
 }
 
@@ -47,7 +48,7 @@ test("Slice B exposes exactly the four read-only player tabs", () => {
   for (const tab of PLAYER_TABS) assert.match(template, new RegExp(`data-player-panel=\\"${tab}\\"`));
 });
 
-test("operator player model presents every owned station and no mutation controls", () => {
+test("operator player model presents every owned station and projects controls only when options are authorized", () => {
   const model = buildVoyagePlayerEventModel(projection("operator", [
     { stationId: "captain", operatorId: "actor-captain", operatorUuid: "Actor.captain", operatorName: "Captain", canAct: false },
     { stationId: "watchmaster", operatorId: "actor-watch", operatorUuid: "Actor.watch", operatorName: "Watchmaster", canAct: false }
@@ -57,6 +58,34 @@ test("operator player model presents every owned station and no mutation control
   assert.equal(model.ownedStations.every((entry) => entry.readOnly), true);
   assert.equal(model.crewPlan.filter((entry) => entry.owned).length, 2);
   assert.doesNotMatch(template, /data-m12-(dispatch|roll|focus|action|risk-bid|station-selection)/);
+});
+
+test("owned planning options are rendered as isolated Action, Approach, and Risk Bid controls", () => {
+  const options = [{
+    stationId: "captain", selectedActionId: "helm", selectedApproachId: "helm-diplomacy", selectedRiskBidId: null, editable: true, ready: true,
+    actions: [{ actionId: "helm", displayName: "Command the Opening", description: "Find the safe lane.", selected: true,
+      approaches: [{ approachId: "helm-diplomacy", label: "Diplomacy", description: "Call the line.", selected: true }],
+      riskBidCapable: true, riskBidOptions: [{ riskBidId: "helm-risk-2", label: "+2 Risk Bid", dcAdjustment: 2, intendedBenefit: "Open a lane.", outcome: { criticalSuccess: "Wide lane", success: "Clear lane", failure: "No payoff", criticalFailure: "Lane closes" }, selected: false }], targetRequired: false, eligibleTargets: [] }]
+  }];
+  const model = buildVoyagePlayerEventModel(projection("operator", [{ stationId: "captain" }], options));
+  assert.equal(model.ownedStations[0].planning.editable, true);
+  assert.equal(model.ownedStations[0].planning.selectedAction.displayName, "Command the Opening");
+  assert.equal(model.ownedStations[0].planning.selectedAction.riskBidOptions[0].tierLabel, "+2 Risk Bid");
+  assert.match(model.ownedStations[0].planning.selectedAction.riskBidOptions[0].label, /Open a lane\./);
+  assert.match(template, /data-player-planning-field="action"/);
+  assert.match(template, /data-player-planning-field="approach"/);
+  assert.match(template, /data-player-planning-field="riskBid"/);
+  assert.match(template, /data-player-planning-clear/);
+  assert.match(runtime, /changedField === "action"/);
+  assert.match(runtime, /riskBidId: changedField === "action" \? null/);
+});
+
+test("locked or non-owned player projections expose no planning controls", () => {
+  const locked = projection("operator", [{ stationId: "captain" }], [{ stationId: "captain", editable: false, ready: true, actions: [] }]);
+  const model = buildVoyagePlayerEventModel(locked);
+  assert.equal(model.ownedStations[0].readOnly, true);
+  const observer = buildVoyagePlayerEventModel(projection("observer", [], [{ stationId: "captain", editable: true, actions: [] }]));
+  assert.equal(observer.ownedStations.length, 0);
 });
 
 test("crew and observer models never gain owned station state", () => {
@@ -114,7 +143,7 @@ test("round, plan-lock, current-station, and completed resolution states are pre
   assert.equal(buildVoyagePlayerEventModel(complete).resolution.stateLabel, "RESOLUTION COMPLETE");
 });
 
-test("ApplicationV2 shell and public opening/discovery boundaries are wired without sockets or writes", () => {
+test("ApplicationV2 shell and public opening/discovery boundaries use the existing command path without direct document writes", () => {
   assert.match(runtime, /static PARTS = \{ body/);
   assert.match(runtime, /readVoyageEventSessionMultiplayerProjection/);
   assert.match(runtime, /game\.arcflight\?\.discoverVoyageEventSession/);
@@ -122,7 +151,8 @@ test("ApplicationV2 shell and public opening/discovery boundaries are wired with
   assert.match(arcflight, /openPlayerEvent: async \(\) =>/);
   assert.equal(openVoyagePlayerEvent.length, 0);
   assert.doesNotMatch(runtime, /M12_EVENT_PRESENTATION|event-definition/);
-  assert.doesNotMatch(runtime, /dispatchVoyageEventSessionCommand|JournalEntry\.create|\.update\(/);
+  assert.match(runtime, /dispatchVoyageEventSessionCommand/);
+  assert.doesNotMatch(runtime, /JournalEntry\.create|\.update\(/);
   assert.doesNotMatch(template, /audit|recovery|receipt|GM Controls|Closeout|Rewards|Ship Administration/);
 });
 

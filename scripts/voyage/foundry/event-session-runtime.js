@@ -86,7 +86,7 @@ const PROJECTION_FIELDS = Object.freeze([
 ]);
 const MULTIPLAYER_PROJECTION_FIELDS = Object.freeze([
   ...PROJECTION_FIELDS,
-  "projectionRole", "ownedOperators", "readOnlyStationIds"
+  "projectionRole", "ownedOperators", "readOnlyStationIds", "ownedPlanningOptions"
 ]);
 const MULTIPLAYER_AUTHORIZATION_FIELDS = Object.freeze(["kind", "sessionId", "stationId"]);
 const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
@@ -1877,7 +1877,7 @@ async function dispatchTask2Command(value, identities, initialAuth, initialMatch
   const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth);
   if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
   return runExclusiveSessionMutation(context, descriptor, async (trustedWitness) => withTransferLock(value.sessionId, async () => {
-    const auth = authority(context, { requireConnection: true });
+    const auth = trustedAuthorityContext(context);
     if (auth.error || auth.authenticatedUserId !== descriptor.authenticatedUserId || auth.authenticatedConnectionId !== descriptor.connectionId || auth.activeGmUserId !== descriptor.activeGmUserId) {
       return failure([auth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
     }
@@ -1887,7 +1887,11 @@ async function dispatchTask2Command(value, identities, initialAuth, initialMatch
       return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
     }
     const prior = resolved.match.session;
-    const projectionKind = "gm";
+    const authorityDecision = deriveProjectionAuthority(auth, prior, context);
+    const projectionKind = auth.user?.isGM === true ? "gm" : authorityDecision.role;
+    if (auth.user?.isGM !== true && (!operatorAllowedCommand(value.commandKind) || projectionKind !== "operator" || !authorityDecision.ownedOperators.some((entry) => entry.stationId === value.payload.stationId))) {
+      return failure([diagnostic("m11-projection-not-authorized", "request.payload.stationId")], identities);
+    }
     const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
     const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, projectionKind, requestFingerprint, identities);
     if (replay) return replay;
@@ -2602,18 +2606,23 @@ function task2PayloadValid(commandKind, payload) {
     && payload.stationOrder.every((entry) => nonBlank(entry) && !UNSAFE_KEYS.has(entry)) && new Set(payload.stationOrder).size === payload.stationOrder.length;
   return nonBlank(payload.phaseStartSnapshotId) && !UNSAFE_KEYS.has(payload.phaseStartSnapshotId);
 }
+function operatorAllowedCommand(commandKind) {
+  return commandKind === "station-selection" || commandKind === "station-selection-clear";
+}
 
 function validM12Task2Record(record, session, audit, event, checkpoint = null) {
   try {
+    const operatorRecord = record.commandKind === "station-selection" || record.commandKind === "station-selection-clear";
     if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId)
-      || record.projectionKind !== "gm" || !TASK2_COMMANDS.has(record.commandKind)
+      || !["gm", ...(operatorRecord ? ["operator"] : [])].includes(record.projectionKind) || !TASK2_COMMANDS.has(record.commandKind)
       || record.resultKind !== TASK2_RESULT_KINDS[record.commandKind] || !safeInteger(record.resultRevision)
       || record.resultRevision < 1 || record.resultRevision > session.revision || !isPlainObject(record.response)) return false;
     const parsed = parseStoredFingerprint(record.fingerprint); if (!parsed.ok) return false;
     const tuple = parsed.value;
-    if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== "gm"
+    if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== record.projectionKind
       || !safeInteger(tuple[3]) || !safeInteger(tuple[4]) || tuple[3] > session.authorityEpoch || tuple[4] !== record.resultRevision - 1
       || tuple[5] !== record.commandKind || !task2PayloadValid(record.commandKind, tuple[6])) return false;
+    if ((record.projectionKind === "operator") && !session.encounterState.stationAssignments.some((entry) => entry?.stationId === tuple[6].stationId)) return false;
     if (!validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch)
       || record.response.status !== (record.commandKind === "plan-lock" ? "plan-locked" : "crew-planning")
       || record.response.authorityEpoch !== tuple[3] || record.response.events.length !== 1) return false;
@@ -2750,6 +2759,79 @@ function validM12Task3Record(record, session, audit, domainEvent, runtimeEvent) 
     return tuple[4] === record.resultRevision - 1;
   } catch { return false; }
 }
+function ownedPlanningOptions(session, authority) {
+  try {
+    const captured = capture(session);
+    if (!captured.ok || !isPlainObject(captured.value) || !isPlainObject(captured.value.encounterState)) return [];
+    const state = captured.value.encounterState;
+    const owned = new Set((authority?.ownedOperators ?? []).map((entry) => entry?.stationId).filter((entry) => nonBlank(entry)));
+    if (authority?.role !== "gm" && authority?.role !== "operator") return [];
+    const assignments = Array.isArray(state.stationAssignments) ? state.stationAssignments : [];
+    const selections = isPlainObject(state.selections) ? state.selections : {};
+    const riskBids = isPlainObject(state.riskBids) ? state.riskBids : {};
+    const editable = state.phase === "crew-planning" && session.sessionState === "crew-planning";
+    const stations = Array.isArray(state.availableStations) ? state.availableStations : [];
+    return assignments.filter((assignment) => owned.has(assignment?.stationId)).map((assignment) => {
+      const stationId = assignment.stationId;
+      const authored = stations.find((entry) => entry?.stationId === stationId);
+      const selection = isPlainObject(selections[stationId]) ? selections[stationId] : null;
+      const selectedBid = isPlainObject(riskBids[stationId]) ? riskBids[stationId] : null;
+      const actions = Array.isArray(authored?.actions) ? authored.actions : [];
+      const safeActions = actions.map((action) => {
+        const selected = selection?.actionId === action?.actionId;
+        const approaches = Array.isArray(action?.approaches) ? action.approaches : [];
+        const bids = Array.isArray(action?.riskBidOptions) ? action.riskBidOptions : [];
+        const presentation = isPlainObject(action?.riskBidPresentation) ? action.riskBidPresentation : {};
+        const safeApproaches = approaches.map((approach) => ({
+          approachId: approach?.approachId ?? null,
+          label: approach?.name ?? approach?.label ?? null,
+          description: approach?.description ?? null,
+          selected: selection?.approachId === approach?.approachId
+        }));
+        const safeBids = bids.filter((bid) => [2, 5, 8].includes(Number(bid?.dcAdjustment))).map((bid) => {
+          const details = isPlainObject(presentation[String(bid?.dcAdjustment)]) ? presentation[String(bid.dcAdjustment)] : null;
+          const outcome = isPlainObject(details?.outcome) ? details.outcome : {};
+          return {
+            riskBidId: bid?.riskBidId ?? null,
+            dcAdjustment: bid?.dcAdjustment ?? null,
+            label: details?.label ?? `+${bid?.dcAdjustment ?? ""} Risk Bid`,
+            intendedBenefit: details?.intendedBenefit ?? null,
+            target: details?.target ?? null,
+            outcome: {
+              criticalSuccess: outcome.criticalSuccess ?? null,
+              success: outcome.success ?? null,
+              failure: outcome.failure ?? null,
+              criticalFailure: outcome.criticalFailure ?? null
+            },
+            selected: selectedBid?.riskBidId === bid?.riskBidId
+          };
+        });
+        const targetRule = isPlainObject(action?.targetRule) ? action.targetRule : null;
+        const eligibleTargets = Array.isArray(action?.eligibleTargets) ? action.eligibleTargets : [];
+        return {
+          actionId: action?.actionId ?? null,
+          displayName: action?.name ?? action?.label ?? action?.actionId ?? null,
+          description: action?.description ?? null,
+          selected,
+          approaches: safeApproaches,
+          riskBidCapable: safeBids.length > 0,
+          riskBidOptions: safeBids,
+          targetRequired: Boolean(targetRule),
+          eligibleTargets: eligibleTargets.map((target) => ({ targetId: target?.targetId ?? target?.stationId ?? null, label: target?.label ?? target?.name ?? target?.stationId ?? null }))
+        };
+      });
+      return {
+        stationId,
+        selectedActionId: selection?.actionId ?? null,
+        selectedApproachId: selection?.approachId ?? null,
+        selectedRiskBidId: selectedBid?.riskBidId ?? null,
+        editable,
+        ready: Boolean(selection?.actionId && selection?.approachId),
+        actions: safeActions
+      };
+    });
+  } catch { return []; }
+}
 function buildMultiplayerProjection(session, authority) {
   const common = buildSessionProjection(session, authority.role);
   if (!common || !authority || !["gm", "operator", "crew", "observer"].includes(authority.role)) return null;
@@ -2757,7 +2839,8 @@ function buildMultiplayerProjection(session, authority) {
     ...common,
     projectionRole: authority.role,
     ownedOperators: authority.ownedOperators,
-    readOnlyStationIds: authority.readOnlyStationIds
+    readOnlyStationIds: authority.readOnlyStationIds,
+    ownedPlanningOptions: ownedPlanningOptions(session, authority)
   };
   const isolated = capture(projection);
   return isolated.ok && exactKeys(isolated.value, MULTIPLAYER_PROJECTION_FIELDS) ? isolated.value : null;
@@ -3360,8 +3443,12 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
   const trustedResolutionExecution = value.commandKind === "action-segment" && context?.__trustedResolutionExecution === true;
   if (value.commandKind !== "closeout-review" && !trustedResolutionExecution && containsForbiddenPayloadAuthority(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
   if (TASK2_COMMANDS.has(value.commandKind)) {
-    if (auth.user?.isGM !== true || auth.authenticatedUserId !== auth.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.activeGm")], identities);
+    if (auth.user?.isGM !== true && !operatorAllowedCommand(value.commandKind)) return failure([diagnostic("m11-active-gm-required", "transport.activeGm")], identities);
     if (!task2PayloadValid(value.commandKind, value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    if (auth.user?.isGM !== true) {
+      const authorityDecision = deriveProjectionAuthority(auth, match.session, context);
+      if (authorityDecision.role !== "operator" || !authorityDecision.ownedOperators.some((entry) => entry.stationId === value.payload.stationId)) return failure([diagnostic("m11-projection-not-authorized", "request.payload.stationId")], identities);
+    }
     return dispatchTask2Command(value, identities, auth, match, context);
   }
   if (TASK3_COMMANDS.has(value.commandKind)) {

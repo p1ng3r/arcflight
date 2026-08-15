@@ -7,6 +7,8 @@ import { analyzeVoyageEncounterCloseoutPreview } from "../../../scripts/voyage/d
 import { analyzeVoyageEncounterCloseoutReview } from "../../../scripts/voyage/domain/closeout-review.js";
 import { analyzeVoyagePressureBreachCloseoutTransaction } from "../../../scripts/voyage/domain/pressure-breach.js";
 import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../../../scripts/voyage/domain/constants.js";
+import { launchVoyageEventSession } from "../../../scripts/voyage/foundry/event-launcher.js";
+import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID } from "../../../scripts/voyage/m12/event-definition.js";
 
 const originalFoundryGame = globalThis.game;
 test.afterEach(() => {
@@ -2046,4 +2048,59 @@ test("M12 Slice A read failures resolve no role before valid evidence and remain
   assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "invalid" }), { ...invalid.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => { invalidCalls += 1; return { kind: "actor", id: "x" }; } }), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(invalidCalls, 0); assert.equal(invalid.tracker.updates, 0);
   const stale = makeContext(); await createVoyageEventSession(request(), stale.context); let staleCalls = 0;
   assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "stale", expectedRevision: 1 }), { ...stale.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => { staleCalls += 1; return { kind: "actor", id: "x" }; } }), "m11-stale-session-revision", "expectedRevision", "Event Session revision is stale."); assert.equal(staleCalls, 1); assert.equal(stale.tracker.updates, 0);
+});
+
+test("M12 Slice C exposes isolated planning options only for owned stations", async () => {
+  const encounterValue = encounter();
+  encounterValue.stationAssignments = [
+    { stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" } },
+    { stationId: "navigator", operator: { kind: "actor", id: "actor-nav", uuid: "Actor.navigator", name: "Navigator" } }
+  ];
+  encounterValue.availableStations = [{ stationId: "captain", actions: [{ actionId: "command", name: "Command", description: "Call the line.", approaches: [{ approachId: "command-diplomacy", name: "Diplomacy", description: "A clear call." }], riskBidOptions: [{ riskBidId: "command-risk-2", dcAdjustment: 2 }], riskBidPresentation: { "2": { label: "+2 Risk Bid", intendedBenefit: "Open a lane.", target: "Captain", outcome: { criticalSuccess: "Wide lane", success: "Clear lane", failure: "No payoff", criticalFailure: "Lane closes" }, mechanicalEffect: { hidden: true } } } }] }, { stationId: "navigator", actions: [{ actionId: "chart", name: "Chart", description: "Read the wake.", approaches: [{ approachId: "chart-survival", name: "Survival", description: "Read the current." }], riskBidOptions: [] }] }];
+  const fixture = makeContext({ encounterValue });
+  await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const player = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "slice-c-options" }), { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }] });
+  assert.equal(player.ok, true, JSON.stringify(player.errors));
+  assert.deepEqual(player.projection.ownedPlanningOptions.map((entry) => entry.stationId), ["captain"]);
+  const option = player.projection.ownedPlanningOptions[0];
+  assert.deepEqual(Object.keys(option), ["stationId", "selectedActionId", "selectedApproachId", "selectedRiskBidId", "editable", "ready", "actions"]);
+  assert.deepEqual(Object.keys(option.actions[0]), ["actionId", "displayName", "description", "selected", "approaches", "riskBidCapable", "riskBidOptions", "targetRequired", "eligibleTargets"]);
+  assert.equal(option.actions[0].riskBidOptions[0].outcome.criticalSuccess, "Wide lane");
+  assert.equal("mechanicalEffect" in option.actions[0].riskBidOptions[0], false);
+  option.actions[0].displayName = "forged";
+  const repeat = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "slice-c-options-repeat" }), { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }] });
+  assert.equal(repeat.projection.ownedPlanningOptions[0].actions[0].displayName, "Command");
+  assert.equal(fixture.tracker.updates, 0);
+});
+
+test("M12 Slice C reuses station-selection for an owned operator and rejects foreign stations", async () => {
+  const fixture = makeContext({ update: persistSession });
+  fixture.context.users = [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }];
+  const actor = (id, type = "character") => ({ id, uuid: `Actor.${id}`, name: id, type, getFlag: (_module, key) => key === "enabled" ? true : "arcflightShip" });
+  fixture.context.actors = [actor("ship-1", "vehicle"), actor("captain"), actor("navigator")];
+  fixture.context.resolveEventDefinitionSnapshot = async () => getM12EventDefinition();
+  const launch = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "slice-c-launch", sessionId: "slice-c-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", navigator: "navigator" } }, fixture.context);
+  assert.equal(launch.ok, true, JSON.stringify(launch.errors));
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "captain", uuid: "Actor.captain" }] };
+  const action = fixture.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.availableStations.find((entry) => entry.stationId === "captain").actions[0];
+  const selection = { kind: "voyage.m11-command", requestId: "slice-c-select", sessionId: "slice-c-session", expectedRevision: 5, authorityEpoch: 0, commandKind: "station-selection", payload: { stationId: "captain", actionId: action.actionId, approachId: action.approaches[0].approachId, riskBidId: null } };
+  const applied = await dispatchVoyageEventSessionCommand(selection, playerContext);
+  assert.equal(applied.ok, true, JSON.stringify(applied.errors));
+  assert.equal(applied.revision, 6);
+  const replay = await dispatchVoyageEventSessionCommand(selection, playerContext);
+  assert.deepEqual(replay, applied);
+  assert.equal(fixture.tracker.updates, 2);
+  const cleared = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-c-clear", sessionId: "slice-c-session", expectedRevision: 6, authorityEpoch: 0, commandKind: "station-selection-clear", payload: { stationId: "captain" } }, playerContext);
+  assert.equal(cleared.ok, true, JSON.stringify(cleared.errors));
+  assert.equal(cleared.revision, 7);
+  assert.equal(reloadVoyageEventSession("slice-c-session", fixture.context).ok, true);
+  const stale = await dispatchVoyageEventSessionCommand({ ...selection, requestId: "slice-c-stale", expectedRevision: 6 }, playerContext);
+  assert.equal(stale.ok, false); assert.equal(stale.errors[0].code, "m11-stale-session-revision");
+  const crew = await dispatchVoyageEventSessionCommand({ ...selection, requestId: "slice-c-crew", expectedRevision: 7 }, { ...playerContext, resolveVoyageOperatorForPrincipal: () => [] });
+  assert.equal(crew.ok, false); assert.equal(crew.errors[0].code, "m11-projection-not-authorized");
+  const foreignAction = fixture.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.availableStations.find((entry) => entry.stationId === "navigator").actions[0];
+  const foreign = await dispatchVoyageEventSessionCommand({ ...selection, requestId: "slice-c-foreign", expectedRevision: 7, payload: { stationId: "navigator", actionId: foreignAction.actionId, approachId: foreignAction.approaches[0].approachId, riskBidId: null } }, playerContext);
+  assert.equal(foreign.ok, false);
+  assert.equal(foreign.errors[0].code, "m11-projection-not-authorized");
+  assert.equal(fixture.tracker.updates, 3);
 });

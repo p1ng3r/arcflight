@@ -27,11 +27,18 @@ ambiguous, cyclic, accessor-backed, revoked, or throwing resolver evidence is
 fail-closed `observer`. One principal may own multiple assigned operators; unoccupied or
 unmatched stations are read-only.
 
-The projection adds only `projectionRole`, `ownedOperators`, and
-`readOnlyStationIds` to the M11 common fields. Each owned-operator entry is
+The projection adds only `projectionRole`, `ownedOperators`, `readOnlyStationIds`,
+and the Slice C `ownedPlanningOptions` array to the M11 common fields. Each
+owned-operator entry is
 plain data: station ID, canonical operator ID/UUID, `canAct`, and
 `gmTakeover`. No User, Actor, Item, authority epoch, audit, processed request,
 receipt, raw event, secret, or persistence internals are returned.
+
+`ownedPlanningOptions` is populated only for the authenticated GM or for
+stations owned by the authenticated operator. Crew, observer, and unowned
+stations receive no action catalogue. Slice C defines the exact filtered
+option fields and reuses the existing station-selection command path; this
+field does not grant player order or Plan Lock authority.
 
 `authorizeVoyageEventSessionOperator` is a read-only trusted authorization
 helper. It accepts `{ kind, sessionId, stationId }` with kind
@@ -53,6 +60,6 @@ schemas.
 
 This slice does not implement the Player Event application (that presentation
 belongs to the subsequent Slice B contract), multiplayer planning
-mutations, sockets or broadcast UI, GM Unlock Plan, Begin Resolution changes,
+mutations beyond the Slice C owned station-selection boundary, sockets or broadcast UI, GM Unlock Plan, Begin Resolution changes,
 roll controls, Focus popups, round closeout, Pressure/Hazard/Momentum closeout,
 or any M10/M11 persistence redesign.
