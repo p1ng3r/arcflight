@@ -89,7 +89,9 @@ const PROJECTION_FIELDS = Object.freeze([
 const MULTIPLAYER_PROJECTION_FIELDS = Object.freeze([
   ...PROJECTION_FIELDS,
   "projectionRole", "ownedOperators", "readOnlyStationIds", "ownedPlanningOptions",
-  "sharedStationOrder", "planReady", "planLocked", "canMutateSharedOrder"
+  "sharedStationOrder", "planReady", "planLocked", "canMutateSharedOrder",
+  "resolutionStarted", "resolutionOrder", "resolutionCurrentStationId", "resolutionCurrentOperator",
+  "resolutionOrderPosition", "resolutionTotalStations", "resolutionStations", "resolutionComplete"
 ]);
 const MULTIPLAYER_AUTHORIZATION_FIELDS = Object.freeze(["kind", "sessionId", "stationId"]);
 const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
@@ -2873,6 +2875,53 @@ function ownedPlanningOptions(session, authority) {
     });
   } catch { return []; }
 }
+function multiplayerResolutionState(session) {
+  try {
+    const state = session?.encounterState;
+    const order = Array.isArray(state?.committedStationOrder) ? state.committedStationOrder.filter((entry) => nonBlank(entry)) : [];
+    const assignments = Array.isArray(state?.stationAssignments) ? state.stationAssignments : [];
+    const byStation = new Map(assignments.map((entry) => [entry?.stationId, entry?.operator ?? null]));
+    const pending = Array.isArray(state?.pendingChecks) ? state.pendingChecks : [];
+    const pendingByStation = new Map(pending.map((entry) => [entry?.stationId, entry]));
+    const started = session.sessionState === "station-resolution" && state?.phase === "resolution";
+    const unresolved = order.find((stationId) => pendingByStation.get(stationId)?.status !== "resolved");
+    const currentStationId = started ? (unresolved ?? (pending.length === 0 ? order[0] ?? null : null)) : null;
+    const currentIndex = currentStationId === null ? -1 : order.indexOf(currentStationId);
+    const stations = order.map((stationId, index) => {
+      const check = pendingByStation.get(stationId);
+      const status = check?.status === "resolved" ? "resolved" : stationId === currentStationId ? "current" : "waiting";
+      const operator = byStation.get(stationId);
+      return {
+        stationId,
+        orderPosition: index + 1,
+        status,
+        current: status === "current",
+        operator: operator ? { id: operator.id ?? null, uuid: operator.uuid ?? null, name: operator.name ?? null } : null
+      };
+    });
+    return {
+      resolutionStarted: started,
+      resolutionOrder: [...order],
+      resolutionCurrentStationId: currentStationId,
+      resolutionCurrentOperator: currentStationId === null ? null : stations.find((entry) => entry.stationId === currentStationId)?.operator ?? null,
+      resolutionOrderPosition: currentIndex < 0 ? null : currentIndex + 1,
+      resolutionTotalStations: order.length,
+      resolutionStations: stations,
+      resolutionComplete: started && stations.length > 0 && stations.every((entry) => entry.status === "resolved")
+    };
+  } catch {
+    return {
+      resolutionStarted: false,
+      resolutionOrder: [],
+      resolutionCurrentStationId: null,
+      resolutionCurrentOperator: null,
+      resolutionOrderPosition: null,
+      resolutionTotalStations: 0,
+      resolutionStations: [],
+      resolutionComplete: false
+    };
+  }
+}
 function buildMultiplayerProjection(session, authority) {
   const common = buildSessionProjection(session, authority.role);
   if (!common || !authority || !["gm", "operator", "crew", "observer"].includes(authority.role)) return null;
@@ -2884,6 +2933,7 @@ function buildMultiplayerProjection(session, authority) {
   let planReady = false;
   try { planReady = session.sessionState === "crew-planning" && prepareVoyageEncounterCrewPlanningReadiness(encounter).readyToLock === true; } catch { planReady = false; }
   const planLocked = PLAN_LOCKED_SESSION_STATES.has(session.sessionState);
+  const resolution = multiplayerResolutionState(session);
   const projection = {
     ...common,
     projectionRole: authority.role,
@@ -2893,7 +2943,9 @@ function buildMultiplayerProjection(session, authority) {
     sharedStationOrder,
     planReady,
     planLocked,
-    canMutateSharedOrder: authority.role === "operator" && session.sessionState === "crew-planning" && encounter.phase === "crew-planning"
+    canMutateSharedOrder: authority.role === "operator" && session.sessionState === "crew-planning" && encounter.phase === "crew-planning",
+    currentActingStationId: resolution.resolutionCurrentStationId,
+    ...resolution
   };
   const isolated = capture(projection);
   return isolated.ok && exactKeys(isolated.value, MULTIPLAYER_PROJECTION_FIELDS) ? isolated.value : null;

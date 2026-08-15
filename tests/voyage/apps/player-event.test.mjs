@@ -143,6 +143,85 @@ test("round, plan-lock, current-station, and completed resolution states are pre
   assert.equal(buildVoyagePlayerEventModel(complete).resolution.stateLabel, "RESOLUTION COMPLETE");
 });
 
+test("Slice F presents the shared current station and owned-active indicator without roll controls", () => {
+  const source = projection("operator", [{ stationId: "captain" }]);
+  source.sessionState = "station-resolution";
+  source.phase = "resolution";
+  source.planLocked = true;
+  source.currentActingStationId = "captain";
+  source.resolutionStarted = true;
+  source.resolutionOrder = ["captain", "watchmaster"];
+  source.resolutionCurrentStationId = "captain";
+  source.resolutionOrderPosition = 1;
+  source.resolutionTotalStations = 2;
+  source.resolutionStations = [
+    { stationId: "captain", orderPosition: 1, status: "current", current: true, operator: { name: "Captain" } },
+    { stationId: "watchmaster", orderPosition: 2, status: "waiting", current: false, operator: { name: "Watchmaster" } }
+  ];
+  const model = buildVoyagePlayerEventModel(source);
+  assert.equal(model.resolution.stateLabel, "RESOLUTION IN PROGRESS");
+  assert.equal(model.resolution.currentStation.stationId, "captain");
+  assert.equal(model.resolution.ownedCurrent, true);
+  assert.deepEqual(model.resolution.order, ["captain", "watchmaster"]);
+  assert.equal(model.resolution.orderPosition, 1);
+  assert.deepEqual(model.resolution.stations.map((entry) => [entry.stationDisplayName, entry.status]), [["Captain", "current"], ["Watchmaster", "waiting"]]);
+  assert.doesNotMatch(template, /ROLL CHECK|data-player-roll|data-player-focus|data-player-reaction/);
+  assert.match(template, /YOUR STATION IS ACTIVE/);
+  const complete = buildVoyagePlayerEventModel({ ...source, resolutionComplete: true });
+  assert.equal(complete.resolution.stateLabel, "RESOLUTION COMPLETE");
+  assert.equal(complete.resolution.detail, "AWAITING ROUND CLOSEOUT");
+});
+
+test("Slice F player resolution exposes no functional Begin, planning, lock, roll, Focus, or reaction controls", () => {
+  const source = projection("operator", [{ stationId: "captain" }]);
+  source.sessionState = "station-resolution"; source.phase = "resolution"; source.planLocked = true;
+  source.resolutionStarted = true; source.resolutionCurrentStationId = "captain"; source.currentActingStationId = "captain";
+  source.resolutionOrder = ["captain", "watchmaster"]; source.resolutionOrderPosition = 1; source.resolutionTotalStations = 2;
+  source.resolutionStations = [{ stationId: "captain", orderPosition: 1, status: "current", current: true, operator: { name: "Captain" } }, { stationId: "watchmaster", orderPosition: 2, status: "waiting", current: false, operator: { name: "Watchmaster" } }];
+  const model = buildVoyagePlayerEventModel(source);
+  assert.equal(model.ownedPlanningOptions.length, 0); assert.equal(model.canMutateSharedOrder, false); assert.equal(model.planLocked, true);
+  assert.equal(model.resolution.started, true); assert.equal(model.resolution.ownedCurrent, true);
+  assert.doesNotMatch(template, /BEGIN RESOLUTION|LOCK PLAN|UNLOCK PLAN|ROLL CHECK|FOCUS|REACTION/);
+  assert.equal(model.crewPlan.some((entry) => entry.planning?.editable === true), false);
+  assert.equal(model.ownedStations.some((entry) => entry.canMoveUp || entry.canMoveDown), false);
+});
+
+test("Slice F owned-active markers follow the authoritative current station matrix", () => {
+  const make = (currentStationId) => {
+    const source = projection("operator", [{ stationId: "captain" }, { stationId: "watchmaster" }]);
+    source.stationAssignments = [
+      { stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" } },
+      { stationId: "watchmaster", operator: { kind: "actor", id: "actor-watch", uuid: "Actor.watch", name: "Watchmaster" } },
+      { stationId: "navigator", operator: { kind: "actor", id: "actor-nav", uuid: "Actor.navigator", name: "Navigator" } }
+    ];
+    source.sessionState = "station-resolution"; source.phase = "resolution"; source.planLocked = true; source.resolutionStarted = true;
+    source.resolutionCurrentStationId = currentStationId; source.currentActingStationId = currentStationId; source.resolutionOrder = ["captain", "watchmaster", "navigator"];
+    source.resolutionOrderPosition = source.resolutionOrder.indexOf(currentStationId) + 1; source.resolutionTotalStations = 3;
+    source.resolutionStations = source.resolutionOrder.map((stationId, index) => ({ stationId, orderPosition: index + 1, status: stationId === currentStationId ? "current" : "waiting", current: stationId === currentStationId, operator: { name: stationId === "captain" ? "Captain" : stationId === "watchmaster" ? "Watchmaster" : "Navigator" } }));
+    return buildVoyagePlayerEventModel(source);
+  };
+  const captain = make("captain"); assert.equal(captain.resolution.currentStation.stationId, "captain"); assert.equal(captain.resolution.ownedCurrent, true);
+  assert.equal(captain.resolution.stations.find((entry) => entry.stationId === "watchmaster").current, false); assert.equal(captain.resolution.stations.find((entry) => entry.stationId === "navigator").current, false);
+  const watchmaster = make("watchmaster"); assert.equal(watchmaster.resolution.currentStation.stationId, "watchmaster"); assert.equal(watchmaster.resolution.ownedCurrent, true);
+  assert.equal(watchmaster.resolution.stations.find((entry) => entry.stationId === "captain").current, false);
+  const navigator = make("navigator"); assert.equal(navigator.resolution.currentStation.stationId, "navigator"); assert.equal(navigator.resolution.ownedCurrent, false);
+  assert.equal(navigator.resolution.stations.find((entry) => entry.stationId === "captain").current, false); assert.equal(navigator.resolution.stations.find((entry) => entry.stationId === "watchmaster").current, false);
+});
+
+test("Slice F role models retain identical public resolution state and omit private evidence", () => {
+  const base = projection("gm", [{ stationId: "captain" }]);
+  base.sessionState = "station-resolution"; base.phase = "resolution"; base.planLocked = true; base.resolutionStarted = true;
+  base.resolutionOrder = ["captain", "watchmaster"]; base.resolutionCurrentStationId = "watchmaster"; base.currentActingStationId = "watchmaster"; base.resolutionOrderPosition = 2; base.resolutionTotalStations = 2;
+  base.resolutionStations = [{ stationId: "captain", orderPosition: 1, status: "resolved", current: false, operator: { name: "Captain" } }, { stationId: "watchmaster", orderPosition: 2, status: "current", current: true, operator: { name: "Watchmaster" } }];
+  base.pendingChecks = [{ pendingCheckId: "private", result: { total: 99 } }]; base.auditHistory = [{ secret: true }]; base.processedRequests = [{ private: true }]; base.authorityEpoch = 4; base.coordinator = { secret: true };
+  const models = ["gm", "operator", "crew", "observer"].map((role) => buildVoyagePlayerEventModel({ ...base, projectionRole: role, ownedOperators: role === "operator" ? [{ stationId: "watchmaster" }] : [] }));
+  for (const model of models) {
+    assert.equal(model.resolution.started, true); assert.deepEqual(model.resolution.order, ["captain", "watchmaster"]); assert.equal(model.resolution.currentStation.stationId, "watchmaster");
+    assert.equal(model.resolution.orderPosition, 2); assert.deepEqual(model.resolution.stations.map((entry) => [entry.stationId, entry.status]), [["captain", "resolved"], ["watchmaster", "current"]]);
+    for (const key of ["pendingChecks", "auditHistory", "processedRequests", "authorityEpoch", "coordinator", "rawEventSession"]) assert.equal(key in model, false, key);
+  }
+});
+
 test("ApplicationV2 shell and public opening/discovery boundaries use the existing command path without direct document writes", () => {
   assert.match(runtime, /static PARTS = \{ body/);
   assert.match(runtime, /readVoyageEventSessionMultiplayerProjection/);

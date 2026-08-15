@@ -134,14 +134,30 @@ export function buildVoyagePlayerEventModel(projection) {
   });
   const role = ["gm", "operator", "crew", "observer"].includes(projection.projectionRole) ? projection.projectionRole : "observer";
   const roleLabel = role === "operator" ? "OPERATOR" : role === "crew" ? "CREW" : role === "gm" ? "GM" : "OBSERVER";
-  const currentStationId = typeof projection.currentActingStationId === "string" ? projection.currentActingStationId : null;
+  const currentStationId = typeof projection.resolutionCurrentStationId === "string"
+    ? projection.resolutionCurrentStationId
+    : (typeof projection.currentActingStationId === "string" ? projection.currentActingStationId : null);
   const currentStation = stations.find((station) => station.stationId === currentStationId) ?? null;
-  const resolutionComplete = projection.sessionState === "round-closeout" || projection.sessionState === "completed";
+  const resolutionComplete = projection.resolutionComplete === true || projection.sessionState === "round-closeout" || projection.sessionState === "completed";
+  const resolutionStarted = projection.resolutionStarted === true
+    || (projection.sessionState === "station-resolution" && typeof projection.currentActingStationId === "string");
+  const projectedResolutionStations = Array.isArray(projection.resolutionStations)
+    ? projection.resolutionStations.map((entry) => ({
+      stationId: entry?.stationId ?? null,
+      stationDisplayName: stationPresentation(entry?.stationId).stationDisplayName,
+      orderPosition: entry?.orderPosition ?? null,
+      status: entry?.status ?? "waiting",
+      current: entry?.current === true,
+      operatorName: typeof entry?.operator?.name === "string" ? entry.operator.name : "Unassigned"
+    }))
+    : stations.map((station, index) => ({ stationId: station.stationId, stationDisplayName: station.stationDisplayName, orderPosition: index + 1, status: "waiting", current: false, operatorName: station.operatorName }));
   const resolution = resolutionComplete
-    ? { stateLabel: "RESOLUTION COMPLETE", detail: "AWAITING ROUND CLOSEOUT", currentStation, ownedCurrent: Boolean(currentStation?.owned), waiting: false }
-    : planLocked
-      ? { stateLabel: "PLAN LOCKED", detail: "Waiting for the GM to begin Resolution.", currentStation, ownedCurrent: Boolean(currentStation?.owned), waiting: true }
-      : { stateLabel: "WAITING FOR RESOLUTION", detail: "Resolution has not begun.", currentStation: null, ownedCurrent: false, waiting: true };
+    ? { stateLabel: "RESOLUTION COMPLETE", detail: "AWAITING ROUND CLOSEOUT", currentStation: null, ownedCurrent: false, waiting: false, started: true, order: Array.isArray(projection.resolutionOrder) ? [...projection.resolutionOrder] : [...sharedStationOrder], orderPosition: null, totalStations: projection.resolutionTotalStations ?? projectedResolutionStations.length, stations: projectedResolutionStations }
+    : resolutionStarted
+      ? { stateLabel: "RESOLUTION IN PROGRESS", detail: "CURRENT STATION IDENTIFIED — AWAITING STATION EXECUTION", currentStation, ownedCurrent: Boolean(currentStation?.owned), waiting: false, started: true, order: Array.isArray(projection.resolutionOrder) ? [...projection.resolutionOrder] : [...sharedStationOrder], orderPosition: projection.resolutionOrderPosition ?? null, totalStations: projection.resolutionTotalStations ?? projectedResolutionStations.length, stations: projectedResolutionStations }
+      : planLocked
+        ? { stateLabel: "PLAN LOCKED", detail: "Waiting for the GM to begin Resolution.", currentStation: null, ownedCurrent: false, waiting: true, started: false, order: [...sharedStationOrder], orderPosition: null, totalStations: sharedStationOrder.length, stations: projectedResolutionStations }
+        : { stateLabel: "WAITING FOR RESOLUTION", detail: "Resolution has not begun.", currentStation: null, ownedCurrent: false, waiting: true, started: false, order: [...sharedStationOrder], orderPosition: null, totalStations: sharedStationOrder.length, stations: projectedResolutionStations };
   return {
     schemaVersion: 1,
     sessionId: projection.sessionId,
