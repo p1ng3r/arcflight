@@ -1455,3 +1455,230 @@ test("M12 Task 3 rejects caller-authored resolution-start snapshot evidence", as
   assert.equal(result.errors[0].code, "m11-command-payload-invalid");
   assert.equal(fx.tracker.updates, 5);
 });
+
+test("M12 Slice I blocks broad Plan Unlock and persists an audited unresolved-order correction", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-i-order", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-i-begin", sessionId: "slice-i-order", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const broad = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-broad", sessionId: "slice-i-order", expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "plan-unlock", targetRequestId: null, targetCheckpointId: null, replacementPayload: {}, reason: "not allowed after resolution", confirmation: true }, fx.context);
+  assert.equal(broad.ok, false);
+  assert.equal(broad.errors[0].code, "m11-command-not-allowed");
+  const before = structuredClone(fx.journals[0].__testSource.flags.arcflight.system.voyageSession);
+  const corrected = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-order-correction", sessionId: "slice-i-order", expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "remaining-order", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationOrder: ["engineer", "captain"] }, reason: "the unresolved order must follow the current safety handoff", confirmation: true }, fx.context);
+  assert.equal(corrected.ok, true, JSON.stringify(corrected.errors));
+  assert.equal(corrected.events[0].correctionKind, "remaining-order");
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.deepEqual(stored.encounterState.committedStationOrder, ["engineer", "captain"]);
+  assert.deepEqual(stored.encounterState.selections, before.encounterState.selections);
+  assert.equal(reloadVoyageEventSession("slice-i-order", fx.context).ok, true);
+  const replay = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-order-correction", sessionId: "slice-i-order", expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "remaining-order", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationOrder: ["engineer", "captain"] }, reason: "the unresolved order must follow the current safety handoff", confirmation: true }, fx.context);
+  assert.deepEqual(replay, corrected);
+});
+
+test("M12 Slice I records GM operator takeover without changing station assignment", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-i-takeover", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-i-takeover-begin", sessionId: "slice-i-takeover", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const priorAssignment = structuredClone(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.stationAssignments);
+  const takeoverContext = { ...fx.context, users: [{ id: "gm-1", isGM: true, active: true }, { id: "captain-owner", isGM: false, active: false }], resolveVoyageOperatorForPrincipal: (userId) => userId === "captain-owner" ? [{ kind: "actor", id: "captain", uuid: "Actor.captain", name: "captain" }] : [] };
+  const takeover = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-takeover", sessionId: "slice-i-takeover", expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "operator-takeover", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain" }, reason: "the assigned operator is disconnected", confirmation: true }, takeoverContext);
+  assert.equal(takeover.ok, true, JSON.stringify(takeover.errors));
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.deepEqual(stored.encounterState.stationAssignments, priorAssignment);
+  assert.deepEqual(stored.encounterState.metadata.recoveryControl, { kind: "operator-takeover", stationId: "captain", operatorId: "captain", controllerUserId: "gm-1" });
+  assert.equal(reloadVoyageEventSession("slice-i-takeover", fx.context).ok, true);
+});
+
+test("M12 Slice I binds check retry to a new pending identity and keeps old evidence", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-i-retry", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-i-retry-begin", sessionId: "slice-i-retry", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  const original = structuredClone(stored.encounterState.pendingChecks[0]);
+  stored.encounterState.metadata.pendingCheckIntegrationStatus = "failed";
+  const voided = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-void", sessionId: "slice-i-retry", expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "void-roll", targetRequestId: null, targetCheckpointId: null, replacementPayload: { pendingCheckId: original.pendingCheckId }, reason: "the PF2e result was captured but must be voided", confirmation: true }, fx.context);
+  assert.equal(voided.ok, true, JSON.stringify(voided.errors));
+  const afterVoid = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.notEqual(afterVoid.encounterState.pendingChecks[0].pendingCheckId, original.pendingCheckId);
+  assert.equal(afterVoid.encounterState.metadata.sliceIRecovery[0].replacementPendingCheckId, afterVoid.encounterState.pendingChecks[0].pendingCheckId);
+  assert.equal(reloadVoyageEventSession("slice-i-retry", fx.context).ok, true);
+  const retry = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-retry", sessionId: "slice-i-retry", expectedRevision: voided.revision, authorityEpoch: 0, correctionKind: "retry-roll-integration", targetRequestId: null, targetCheckpointId: null, replacementPayload: { pendingCheckId: original.pendingCheckId }, reason: "the PF2e result was captured but integration failed", confirmation: true }, fx.context);
+  assert.equal(retry.ok, true, JSON.stringify(retry.errors));
+  const after = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.notEqual(after.encounterState.pendingChecks[0].pendingCheckId, original.pendingCheckId);
+  assert.equal(after.encounterState.metadata.sliceIRecovery[0].originalPendingCheckId, original.pendingCheckId);
+  assert.equal(reloadVoyageEventSession("slice-i-retry", fx.context).ok, true);
+});
+
+test("M12 Slice I rejects non-GM and pre-resolution recovery without writes", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-i-authority", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const nonGm = { ...fx.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", users: [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }] };
+  const rejected = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-player", sessionId: "slice-i-authority", expectedRevision: locked.revision, authorityEpoch: 0, correctionKind: "operator-takeover", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain" }, reason: "forged player recovery", confirmation: true }, nonGm);
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.errors[0].code, "m11-active-gm-required");
+  assert.equal(fx.tracker.updates, 5);
+  const preResolution = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-before-resolution", sessionId: "slice-i-authority", expectedRevision: locked.revision, authorityEpoch: 0, correctionKind: "remaining-order", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationOrder: ["engineer", "captain"] }, reason: "must be rejected before resolution", confirmation: true }, fx.context);
+  assert.equal(preResolution.ok, false);
+  assert.equal(preResolution.errors[0].code, "m11-command-not-allowed");
+  assert.equal(fx.tracker.updates, 5);
+});
+
+test("M12 Slice I defers target and recorded-result corrections before missing callbacks", async () => {
+  const fx = fixture();
+  const locked = await launchAndLock(fx, "slice-i-deferred", { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-i-deferred-begin", sessionId: "slice-i-deferred", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  let targetCalls = 0;
+  let recordedCalls = 0;
+  const context = {
+    ...fx.context,
+    applyVoyageEncounterTargetCorrection: async () => { targetCalls += 1; return { ok: true }; },
+    applyVoyageEncounterRecordedResultCorrection: async () => { recordedCalls += 1; return { ok: true }; }
+  };
+  const before = structuredClone(fx.journals[0].__testSource.flags.arcflight.system.voyageSession);
+  const target = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-target-deferred", sessionId: "slice-i-deferred", expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "target", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain", targetStationId: "engineer" }, reason: "deferred target correction", confirmation: true }, context);
+  assert.equal(target.ok, false);
+  assert.equal(target.errors[0].code, "m11-command-not-allowed");
+  const recorded = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-recorded-deferred", sessionId: "slice-i-deferred", expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "recorded-result", targetRequestId: null, targetCheckpointId: null, replacementPayload: { pendingCheckId: before.encounterState.pendingChecks[0].pendingCheckId, correctedResult: { total: 18, degreeOfSuccess: 2, degreeOfSuccessSlug: "success", statisticSlug: "acrobatics", dc: 18, rollMode: "public" } }, reason: "deferred recorded result correction", confirmation: true }, context);
+  assert.equal(recorded.ok, false);
+  assert.equal(recorded.errors[0].code, "m11-command-not-allowed");
+  assert.equal(targetCalls, 0);
+  assert.equal(recordedCalls, 0);
+  assert.equal(fx.tracker.updates, 7);
+  assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession, before);
+});
+
+test("M12 Slice I rejects active owners and unowned operators for takeover", async () => {
+  const make = async (users, resolver, requestId) => {
+    const fx = fixture();
+    const locked = await launchAndLock(fx, requestId, { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+    const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: `${requestId}-begin`, sessionId: requestId, expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+    const context = { ...fx.context, users, resolveVoyageOperatorForPrincipal: resolver };
+    const result = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: `${requestId}-takeover`, sessionId: requestId, expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "operator-takeover", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain" }, reason: "takeover", confirmation: true }, context);
+    assert.equal(result.ok, false);
+    assert.equal(result.errors[0].code, "m11-correction-invalid");
+    assert.equal(fx.tracker.updates, 7);
+  };
+  await make([{ id: "gm-1", isGM: true, active: true }, { id: "captain-owner", isGM: false, active: true }], () => [{ kind: "actor", id: "captain", uuid: "Actor.captain", name: "captain" }], "slice-i-active-owner");
+  await make([{ id: "gm-1", isGM: true, active: true }], () => [], "slice-i-no-owner");
+});
+
+test("M12 Slice I player intent transport never accepts deferred correction commands", async () => {
+  let calls = 0;
+  const result = await executeVoyagePlayerIntent({ kind: "voyage.m11-command", requestId: "slice-i-player-deferred", sessionId: "slice-i-deferred-transport", expectedRevision: 0, authorityEpoch: 0, commandKind: "correct-session", payload: { correctionKind: "target" } }, { async executeAsGM() { calls += 1; return null; } });
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m11-command-payload-invalid");
+  assert.equal(calls, 0);
+});
+
+test("M12 Slice I rejects every tampered stored correction response without writes", async () => {
+  const mutations = [
+    ["revision", (response) => { response.revision += 1; }],
+    ["authorityEpoch", (response) => { response.authorityEpoch += 1; }],
+    ["requestId", (response) => { response.requestId = "forged-request"; }],
+    ["projection", (response) => { response.projection = { leaked: true }; }],
+    ["errors", (response) => { response.errors = [{ code: "forged" }]; }],
+    ["warnings", (response) => { response.warnings = [{ code: "forged" }]; }]
+  ];
+  for (const [label, mutate] of mutations) {
+    const fx = fixture();
+    const locked = await launchAndLock(fx, `slice-i-response-${label}`, { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+    const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: `${label}-begin`, sessionId: `slice-i-response-${label}`, expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+    const corrected = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: `${label}-correction`, sessionId: `slice-i-response-${label}`, expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "remaining-order", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationOrder: ["engineer", "captain"] }, reason: "response tamper witness", confirmation: true }, fx.context);
+    assert.equal(corrected.ok, true, JSON.stringify(corrected.errors));
+    const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+    mutate(stored.processedRequests.at(-1).response);
+    const writes = fx.tracker.updates;
+    const reloaded = reloadVoyageEventSession(`slice-i-response-${label}`, fx.context);
+    assert.equal(reloaded.ok, false, label);
+    assert.equal(reloaded.errors[0].code, "m11-invalid-session-document", label);
+    assert.equal(fx.tracker.updates, writes, label);
+  }
+});
+
+test("M12 Slice I binds remaining-order audit deltas to persisted order history", async () => {
+  const mutations = [
+    ["before", (audit, stored) => { audit.details.before = ["engineer", "captain"]; }],
+    ["after", (audit) => { audit.details.after = ["captain", "engineer"]; }],
+    ["persisted-order", (audit, stored) => { stored.encounterState.committedStationOrder = ["captain", "engineer"]; }]
+  ];
+  for (const [label, mutate] of mutations) {
+    const fx = fixture();
+    const locked = await launchAndLock(fx, `slice-i-order-tamper-${label}`, { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+    const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: `${label}-begin`, sessionId: `slice-i-order-tamper-${label}`, expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+    const corrected = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: `${label}-correction`, sessionId: `slice-i-order-tamper-${label}`, expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "remaining-order", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationOrder: ["engineer", "captain"] }, reason: "order tamper witness", confirmation: true }, fx.context);
+    assert.equal(corrected.ok, true, JSON.stringify(corrected.errors));
+    const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+    const audit = stored.auditHistory.at(-1);
+    mutate(audit, stored);
+    const writes = fx.tracker.updates;
+    const reloaded = reloadVoyageEventSession(`slice-i-order-tamper-${label}`, fx.context);
+    assert.equal(reloaded.ok, false, label);
+    assert.equal(reloaded.errors[0].code, "m11-invalid-session-document", label);
+    assert.equal(fx.tracker.updates, writes, label);
+  }
+});
+
+test("M12 Slice I binds takeover audit deltas to recoveryControl and assignment history", async () => {
+  const mutations = [
+    ["before", (audit) => { audit.details.before = { kind: "operator-takeover", stationId: "captain", operatorId: "captain", controllerUserId: "forged" }; }],
+    ["after", (audit) => { audit.details.after = { kind: "operator-takeover", stationId: "captain", operatorId: "captain", controllerUserId: "forged" }; }],
+    ["recovery-control", (_audit, stored) => { stored.encounterState.metadata.recoveryControl.controllerUserId = "forged"; }]
+  ];
+  for (const [label, mutate] of mutations) {
+    const fx = fixture();
+    const locked = await launchAndLock(fx, `slice-i-takeover-tamper-${label}`, { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+    const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: `${label}-begin`, sessionId: `slice-i-takeover-tamper-${label}`, expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+    const takeoverContext = { ...fx.context, users: [{ id: "gm-1", isGM: true, active: true }, { id: "captain-owner", isGM: false, active: false }], resolveVoyageOperatorForPrincipal: (userId) => userId === "captain-owner" ? [{ kind: "actor", id: "captain", uuid: "Actor.captain", name: "captain" }] : [] };
+    const corrected = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: `${label}-correction`, sessionId: `slice-i-takeover-tamper-${label}`, expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "operator-takeover", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain" }, reason: "takeover tamper witness", confirmation: true }, takeoverContext);
+    assert.equal(corrected.ok, true, JSON.stringify(corrected.errors));
+    const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+    mutate(stored.auditHistory.at(-1), stored);
+    const writes = fx.tracker.updates;
+    const reloaded = reloadVoyageEventSession(`slice-i-takeover-tamper-${label}`, fx.context);
+    assert.equal(reloaded.ok, false, label);
+    assert.equal(reloaded.errors[0].code, "m11-invalid-session-document", label);
+    assert.equal(fx.tracker.updates, writes, label);
+  }
+});
+
+test("M12 Slice I rejects forged void and retry audit deltas without writes", async () => {
+  const fx = fixture();
+  const sessionId = "slice-i-audit-void-retry";
+  const locked = await launchAndLock(fx, sessionId, { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "audit-void-begin", sessionId, expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  stored.encounterState.metadata.pendingCheckIntegrationStatus = "failed";
+  const original = structuredClone(stored.encounterState.pendingChecks[0]);
+  const voided = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "audit-void", sessionId, expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "void-roll", targetRequestId: null, targetCheckpointId: null, replacementPayload: { pendingCheckId: original.pendingCheckId }, reason: "void audit witness", confirmation: true }, fx.context);
+  assert.equal(voided.ok, true, JSON.stringify(voided.errors));
+  const voidStored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  voidStored.auditHistory.at(-1).details.after.pendingCheckId = "forged-void";
+  let writes = fx.tracker.updates;
+  let reloaded = reloadVoyageEventSession(sessionId, fx.context);
+  assert.equal(reloaded.ok, false);
+  assert.equal(reloaded.errors[0].code, "m11-invalid-session-document");
+  assert.equal(fx.tracker.updates, writes);
+
+  const retryFx = fixture();
+  const retrySessionId = "slice-i-audit-retry";
+  const retryLocked = await launchAndLock(retryFx, retrySessionId, { captain: "captain", engineer: "engineer" }, ["captain", "engineer"]);
+  const retryStarted = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "audit-retry-begin", sessionId: retrySessionId, expectedRevision: retryLocked.revision, authorityEpoch: 0 }, retryFx.context);
+  const retryStored = retryFx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  retryStored.encounterState.metadata.pendingCheckIntegrationStatus = "failed";
+  const retryOriginal = structuredClone(retryStored.encounterState.pendingChecks[0]);
+  const retryVoid = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "audit-retry-void", sessionId: retrySessionId, expectedRevision: retryStarted.revision, authorityEpoch: 0, correctionKind: "void-roll", targetRequestId: null, targetCheckpointId: null, replacementPayload: { pendingCheckId: retryOriginal.pendingCheckId }, reason: "retry audit witness", confirmation: true }, retryFx.context);
+  const retried = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "audit-retry", sessionId: retrySessionId, expectedRevision: retryVoid.revision, authorityEpoch: 0, correctionKind: "retry-roll-integration", targetRequestId: null, targetCheckpointId: null, replacementPayload: { pendingCheckId: retryOriginal.pendingCheckId }, reason: "retry audit witness", confirmation: true }, retryFx.context);
+  assert.equal(retried.ok, true, JSON.stringify(retried.errors));
+  const retryCurrent = retryFx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  retryCurrent.auditHistory.at(-1).details.before.pendingCheckId = "forged-retry";
+  writes = retryFx.tracker.updates;
+  reloaded = reloadVoyageEventSession(retrySessionId, retryFx.context);
+  assert.equal(reloaded.ok, false);
+  assert.equal(reloaded.errors[0].code, "m11-invalid-session-document");
+  assert.equal(retryFx.tracker.updates, writes);
+});

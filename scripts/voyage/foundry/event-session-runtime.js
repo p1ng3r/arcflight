@@ -32,6 +32,8 @@ import { applyVoyageEncounterResolutionTransition } from "../domain/resolution-t
 import { prepareVoyageEncounterActionExecutionRequests } from "../domain/resolution-execution-requests.js";
 import { applyVoyageEncounterPendingCheckPreparation } from "../domain/pending-checks.js";
 import { applyVoyageEncounterPendingCheckResult } from "../domain/resolution-results.js";
+import { validateVoyageEncounterStationOrder } from "../domain/station-order.js";
+import { analyzeVoyageEncounterResolutionOrder } from "../domain/resolution-order.js";
 import {
   persistVoyageEncounterApprovedCloseout,
   continueVoyageEncounterCloseoutReservation,
@@ -67,6 +69,12 @@ const RECOVERY_ABORT_EVENT_FIELDS = Object.freeze(["type", "sessionId", "eventId
 const TASK7_ABORT_AUDIT_DETAILS = Object.freeze(["abortScope", "previousSessionState", "nextSessionState", "previousLifecycleState", "nextLifecycleState", "reason"]);
 const TASK7_ACTIVE_ABORT_AUDIT_DETAILS = Object.freeze(["abortScope", "previousSessionState", "nextSessionState", "previousLifecycleState", "nextLifecycleState", "reason", "persistentConsequence"]);
 const TASK7_CORRECTION_AUDIT_DETAILS = Object.freeze(["correctionKind", "targetRequestId", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision", "reason"]);
+// Slice I is intentionally expressed through the existing M11 correction
+// envelope.  These are the only post-resolution corrections; the old Task 7
+// planning corrections remain separate and are never enabled here.
+const SLICE_I_CORRECTION_KINDS = Object.freeze(["remaining-order", "target", "operator-takeover", "void-roll", "retry-roll-integration", "recorded-result"]);
+const SLICE_I_EXECUTABLE_CORRECTION_KINDS = new Set(["remaining-order", "operator-takeover", "void-roll", "retry-roll-integration"]);
+const SLICE_I_CORRECTION_AUDIT_DETAILS = Object.freeze(["correctionKind", "targetRequestId", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision", "reason", "stationId", "pendingCheckId", "before", "after"]);
 const TASK7_RECOVERY_ABORT_AUDIT_DETAILS = Object.freeze(["recoveryAction", "sourceCheckpointId", "sourceCheckpointRevision", "recoveryAuthorityUserId", "replayedEventCount", "failedRequestId", "failedRevision", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision"]);
 const RECOVERY_AUDIT_DETAILS_FIELDS = Object.freeze(["recoveryAction", "sourceCheckpointId", "sourceCheckpointRevision", "recoveryAuthorityUserId", "replayedEventCount", "failedRequestId", "failedRevision"]);
 const PROCESSED_REQUEST_FIELDS = Object.freeze(["requestId", "principalUserId", "projectionKind", "fingerprint", "commandKind", "resultKind", "resultRevision", "response"]);
@@ -840,7 +848,7 @@ function validRuntimeEvent(event, session, index) {
   if (event.type === "voyage.m11-recovery-rebuilt") return nonBlank(event.sourceCheckpointId) && safeInteger(event.sourceCheckpointRevision) && nonBlank(event.recoveryAuthorityUserId);
   if (event.type === "voyage.m11-recovery-aborted") return exactKeys(event, RECOVERY_ABORT_EVENT_FIELDS) && nonBlank(event.sourceCheckpointId) && safeInteger(event.sourceCheckpointRevision) && nonBlank(event.recoveryAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
   if (event.type === "voyage.m11-session-aborted") return exactKeys(event, ABORT_EVENT_FIELDS) && ["setup-cancellation", "active-event"].includes(event.abortScope) && nonBlank(event.abortAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
-  if (event.type === "voyage.m11-session-corrected") return exactKeys(event, CORRECTION_EVENT_FIELDS) && ["station-selection", "station-order", "plan-unlock"].includes(event.correctionKind) && event.targetRequestId === null && nonBlank(event.correctionAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
+  if (event.type === "voyage.m11-session-corrected") return exactKeys(event, CORRECTION_EVENT_FIELDS) && ["station-selection", "station-order", "plan-unlock", ...SLICE_I_CORRECTION_KINDS].includes(event.correctionKind) && event.targetRequestId === null && nonBlank(event.correctionAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
   if (event.type === "voyage.m11-closeout-review-accepted") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
   if (event.type === "voyage.m11-closeout-session-reserved") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
   if (event.type === "voyage.m11-closeout-session-commit-pending") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
@@ -2416,6 +2424,14 @@ function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = nu
         const audit = envelope.auditHistory[auditIndex];
         if (!event || !audit || !validFocusRecord(record, sessionEvidence, audit, event)) return false;
         lastEvidenceRevision = record.resultRevision; auditIndex += 1;
+      } else if (sessionEvidence && record.commandKind === "correct-session") {
+        const event = envelope.events.find((entry) => entry?.type === "voyage.m11-session-corrected" && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        const audit = envelope.auditHistory[auditIndex];
+        const tuple = parseStoredFingerprint(record.fingerprint);
+        const sliceI = tuple.ok && SLICE_I_CORRECTION_KINDS.includes(tuple.value[6]?.correctionKind);
+        const expectedEvents = sliceI ? 1 : (tuple.ok && tuple.value[6]?.correctionKind === "plan-unlock" ? 1 : 2);
+        if (!event || !audit || !validTask7Record(record, sessionEvidence, audit, event) || record.response.events.length !== expectedEvents || !equal(record.response.events.at(-1), event)) return false;
+        lastEvidenceRevision = record.resultRevision; auditIndex += 1;
       } else if (sessionEvidence && (record.commandKind === "closeout-review" || record.commandKind === "closeout-prepare" || record.commandKind === "closeout-reserve" || record.commandKind === "closeout-ship-apply" || record.commandKind === "closeout-session-commit")) {
         if (record.commandKind === "closeout-prepare" || record.commandKind === "closeout-ship-apply") {
           if (!validCloseoutRecord(record, sessionEvidence, null, null)) return false;
@@ -2587,6 +2603,188 @@ function validPlanUnlockPredecessor(session, runtimeEvent) {
   } catch { return false; }
 }
 
+function sliceICurrentStation(session) {
+  try {
+    const order = session?.encounterState?.committedStationOrder;
+    const checks = session?.encounterState?.pendingChecks;
+    if (!Array.isArray(order) || !Array.isArray(checks)) return null;
+    const voided = new Set((session?.encounterState?.metadata?.sliceIRecovery ?? [])
+      .filter((entry) => entry?.kind === "void-roll")
+      .flatMap((entry) => [entry.originalPendingCheckId, entry.replacementPendingCheckId].filter(nonBlank)));
+    const voidedStation = order.find((stationId) => checks.some((check) => check?.stationId === stationId && voided.has(check.pendingCheckId)));
+    if (voidedStation) return voidedStation;
+    return order.find((stationId) => checks.some((check) => check?.stationId === stationId && check.status === "pending" && !voided.has(check.pendingCheckId))) ?? null;
+  } catch { return null; }
+}
+function sliceIVoidedPendingCheck(session, pendingCheckId) {
+  try {
+    return Array.isArray(session?.encounterState?.metadata?.sliceIRecovery)
+      && session.encounterState.metadata.sliceIRecovery.some((entry) => entry?.kind === "void-roll" && [entry.originalPendingCheckId, entry.replacementPendingCheckId].includes(pendingCheckId));
+  } catch { return false; }
+}
+
+function sliceIOperatorTakeoverEligibility(session, stationId, context) {
+  try {
+    const assignment = analyzeVoyageStationAssignments(session?.encounterState?.stationAssignments).assignments
+      .find((entry) => entry?.stationId === stationId);
+    if (!assignment?.operator || typeof context?.resolveVoyageOperatorForPrincipal !== "function") return { ok: false, found: false };
+    const trusted = trustedUsers(context);
+    if (!trusted.ok || trusted.duplicates?.size) return { ok: false, found: false };
+    let found = false;
+    for (const user of trusted.users) {
+      if (typeof user.isGM !== "boolean" || typeof user.active !== "boolean") return { ok: false, found: false };
+      if (user.isGM !== false) continue;
+      let operators;
+      try { operators = canonicalOperators(context.resolveVoyageOperatorForPrincipal(user.id)); } catch { operators = null; }
+      if (!Array.isArray(operators) || !operators.some((operator) => operatorIdentityMatches(operator, assignment.operator))) continue;
+      found = true;
+      if (user.active === true) return { ok: false, found: true, active: true };
+    }
+    return { ok: found, found, active: false };
+  } catch { return { ok: false, found: false }; }
+}
+
+function validSliceIPayload(kind, payload) {
+  if (!isPlainObject(payload) || !SLICE_I_CORRECTION_KINDS.includes(kind)) return false;
+  const fields = {
+    "remaining-order": ["stationOrder"],
+    target: ["stationId", "targetStationId"],
+    "operator-takeover": ["stationId"],
+    "void-roll": ["pendingCheckId"],
+    "retry-roll-integration": ["pendingCheckId"],
+    "recorded-result": ["pendingCheckId", "correctedResult"]
+  }[kind];
+  if (!fields || !exactKeys(payload, fields) || containsForbiddenPayloadAuthority(payload)) return false;
+  if (kind === "remaining-order") return Array.isArray(payload.stationOrder) && payload.stationOrder.every(nonBlank);
+  if (kind === "target") return nonBlank(payload.stationId) && nonBlank(payload.targetStationId);
+  if (kind === "operator-takeover") return nonBlank(payload.stationId);
+  if (kind === "void-roll" || kind === "retry-roll-integration") return nonBlank(payload.pendingCheckId);
+  return nonBlank(payload.pendingCheckId) && isPlainObject(payload.correctedResult)
+    && exactKeys(payload.correctedResult, ["total", "degreeOfSuccess", "degreeOfSuccessSlug", "statisticSlug", "dc", "rollMode"])
+    && Number.isFinite(payload.correctedResult.total) && safeInteger(payload.correctedResult.degreeOfSuccess)
+    && payload.correctedResult.degreeOfSuccess >= 0 && payload.correctedResult.degreeOfSuccess <= 3
+    && ["critical-failure", "failure", "success", "critical-success"][payload.correctedResult.degreeOfSuccess] === payload.correctedResult.degreeOfSuccessSlug
+    && nonBlank(payload.correctedResult.statisticSlug) && safeInteger(payload.correctedResult.dc) && payload.correctedResult.dc >= 0
+    && ["public", "blind"].includes(payload.correctedResult.rollMode);
+}
+
+function sliceIHistoricalAuditAfter(session, audit, correctionKind) {
+  try {
+    const index = session.auditHistory.indexOf(audit);
+    for (let position = index - 1; position >= 0; position -= 1) {
+      const prior = session.auditHistory[position];
+      if (prior?.kind === "correction-applied" && prior.details?.correctionKind === correctionKind) return capture(prior.details.after).value;
+    }
+    if (correctionKind === "remaining-order") {
+      const orderRecord = [...session.processedRequests].reverse().find((record) => record?.commandKind === "station-order" && record.resultRevision < audit.revision);
+      const orderTuple = orderRecord && parseStoredFingerprint(orderRecord.fingerprint);
+      if (orderTuple?.ok && Array.isArray(orderTuple.value[6]?.stationOrder)) return capture(orderTuple.value[6].stationOrder).value;
+      const checkpoint = session.checkpoints.find((entry) => entry?.kind === "before-plan-lock");
+      return capture(checkpoint?.encounterState?.committedStationOrder).value;
+    }
+    return null;
+  } catch { return null; }
+}
+
+function sliceIExpectedReplacement(evidence, pendingCheckId, encounterRevision) {
+  const captured = capture(evidence);
+  if (!captured.ok || !nonBlank(pendingCheckId) || !safeInteger(encounterRevision)) return null;
+  const replacement = captured.value;
+  replacement.pendingCheckId = pendingCheckId;
+  replacement.preparedRevision = encounterRevision;
+  replacement.status = "pending";
+  replacement.result = null;
+  return replacement;
+}
+
+function sliceIRecoveryAuditBound(session, runtimeEvent, payload, audit) {
+  try {
+    const history = session.encounterState.metadata?.sliceIRecovery?.find((entry) => entry?.kind === payload.correctionKind && entry.originalPendingCheckId === payload.replacementPayload.pendingCheckId);
+    if (!history || !exactKeys(history, ["kind", "originalPendingCheckId", "replacementPendingCheckId", "evidence"]) || !equal(history.evidence, audit.details.before)) return false;
+    const expected = sliceIExpectedReplacement(history.evidence, history.replacementPendingCheckId, runtimeEvent.encounterRevision);
+    if (!expected || !equal(expected, audit.details.after)) return false;
+    if (payload.correctionKind === "retry-roll-integration") {
+      const current = session.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === history.replacementPendingCheckId);
+      return Boolean(current && equal(current, audit.details.after));
+    }
+    const current = session.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === history.replacementPendingCheckId);
+    if (current && equal(current, audit.details.after)) return true;
+    return session.encounterState.metadata?.sliceIRecovery?.some((entry) => entry?.kind === "retry-roll-integration"
+      && entry.originalPendingCheckId === history.originalPendingCheckId && equal(entry.evidence, history.evidence));
+  } catch { return false; }
+}
+
+function validSliceIAudit(audit, record, runtimeEvent, payload, session) {
+  const replacement = payload.replacementPayload;
+  const stationMatches = ["operator-takeover", "target"].includes(payload.correctionKind) ? audit?.details?.stationId === replacement?.stationId : true;
+  const checkMatches = ["void-roll", "retry-roll-integration", "recorded-result"].includes(payload.correctionKind) ? audit?.details?.pendingCheckId === replacement?.pendingCheckId : true;
+  if (!(audit && exactKeys(audit, AUDIT_FIELDS) && audit.kind === "correction-applied"
+    && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId
+    && safeInteger(audit.authorityEpoch) && audit.authorityEpoch === record.response.authorityEpoch
+    && audit.previousRevision === record.resultRevision - 1 && audit.revision === record.resultRevision
+    && validIsoTimestamp(audit.occurredAt) && exactKeys(audit.details, SLICE_I_CORRECTION_AUDIT_DETAILS)
+    && audit.details.correctionKind === payload.correctionKind && audit.details.targetRequestId === null
+    && audit.details.previousSessionState === "station-resolution" && audit.details.nextSessionState === "station-resolution"
+    && audit.details.reason === payload.reason && audit.details.previousEncounterRevision === runtimeEvent.previousEncounterRevision
+    && audit.details.encounterRevision === runtimeEvent.encounterRevision
+    && (audit.details.stationId === null || nonBlank(audit.details.stationId))
+    && (audit.details.pendingCheckId === null || nonBlank(audit.details.pendingCheckId)) && stationMatches && checkMatches
+    && capture(audit.details.before).ok && capture(audit.details.after).ok)) return false;
+  if (payload.correctionKind === "remaining-order") {
+    const before = audit.details.before, after = audit.details.after;
+    const currentOrder = session.encounterState.committedStationOrder;
+    const priorOrder = sliceIHistoricalAuditAfter(session, audit, payload.correctionKind);
+    if (!Array.isArray(before) || !Array.isArray(after) || !Array.isArray(currentOrder) || !Array.isArray(priorOrder)
+      || !equal(after, currentOrder) || !equal(before, priorOrder) || before.length !== currentOrder.length
+      || new Set(before).size !== before.length || new Set(before).size !== new Set(currentOrder).size
+      || before.some((stationId) => !currentOrder.includes(stationId))) return false;
+    const resolvedPrefix = currentOrder.filter((stationId) => session.encounterState.pendingChecks.some((check) => check.stationId === stationId && check.status !== "pending"));
+    if (!resolvedPrefix.every((stationId, index) => before[index] === stationId && after[index] === stationId)) return false;
+  } else if (payload.correctionKind === "operator-takeover") {
+    const priorControl = sliceIHistoricalAuditAfter(session, audit, payload.correctionKind);
+    const currentControl = session.encounterState.metadata?.recoveryControl ?? null;
+    if (!equal(audit.details.before, priorControl) || !equal(audit.details.after, currentControl)
+      || !isPlainObject(currentControl) || !exactKeys(currentControl, ["kind", "stationId", "operatorId", "controllerUserId"])
+      || currentControl.kind !== "operator-takeover" || currentControl.stationId !== replacement.stationId) return false;
+    const checkpoint = session.checkpoints.find((entry) => entry?.kind === "before-plan-lock");
+    if (checkpoint?.encounterState?.stationAssignments && !equal(checkpoint.encounterState.stationAssignments, session.encounterState.stationAssignments)) return false;
+  } else if (["void-roll", "retry-roll-integration"].includes(payload.correctionKind) && !sliceIRecoveryAuditBound(session, runtimeEvent, payload, audit)) return false;
+  return true;
+}
+
+function validSliceIRecord(record, session, audit, runtimeEvent) {
+  try {
+    if (record.commandKind !== "correct-session" || record.resultKind !== "corrected" || !validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) || record.response.status !== "station-resolution" || record.response.events.length !== 1) return false;
+    const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[5] !== "correct-session") return false;
+    const payload = tuple.value[6];
+    if (!exactKeys(payload, ["correctionKind", "targetRequestId", "targetCheckpointId", "replacementPayload", "reason", "confirmation"]) || payload.targetRequestId !== null || payload.targetCheckpointId !== null || payload.confirmation !== true || !nonBlank(payload.reason) || !validSliceIPayload(payload?.correctionKind, payload?.replacementPayload)) return false;
+    if (!SLICE_I_EXECUTABLE_CORRECTION_KINDS.has(payload.correctionKind)) return false;
+    if (!validRuntimeEvent(runtimeEvent, session, session.events.indexOf(runtimeEvent)) || runtimeEvent.type !== "voyage.m11-session-corrected" || runtimeEvent.correctionKind !== payload.correctionKind || runtimeEvent.correctionAuthorityUserId !== record.principalUserId || !equal(record.response.events[0], runtimeEvent)) return false;
+    if (!validSliceIAudit(audit, record, runtimeEvent, { correctionKind: payload.correctionKind, reason: payload.reason, replacementPayload: payload.replacementPayload }, session)) return false;
+    if (payload.correctionKind === "recorded-result") {
+      const check = session.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === payload.replacementPayload.pendingCheckId);
+      if (!check || check.status !== "resolved" || !equal(check.result, payload.replacementPayload.correctedResult)) return false;
+    }
+    if (["void-roll", "retry-roll-integration"].includes(payload.correctionKind)) {
+      const history = session.encounterState.metadata?.sliceIRecovery?.find((entry) => entry?.kind === payload.correctionKind && entry.originalPendingCheckId === payload.replacementPayload.pendingCheckId);
+      if (!history || !exactKeys(history, ["kind", "originalPendingCheckId", "replacementPendingCheckId", "evidence"]) || !equal(history.evidence, audit.details.before) || !isPlainObject(audit.details.after)) return false;
+      const expectedReplacement = capture(history.evidence);
+      if (!expectedReplacement.ok || !nonBlank(history.replacementPendingCheckId)) return false;
+      expectedReplacement.value.pendingCheckId = history.replacementPendingCheckId;
+      expectedReplacement.value.preparedRevision = runtimeEvent.encounterRevision;
+      expectedReplacement.value.status = "pending";
+      expectedReplacement.value.result = null;
+      if (!equal(expectedReplacement.value, audit.details.after)) return false;
+      if (payload.correctionKind === "void-roll") {
+        const replacement = session.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === history.replacementPendingCheckId);
+        const superseded = !replacement && session.encounterState.metadata?.sliceIRecovery?.some((entry) => entry?.kind === "retry-roll-integration" && entry.originalPendingCheckId === history.originalPendingCheckId && equal(entry.evidence, history.evidence));
+        if (!superseded && (!replacement || replacement.status !== "pending" || !equal(replacement, audit.details.after))) return false;
+      } else if (!nonBlank(history.replacementPendingCheckId) || history.replacementPendingCheckId !== audit.details.after.pendingCheckId) return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
 function validTask7Record(record, session, audit, runtimeEvent) {
   try {
     if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId) || record.projectionKind !== "gm" || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision || !isPlainObject(record.response)) return false;
@@ -2602,6 +2800,7 @@ function validTask7Record(record, session, audit, runtimeEvent) {
     }
     if (record.commandKind === "correct-session") {
       const unlock = payload.correctionKind === "plan-unlock";
+      if (SLICE_I_CORRECTION_KINDS.includes(payload.correctionKind)) return validSliceIRecord(record, session, audit, runtimeEvent);
       if (record.resultKind !== "corrected" || parsed.value[5] !== "correct-session" || !exactKeys(payload, ["correctionKind", "targetRequestId", "targetCheckpointId", "replacementPayload", "reason", "confirmation"]) || !["station-selection", "station-order", "plan-unlock"].includes(payload.correctionKind)
         || !exactKeys(payload.replacementPayload, unlock ? [] : payload.correctionKind === "station-selection" ? ["stationId", "actionId"] : ["stationOrder"])
         || payload.targetRequestId !== null || payload.targetCheckpointId !== null || payload.confirmation !== true || !validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch)
@@ -2942,7 +3141,7 @@ function multiplayerExecutionPresentation(session, authority, resolution) {
     const state = session.encounterState;
     const currentStationId = resolution.resolutionCurrentStationId;
     const pending = Array.isArray(state.pendingChecks)
-      ? state.pendingChecks.find((entry) => entry?.stationId === currentStationId && entry?.status === "pending")
+      ? state.pendingChecks.find((entry) => entry?.stationId === currentStationId && entry?.status === "pending" && !sliceIVoidedPendingCheck(session, entry.pendingCheckId))
       : null;
     const assignment = Array.isArray(state.stationAssignments)
       ? state.stationAssignments.find((entry) => entry?.stationId === currentStationId)
@@ -3138,6 +3337,8 @@ async function dispatchTask3Command(value, identities, initialAuth, initialMatch
     const prior = resolved.match.session;
     const projectionKind = deriveProjectionKind(auth, prior, context);
     if (context?.__trustedResolutionOperator === true && projectionKind !== "operator") return failure([diagnostic("m11-projection-not-authorized", "transport.user")], identities);
+    const takeover = prior.encounterState?.metadata?.recoveryControl;
+    if (context?.__trustedResolutionOperator === true && takeover?.kind === "operator-takeover" && takeover.stationId === prior.encounterState?.committedStationOrder?.find((stationId) => prior.encounterState.pendingChecks?.some((check) => check.stationId === stationId && check.status === "pending"))) return failure([diagnostic("m11-projection-not-authorized", "transport.user")], identities);
     const fp = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
     const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, projectionKind, fp, identities); if (replay) return replay;
     if (prior.activeGmUserId !== auth.activeGmUserId || value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
@@ -3149,7 +3350,7 @@ async function dispatchTask3Command(value, identities, initialAuth, initialMatch
     if (value.commandKind === "action-segment" && context?.__executePendingCheck === true) {
       const state = prior.encounterState;
       const currentStationId = state.committedStationOrder?.find((stationId) => state.pendingChecks?.some((check) => check.stationId === stationId && check.status === "pending"));
-      const pending = state.pendingChecks?.find((check) => check.stationId === currentStationId && check.status === "pending");
+      const pending = state.pendingChecks?.find((check) => check.stationId === currentStationId && check.status === "pending" && !sliceIVoidedPendingCheck(prior, check.pendingCheckId));
       const owned = projectionKind === "operator" && deriveProjectionAuthority(auth, prior, context).ownedOperators.some((entry) => entry.stationId === currentStationId);
       if (!pending || (projectionKind === "operator" && !owned) || state.metadata?.reactionWindow?.status === "open") return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
       const executor = m10Function(context, "executeVoyagePf2ePendingCheck", null);
@@ -3490,6 +3691,88 @@ function task7CorrectionEvent(session, request, auth, previousRevision, revision
   return { type: "voyage.m11-session-corrected", sessionId: session.sessionId, eventId: session.eventId, definitionSnapshotId: session.definitionSnapshotId, shipId: session.shipId, correctionKind: request.correctionKind, targetRequestId: null, correctionAuthorityUserId: auth.authenticatedUserId, previousRevision, revision, previousEncounterRevision, encounterRevision };
 }
 
+async function buildSliceICorrectionCandidate(prior, value, auth, trustedWitness, context) {
+  try {
+    const kind = value.correctionKind;
+    if (!SLICE_I_CORRECTION_KINDS.includes(kind) || prior.sessionState !== "station-resolution" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "resolution") return null;
+    if (!validSliceIPayload(kind, value.replacementPayload)) return null;
+    const currentStation = sliceICurrentStation(prior);
+    const payload = value.replacementPayload;
+    const candidate = capture(prior); if (!candidate.ok) return null;
+    const next = candidate.value, previousEncounterRevision = prior.encounterState.revision;
+    let stationId = null, pendingCheckId = null, before = null, after = null;
+    if (kind === "remaining-order") {
+      const committedOrder = prior.encounterState.committedStationOrder;
+      if (!currentStation || !Array.isArray(committedOrder) || payload.stationOrder.length !== committedOrder.length || new Set(payload.stationOrder).size !== payload.stationOrder.length || new Set(payload.stationOrder).size !== new Set(committedOrder).size || payload.stationOrder.some((stationId) => !committedOrder.includes(stationId))) return null;
+      const resolvedPrefix = prior.encounterState.committedStationOrder.filter((id) => !prior.encounterState.pendingChecks.some((check) => check.stationId === id && check.status === "pending"));
+      if (resolvedPrefix.some((id, index) => payload.stationOrder[index] !== id) || !payload.stationOrder.includes(currentStation)) return null;
+      before = capture(prior.encounterState.committedStationOrder).value; next.encounterState.committedStationOrder = [...payload.stationOrder]; after = capture(next.encounterState.committedStationOrder).value;
+    } else if (kind === "operator-takeover") {
+      if (!currentStation || payload.stationId !== currentStation) return null;
+      const eligibility = sliceIOperatorTakeoverEligibility(prior, currentStation, context);
+      if (!eligibility.ok) return null;
+      const assignment = prior.encounterState.stationAssignments?.find((entry) => entry?.stationId === currentStation);
+      const operatorId = assignment?.operator?.id ?? assignment?.operator?.uuid ?? null; if (!nonBlank(operatorId)) return null;
+      stationId = currentStation; before = capture(next.encounterState.metadata?.recoveryControl ?? null).value;
+      next.encounterState.metadata.recoveryControl = { kind: "operator-takeover", stationId: currentStation, operatorId, controllerUserId: auth.activeGmUserId };
+      after = capture(next.encounterState.metadata.recoveryControl).value;
+    } else {
+      const check = prior.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === payload.pendingCheckId);
+      const existingHistory = Array.isArray(prior.encounterState.metadata?.sliceIRecovery)
+        ? prior.encounterState.metadata.sliceIRecovery.find((entry) => entry?.kind === "void-roll" && entry.originalPendingCheckId === payload.pendingCheckId && nonBlank(entry.replacementPendingCheckId))
+        : null;
+      const replacementCheck = existingHistory?.replacementPendingCheckId
+        ? prior.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === existingHistory.replacementPendingCheckId)
+        : null;
+      const source = kind === "retry-roll-integration" && existingHistory?.evidence
+        ? (replacementCheck ?? existingHistory.evidence)
+        : check;
+      const sourceStation = source?.stationId ?? null;
+      if (!source || !nonBlank(sourceStation) || (kind === "retry-roll-integration" ? !existingHistory : !currentStation || sourceStation !== currentStation)) return null;
+      stationId = sourceStation; pendingCheckId = payload.pendingCheckId;
+      before = kind === "retry-roll-integration" && existingHistory ? capture(existingHistory.evidence).value : capture(source).value;
+      const integrationStatus = source.integrationStatus ?? next.encounterState.metadata?.pendingCheckIntegrationStatus;
+      if (kind === "retry-roll-integration") {
+        if (!existingHistory || !["failed", "uncertain", "recovery-required", "invalid", "erroneous", "voidable"].includes(integrationStatus)) return null;
+        const replacement = capture(source).value;
+        replacement.pendingCheckId = `arcflight-pending-check:recovery:${JSON.stringify([prior.sessionId, prior.revision + 1, source.pendingCheckId, kind])}`;
+        replacement.preparedRevision = prior.encounterState.revision + 1; replacement.status = "pending"; replacement.result = null;
+        const index = next.encounterState.pendingChecks.findIndex((entry) => entry?.pendingCheckId === source.pendingCheckId); if (index < 0) return null;
+        next.encounterState.pendingChecks[index] = replacement;
+        next.encounterState.metadata.sliceIRecovery = Array.isArray(next.encounterState.metadata.sliceIRecovery) ? next.encounterState.metadata.sliceIRecovery : [];
+        next.encounterState.metadata.sliceIRecovery.push({ kind, originalPendingCheckId: existingHistory.originalPendingCheckId, replacementPendingCheckId: replacement.pendingCheckId, evidence: capture(existingHistory.evidence).value });
+        after = capture(replacement).value;
+      } else {
+        if (!check || check.status !== "pending" || existingHistory || !["invalid", "erroneous", "voidable", "failed", "uncertain"].includes(integrationStatus)) return null;
+        const replacement = capture(check).value;
+        replacement.pendingCheckId = `arcflight-pending-check:recovery:${JSON.stringify([prior.sessionId, prior.revision + 1, check.pendingCheckId, kind])}`;
+        replacement.preparedRevision = prior.encounterState.revision + 1; replacement.status = "pending"; replacement.result = null;
+        const index = next.encounterState.pendingChecks.findIndex((entry) => entry?.pendingCheckId === check.pendingCheckId); if (index < 0) return null;
+        next.encounterState.pendingChecks[index] = replacement;
+        next.encounterState.metadata.sliceIRecovery = Array.isArray(next.encounterState.metadata.sliceIRecovery) ? next.encounterState.metadata.sliceIRecovery : [];
+        next.encounterState.metadata.sliceIRecovery.push({ kind, originalPendingCheckId: check.pendingCheckId, replacementPendingCheckId: replacement.pendingCheckId, evidence: before });
+        after = capture(replacement).value;
+      }
+    }
+    if (kind === "remaining-order") {
+      const stationReport = validateVoyageEncounterStationOrder(next.encounterState);
+      const resolutionReport = analyzeVoyageEncounterResolutionOrder(next.encounterState);
+      if (stationReport.valid !== true || resolutionReport.valid !== true) return null;
+    }
+    next.revision = prior.revision + 1; next.encounterState.revision = previousEncounterRevision + 1;
+    if (!validEncounterState(next.encounterState, prior) || !trustedWitness?.occurredAt) return null;
+    const runtimeEvent = task7CorrectionEvent(next, value, auth, prior.revision, next.revision, previousEncounterRevision, next.encounterState.revision);
+    next.events.push(runtimeEvent);
+    const audit = { auditId: auditId(next.sessionId, next.auditHistory.length, "correction-applied"), kind: "correction-applied", sessionId: next.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: next.authorityEpoch, previousRevision: prior.revision, revision: next.revision, occurredAt: trustedWitness.occurredAt, details: { correctionKind: kind, targetRequestId: null, previousSessionState: prior.sessionState, nextSessionState: next.sessionState, previousEncounterRevision, encounterRevision: next.encounterState.revision, reason: value.reason, stationId, pendingCheckId, before, after } };
+    next.auditHistory.push(audit);
+    const response = successWithEvents(next, value.requestId, [runtimeEvent]);
+    const payloadForFingerprint = { correctionKind: kind, targetRequestId: null, targetCheckpointId: null, replacementPayload: capture(payload).value, reason: value.reason, confirmation: true };
+    const fp = fingerprint(next.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, prior.revision, "correct-session", payloadForFingerprint);
+    next.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fp, commandKind: "correct-session", resultKind: "corrected", resultRevision: next.revision, response });
+    return { candidate: next, response };
+  } catch { return null; }
+}
+
 async function task7AbortWithinExclusive(value, identities, descriptor, initialAuth, trustedWitness, context) {
   return withTransferLock(value.sessionId, async () => {
     const auth = authority(context, { requireConnection: true });
@@ -3541,8 +3824,16 @@ async function task7CorrectionWithinExclusive(value, identities, descriptor, tru
     if (value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
     if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
     if (value.confirmation !== true) return failure([diagnostic("m11-correction-confirmation-required", "confirmation")], identities);
-    if (!["station-selection", "station-order", "plan-unlock"].includes(value.correctionKind)) return failure([diagnostic("m11-command-payload-invalid", "correctionKind")], identities);
+    if (!["station-selection", "station-order", "plan-unlock", ...SLICE_I_CORRECTION_KINDS].includes(value.correctionKind)) return failure([diagnostic("m11-command-payload-invalid", "correctionKind")], identities);
     if (value.targetRequestId !== null || value.targetCheckpointId !== null || !nonBlank(value.reason) || containsForbiddenPayloadAuthority(value.replacementPayload)) return failure([diagnostic("m11-command-payload-invalid", "replacementPayload")], identities);
+    if (SLICE_I_CORRECTION_KINDS.includes(value.correctionKind) && !SLICE_I_EXECUTABLE_CORRECTION_KINDS.has(value.correctionKind)) return failure([diagnostic("m11-command-not-allowed", "correctionKind")], identities);
+    if (SLICE_I_CORRECTION_KINDS.includes(value.correctionKind)) {
+      const built = await buildSliceICorrectionCandidate(prior, value, auth, trustedWitness, context);
+      if (!built) return failure([diagnostic(prior.sessionState !== "station-resolution" ? "m11-command-not-allowed" : "m11-correction-invalid", "replacementPayload")], identities);
+      if (!pristineSession(built.candidate, resolved.match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+      try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: built.candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(resolved.match.document, value.sessionId, resolved.match.documentId, built.candidate, prior, value.requestId, context, { successResponse: built.response }); }
+      return sessionWriteClassification(resolved.match.document, value.sessionId, resolved.match.documentId, built.candidate, prior, value.requestId, context, { successResponse: built.response });
+    }
     const unlock = value.correctionKind === "plan-unlock";
     if (unlock) {
       if (prior.sessionState !== "plan-locked" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "lock-readiness") return failure([diagnostic("m11-command-not-allowed", "request.kind")], identities);
