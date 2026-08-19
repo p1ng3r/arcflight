@@ -198,7 +198,7 @@ test("snapshots preserve exact canonical Risk Bids as isolated records", () => {
   assert.deepEqual(encounter, before);
 });
 
-test("malformed, hostile, and over-limit Risk Bids block snapshots", () => {
+test("malformed, hostile, and unoccupied Risk Bids block snapshots", () => {
   const forged = canonicalRiskEncounter(1);
   forged.riskBids.captain.dcAdjustment = 8;
   let result = createVoyageEncounterBoundarySnapshot(forged, {
@@ -212,20 +212,28 @@ test("malformed, hostile, and over-limit Risk Bids block snapshots", () => {
       && entry.path === "riskBids.captain.dcAdjustment"
   ));
 
-  const overLimit = canonicalRiskEncounter(4);
-  result = createVoyageEncounterBoundarySnapshot(overLimit, {
-    snapshotId: "over-limit-risk-bids",
+  const fourOccupied = canonicalRiskEncounter(4);
+  result = createVoyageEncounterBoundarySnapshot(fourOccupied, {
+    snapshotId: "four-occupied-risk-bids",
+    boundaryType: "phase-start"
+  });
+  assert.equal(result.ok, true);
+  assert.equal(Object.keys(result.snapshot.temporaryState.riskBids).length, 4);
+
+  const unoccupiedBid = canonicalRiskEncounter(3);
+  unoccupiedBid.riskBids.veilwarden = {
+    stationId: "veilwarden",
+    actionId: "action-veilwarden",
+    riskBidId: "bid-veilwarden",
+    dcAdjustment: 2
+  };
+  result = createVoyageEncounterBoundarySnapshot(unoccupiedBid, {
+    snapshotId: "unoccupied-risk-bid",
     boundaryType: "phase-start"
   });
   assert.equal(result.ok, false);
   assert.equal(result.snapshot, null);
-  assert.deepEqual(result.errors, [{
-    code: "risk-bid-round-limit-exceeded",
-    path: "riskBids",
-    message: "Boundary snapshots allow at most 3 selected Risk Bids.",
-    severity: "error"
-  }]);
-
+  assert.ok(result.errors.some((entry) => entry.code === "risk-bid-selection-missing" && entry.path === "riskBids.veilwarden"));
   const hostile = canonicalRiskEncounter(1);
   let reads = 0;
   Object.defineProperty(hostile.riskBids.captain, "dcAdjustment", {

@@ -5,9 +5,17 @@ import { M12_EVENT_PRESENTATION, M12_FOCUS_ABILITIES, M12_STATION_IDS } from "..
 import { arcflightTemplatePath } from "../../sheets/sheet-helpers.js";
 import { stationPresentation } from "./station-icons.js";
 import { resourcePresentation } from "./resource-icons.js";
+import { VOYAGE_PRESSURE_SYSTEM_BY_STATION_ID } from "../domain/constants.js";
 
 const { HandlebarsApplicationMixin } = foundry.applications.api;
 const { ApplicationV2 } = foundry.applications.api;
+
+const EVENT_MANAGER_UI_ICON_PATHS = Object.freeze({
+  momentum: "modules/arcflight/assets/ui/icons/momentum_icon.webp",
+  hazard: "modules/arcflight/assets/ui/icons/hazard_icon.webp",
+  order: "modules/arcflight/assets/ui/icons/order_icon.webp",
+  orderLink: "modules/arcflight/assets/ui/icons/order_link_icon.webp"
+});
 
 function actors() {
   try { return game.actors ? (typeof game.actors.values === "function" ? [...game.actors.values()] : Array.from(game.actors)) : []; } catch { return []; }
@@ -46,6 +54,75 @@ function eventContext() {
   };
 }
 function randomId(prefix) { return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`; }
+function activeGmDisplayName() {
+  const id = activeGmId();
+  if (!id) return "Unavailable";
+  try {
+    const users = game.users;
+    const user = users?.get?.(id) ?? (Array.isArray(users) ? users.find((entry) => entry?.id === id) : users?.contents?.find?.((entry) => entry?.id === id));
+    return user?.name ?? id;
+  } catch {
+    return id;
+  }
+}
+
+export function captureEventManagerViewState(root, activeTab = "event", previousScrollPositions = {}) {
+  const normalizedTab = normalizeEventManagerTab(activeTab);
+  const scrollPositions = { ...(previousScrollPositions ?? {}) };
+  const scrollRegions = {};
+  const regions = root?.querySelectorAll?.("[data-m12-scroll-region]") ?? [];
+  for (const region of regions) {
+    const key = region?.dataset?.m12ScrollRegion;
+    if (typeof key !== "string" || key.length === 0) continue;
+    const top = Number(region.scrollTop);
+    const left = Number(region.scrollLeft);
+    if (Number.isFinite(top) || Number.isFinite(left)) scrollRegions[key] = { top: Number.isFinite(top) ? top : 0, left: Number.isFinite(left) ? left : 0 };
+    const tabId = region?.dataset?.tabId;
+    if (typeof tabId === "string" && Number.isFinite(top)) scrollPositions[normalizeEventManagerTab(tabId)] = top;
+  }
+  const activeElement = root?.ownerDocument?.activeElement;
+  const focusInsideRoot = Boolean(activeElement && (activeElement === root || root?.contains?.(activeElement) === true));
+  const station = focusInsideRoot ? activeElement?.closest?.("[data-station-id]") : null;
+  const controlId = focusInsideRoot ? (activeElement?.dataset?.controlId ?? activeElement?.dataset?.m12ControlId ?? null) : null;
+  const actionId = focusInsideRoot ? (activeElement?.dataset?.actionId ?? null) : null;
+  return {
+    activeTab: normalizedTab,
+    stationId: station?.dataset?.stationId ?? null,
+    controlId,
+    actionId,
+    focusedControlKey: station?.dataset?.stationId ? `${station.dataset.stationId}:${controlId ?? actionId ?? "station"}` : null,
+    scrollPositions,
+    scrollRegions
+  };
+}
+
+export function restoreEventManagerViewState(root, state, fallbackTab = "event") {
+  if (!root) return normalizeEventManagerTab(state?.activeTab ?? fallbackTab);
+  const activeTab = normalizeEventManagerTab(state?.activeTab ?? fallbackTab);
+  const scrollRegions = state?.scrollRegions ?? {};
+  const scrollPositions = state?.scrollPositions ?? {};
+  for (const region of root.querySelectorAll?.("[data-m12-scroll-region]") ?? []) {
+    const key = region?.dataset?.m12ScrollRegion;
+    const saved = typeof key === "string" ? scrollRegions[key] : null;
+    const tabId = region?.dataset?.tabId;
+    const tabTop = typeof tabId === "string" ? scrollPositions[normalizeEventManagerTab(tabId)] : null;
+    if (saved && Number.isFinite(saved.top)) region.scrollTop = saved.top;
+    else if (Number.isFinite(tabTop)) region.scrollTop = tabTop;
+    if (saved && Number.isFinite(saved.left)) region.scrollLeft = saved.left;
+  }
+  const stationId = state?.stationId;
+  if (stationId) {
+    const escape = (value) => globalThis.CSS?.escape?.(value) ?? String(value).replace(/(["\\])/g, "\\$1");
+    const station = root.querySelector?.(`[data-station-id="${escape(stationId)}"]`);
+    const selector = state?.controlId ? `[data-control-id="${escape(state.controlId)}"]` : state?.actionId ? `[data-action-id="${escape(state.actionId)}"]` : null;
+    const target = selector ? station?.querySelector?.(selector) : null;
+    const activeElement = root.ownerDocument?.activeElement;
+    const body = root.ownerDocument?.body;
+    const focusMayRestore = !activeElement || activeElement === body || activeElement === root;
+    if (target && focusMayRestore) target.focus?.({ preventScroll: true });
+  }
+  return activeTab;
+}
 async function confirmPlanUnlock() {
   const content = "<p>Unlock this plan for correction?</p><p>Existing crew selections and station order will be preserved.</p>";
   const dialogV2 = foundry.applications.api.DialogV2;
@@ -60,8 +137,89 @@ function riskBidEffectText(effect) {
   return "Authored Risk Bid effect";
 }
 
-export function buildPlanningStations(planning, locked = false, expandedStationId = null) {
+export function readVoyageActorStatisticModifier(actor, statisticSlugOrAbilityId) {
+  if (!actor || typeof statisticSlugOrAbilityId !== "string" || statisticSlugOrAbilityId.length === 0) return null;
+  try {
+    const candidates = statisticSlugOrAbilityId === "perception"
+      ? [actor.skills?.perception?.mod, actor.system?.skills?.perception?.mod, actor.system?.attributes?.perception?.mod, actor.system?.perception?.mod]
+      : [actor.skills?.[statisticSlugOrAbilityId]?.mod, actor.system?.skills?.[statisticSlugOrAbilityId]?.mod, actor.system?.skills?.[statisticSlugOrAbilityId]?.modifier];
+    const value = candidates.find((candidate) => Number.isSafeInteger(candidate));
+    return Number.isSafeInteger(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function formatVoyageStatisticLabel(statisticSlugOrAbilityId) {
+  if (typeof statisticSlugOrAbilityId !== "string" || statisticSlugOrAbilityId.length === 0) return "Statistic";
+  return statisticSlugOrAbilityId.replace(/[-_]+/g, " ").replace(/(^|\s)(\w)/g, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
+}
+
+export function buildEventManagerProgressSegments({ sessionState = null, lifecycleState = null, phase = null, completed = false } = {}) {
+  const segments = [
+    ["situation", "SITUATION"],
+    ["crew-plan", "CREW PLAN"],
+    ["order", "ORDER"],
+    ["plan-review", "PLAN REVIEW"],
+    ["resolution", "RESOLUTION"],
+    ["round-outcome", "ROUND OUTCOME"]
+  ];
+  let currentId = "situation";
+  if (sessionState === "crew-planning" || phase === "crew-planning") currentId = "crew-plan";
+  else if (sessionState === "plan-locked" || phase === "lock-readiness") currentId = "plan-review";
+  else if (sessionState === "station-resolution" || phase === "resolution") currentId = completed ? "round-outcome" : "resolution";
+  else if (completed || lifecycleState === "completed-success" || lifecycleState === "completed-failure") currentId = "round-outcome";
+  const currentIndex = segments.findIndex(([id]) => id === currentId);
+  return segments.map(([id, label], index) => ({ id, label, active: index === currentIndex, complete: index < currentIndex, upcoming: index > currentIndex }));
+}
+
+function formatStatusLabel(value) {
+  return typeof value === "string" && value.length > 0
+    ? value.replace(/[-_]+/g, " ").replace(/(^|\s)(\w)/g, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`)
+    : "Unknown";
+}
+
+export function buildEventManagerStatusRail(dashboard = null) {
+  const pressureSource = Array.isArray(dashboard?.pressureSystems) ? dashboard.pressureSystems : Object.values(dashboard?.pressureSystems ?? {});
+  const pressureById = new Map(pressureSource.map((entry) => [entry?.pressureSystemId, entry]));
+  const pressureRows = M12_STATION_IDS.map((stationId) => {
+    const pressureSystemId = VOYAGE_PRESSURE_SYSTEM_BY_STATION_ID[stationId] ?? null;
+    const system = pressureById.get(pressureSystemId) ?? {};
+    const presentation = stationPresentation(stationId);
+    const capacity = Number.isSafeInteger(system.capacity) && system.capacity >= 0 && system.capacity <= 20 ? system.capacity : 0;
+    const value = Number.isSafeInteger(system.value) ? Math.max(0, Math.min(system.value, capacity)) : 0;
+    const danger = capacity > 0 && value >= capacity;
+    const gaugeSegments = Array.from({ length: capacity }, (_unused, index) => ({ filled: index < value }));
+    return { stationId, ...presentation, pressureSystemId, pressureLabel: formatStatusLabel(pressureSystemId), value, capacity, gaugeSegments, pressureState: danger ? 'DANGER' : value > 0 ? 'ELEVATED' : 'SAFE', danger };
+  });
+  const hazards = Array.isArray(dashboard?.activeHazards) ? dashboard.activeHazards.map((hazard) => ({
+    hazardId: hazard?.hazardId ?? '',
+    name: hazard?.name ?? hazard?.label ?? hazard?.hazardId ?? 'Active Hazard',
+    timing: hazard?.timing ?? hazard?.activationTiming ?? 'Active',
+    status: hazard?.status ?? hazard?.disposition ?? 'ACTIVE',
+    affectedArea: hazard?.pressureSystemName ?? hazard?.pressureSystemId ?? hazard?.eventArea ?? 'Event area unavailable',
+    effect: hazard?.description ?? hazard?.effect ?? 'Effect unavailable',
+    removalMethod: hazard?.removalMethod ?? hazard?.resolution ?? 'GM review',
+    ignoredConsequence: hazard?.ignoredConsequence ?? hazard?.consequence ?? 'Not specified',
+    createdRound: Number.isSafeInteger(hazard?.createdRound) ? hazard.createdRound : (Number.isSafeInteger(hazard?.roundNumber) ? hazard.roundNumber : 'â€”'),
+    provenance: hazard?.sourceLabel ?? hazard?.provenanceLabel ?? '',
+    iconPath: EVENT_MANAGER_UI_ICON_PATHS.hazard,
+    iconTitle: 'Hazard'
+  })) : [];
+  const momentumValue = Number.isSafeInteger(dashboard?.momentum) ? dashboard.momentum : 0;
+  return { momentum: { value: momentumValue, overlayText: `+${momentumValue}`, capacity: 3, iconPath: EVENT_MANAGER_UI_ICON_PATHS.momentum, iconTitle: "Momentum", iconSize: 64 }, hazards: hazards.map((hazard) => ({ ...hazard, overlayText: String(hazards.length), iconSize: 64 })), hazardCount: hazards.length, hazardOverlayText: String(hazards.length), hazardIconPath: EVENT_MANAGER_UI_ICON_PATHS.hazard, hazardIconTitle: "Hazard", hazardIconSize: 64, pressureRows, hasHazards: hazards.length > 0 };
+}
+function focusPoolForStation(planning, stationId, operator) {
+  const operatorId = operator?.uuid ?? operator?.id ?? null;
+  const pool = (planning?.focusPools ?? []).find((entry) => entry?.stationId === stationId && [entry?.operatorId, entry?.operatorUuid].includes(operatorId));
+  if (pool) return pool;
+  const stationPools = (planning?.focusPools ?? []).filter((entry) => entry?.stationId === stationId);
+  return stationPools.length === 1 ? stationPools[0] : null;
+}
+
+export function buildPlanningStations(planning, locked = false, expandedStationId = null, actorList = []) {
   const assignments = new Map((planning?.stationAssignments ?? []).map((entry) => [entry.stationId, entry]));
+  const actorsByIdentity = new Map((Array.isArray(actorList) ? actorList : []).flatMap((actor) => [[actor?.id, actor], [actor?.uuid, actor]].filter(([key]) => typeof key === "string" && key.length > 0)));
   return (planning?.stations ?? []).map((station) => {
     const selection = planning.selections?.[station.stationId] ?? null;
     const actionOptions = (station.actions ?? []).map((action) => ({
@@ -72,7 +230,10 @@ export function buildPlanningStations(planning, locked = false, expandedStationI
       selected: selection?.actionId === action.actionId,
       riskBidCapable: (action.riskBidOptions ?? []).length > 0,
       riskBidAvailableResource: (action.riskBidOptions ?? []).length > 0 ? resourcePresentation("riskBid") : null,
-      approaches: (action.approaches ?? []).map((approach) => ({ ...approach, selected: selection?.approachId === approach.approachId })),
+      approaches: (action.approaches ?? []).map((approach) => {
+        const modifier = readVoyageActorStatisticModifier(actorsByIdentity.get(assignments.get(station.stationId)?.operator?.uuid ?? assignments.get(station.stationId)?.operator?.id), approach.statisticSlugOrAbilityId);
+        return { ...approach, selected: selection?.approachId === approach.approachId, modifier, modifierLabel: modifier === null ? "Modifier unavailable" : `${modifier >= 0 ? "+" : ""}${modifier}` };
+      }),
       riskBidOptions: (action.riskBidOptions ?? []).map((option) => ({
         ...option,
         selected: planning.riskBids?.[station.stationId]?.riskBidId === option.riskBidId,
@@ -91,6 +252,11 @@ export function buildPlanningStations(planning, locked = false, expandedStationI
       option.criticalFailureText = option.presentation?.outcome?.criticalFailure ?? "Critical Failure: no Risk Bid payoff; no additional Risk Bid penalty.";
     }
     const selectedAction = actionOptions.find((action) => action.selected) ?? null;
+    const assignment = assignments.get(station.stationId);
+    const operator = assignment?.operator ?? null;
+    const selectedApproach = selectedAction?.approaches?.find((approach) => approach.selected) ?? null;
+    const focusPool = focusPoolForStation(planning, station.stationId, operator);
+    const focusAbilities = (planning?.focusAbilities ?? []).filter((ability) => ability?.stationId === station.stationId).map((ability) => ({ ...ability, resource: resourcePresentation("focus") }));
     const selectedRiskBid = selectedAction?.riskBidOptions.find((option) => option.selected) ?? null;
     const hasAction = Boolean(selection?.actionId);
     const hasApproach = Boolean(selection?.approachId);
@@ -99,7 +265,7 @@ export function buildPlanningStations(planning, locked = false, expandedStationI
       stationId: station.stationId,
       ...stationPresentation(station.stationId),
       label: stationPresentation(station.stationId).stationDisplayName,
-      operator: assignments.get(station.stationId)?.operator ?? null,
+      operator,
       actions: actionOptions,
       selectedActionId: selection?.actionId ?? "",
       selectedApproachId: selection?.approachId ?? "",
@@ -109,6 +275,12 @@ export function buildPlanningStations(planning, locked = false, expandedStationI
       selectedActionName: selectedAction?.displayName ?? selectedAction?.actionId ?? "No action",
       selectedActionDescription: selectedAction?.displayDescription ?? "",
       selectedActionBaseDc: selectedAction?.baseDc ?? null,
+      selectedApproachModifier: selectedApproach?.modifier ?? null,
+      selectedApproachModifierLabel: selectedApproach?.modifier === null || selectedApproach?.modifier === undefined ? "Modifier unavailable" : `${selectedApproach.modifier >= 0 ? "+" : ""}${selectedApproach.modifier}`,
+      focusCurrent: Number.isSafeInteger(focusPool?.current) ? focusPool.current : null,
+      focusCapacity: Number.isSafeInteger(focusPool?.capacity) ? focusPool.capacity : null,
+      focusLabel: Number.isSafeInteger(focusPool?.current) && Number.isSafeInteger(focusPool?.capacity) ? `Focus ${focusPool.current} / ${focusPool.capacity}` : "Focus unavailable",
+      focusAbilities,
       selectedActionHasRiskBids: Boolean(selectedAction?.riskBidOptions?.length),
       selectedRiskBidAvailableResource: selectedAction?.riskBidOptions?.length ? resourcePresentation("riskBid") : null,
       selectedRiskBidResource: selectedRiskBid?.resource ?? null,
@@ -145,7 +317,7 @@ export function buildVoyageRiskBidDependencies(planningStations, order) {
       targetStationIds: [...new Set(targets)],
       targetStations: [...new Set(targets)].map((targetStationId) => ({ stationId: targetStationId, ...stationPresentation(targetStationId) })),
       sourceBeforeTarget: [...new Set(targets)].every((targetStationId) => orderIndex.has(station.stationId) && orderIndex.has(targetStationId) && orderIndex.get(station.stationId) < orderIndex.get(targetStationId)),
-      status: [...new Set(targets)].every((targetStationId) => orderIndex.has(station.stationId) && orderIndex.has(targetStationId) && orderIndex.get(station.stationId) < orderIndex.get(targetStationId)) ? "ORDER VALID — bonus can activate" : "TARGET RESOLVES BEFORE SOURCE — payoff cannot affect that target"
+      status: [...new Set(targets)].every((targetStationId) => orderIndex.has(station.stationId) && orderIndex.has(targetStationId) && orderIndex.get(station.stationId) < orderIndex.get(targetStationId)) ? "ORDER VALID â€” bonus can activate" : "TARGET RESOLVES BEFORE SOURCE â€” payoff cannot affect that target"
     }];
   });
 }
@@ -190,10 +362,24 @@ export function reorderVoyagePlanningOrder(order, draggedStationId, targetStatio
   return source;
 }
 
-export const EVENT_MANAGER_TAB_IDS = Object.freeze(["overview", "crew-plan", "resolution-order", "plan-review", "resolution"]);
+export function buildVoyageStationSelectionPayload(root, element) {
+  const stationId = element?.dataset?.stationId;
+  if (typeof stationId !== "string" || stationId.length === 0) return null;
+  const options = [...(root?.querySelectorAll?.(`[data-m12-action-option="${stationId}"]`) ?? [])];
+  const selectedAction = options.find((entry) => entry?.getAttribute?.("aria-selected") === "true" || entry?.classList?.contains?.("is-selected"));
+  const actionId = selectedAction?.dataset?.actionId ?? "";
+  const defaultApproachId = selectedAction?.dataset?.approachId ?? "";
+  const actionChanged = Boolean(element?.dataset?.m12Action);
+  const approachControl = root?.querySelector?.(`[data-m12-approach="${stationId}"]`);
+  const riskBidControl = root?.querySelector?.(`[data-m12-risk-bid="${stationId}"]`);
+  const approachId = actionChanged ? defaultApproachId : (approachControl?.value || defaultApproachId);
+  const riskBidId = actionChanged ? null : (riskBidControl?.value || null);
+  return { stationId, actionId, approachId, riskBidId };
+}
+export const EVENT_MANAGER_TAB_IDS = Object.freeze(["event", "plan", "resolve"]);
 
 export function normalizeEventManagerTab(tab) {
-  return typeof tab === "string" && EVENT_MANAGER_TAB_IDS.includes(tab) ? tab : "overview";
+  return typeof tab === "string" && EVENT_MANAGER_TAB_IDS.includes(tab) ? tab : "event";
 }
 
 export function buildEventManagerResolutionPresentation({ planLocked = false, resolutionPhase = null } = {}) {
@@ -207,6 +393,16 @@ export function buildEventManagerResolutionPresentation({ planLocked = false, re
   };
 }
 
+export function buildEventManagerRoundCloseoutPresentation({ resolution = null, isGM = false, activeGmUserId = null, userId = null } = {}) {
+  const authorized = isGM === true && typeof userId === "string" && userId.length > 0 && userId === activeGmUserId;
+  const ready = resolution?.roundCloseoutReady === true && resolution?.completed === true && typeof resolution?.roundId === "string" && resolution.roundId.length > 0;
+  return { roundCloseoutReady: authorized && ready };
+}
+
+export function buildEventManagerRoundCloseoutCommand({ requestId = null, sessionId = null, expectedRevision = null, authorityEpoch = null, roundId = null } = {}) {
+  if (![requestId, sessionId, roundId].every((value) => typeof value === "string" && value.length > 0) || !Number.isSafeInteger(expectedRevision) || !Number.isSafeInteger(authorityEpoch)) return null;
+  return { kind: "voyage.m11-command", requestId, sessionId, expectedRevision, authorityEpoch, commandKind: "round-closeout", payload: { roundId } };
+}
 export function buildVoyagePlanReview(planning, planningStations, order) {
   const rows = (Array.isArray(order) ? order : []).map((stationId, index) => {
     const station = (Array.isArray(planningStations) ? planningStations : []).find((entry) => entry.stationId === stationId);
@@ -220,6 +416,8 @@ export function buildVoyagePlanReview(planning, planningStations, order) {
       operatorName: station?.operator?.name ?? "Unassigned",
       actionName: action?.displayName ?? action?.name ?? action?.label ?? action?.actionId ?? "No action",
       approachName: station?.approaches?.find((entry) => entry.selected)?.name ?? (station?.selectedApproachId || "No approach"),
+          approachModifierLabel: station?.selectedApproachModifierLabel ?? "Modifier unavailable",
+          focusLabel: station?.focusLabel ?? "Focus unavailable",
       riskBidName: riskBid ? (riskBid.displayName ?? `+${riskBid.dcAdjustment}`) : "No Bid",
       riskBidFinalDc: riskBid?.finalDc ?? null,
       selectedRiskBidResource: riskBid?.resource ?? null,
@@ -238,6 +436,56 @@ export function buildVoyagePlanReview(planning, planningStations, order) {
   };
 }
 
+export function buildVoyagePlanSummary(planning, planningStations = [], proposedOrder = [], riskBidDependencies = [], planReady = false) {
+  const stations = Array.isArray(planningStations) ? planningStations : [];
+  const order = Array.isArray(proposedOrder) ? proposedOrder : [];
+  const readyStations = stations.filter((station) => station?.ready === true).length;
+  const blockers = stations.filter((station) => station?.ready !== true).map((station) => `${station?.label ?? station?.stationDisplayName ?? station?.stationId ?? "Station"} â€” ${station?.statusMessage ?? "Action required."}`);
+  if (stations.length > 0 && order.length !== stations.length) blockers.push("Station order incomplete");
+  const stationById = new Map(stations.map((station) => [station?.stationId, station]));
+  const orderPreview = order.map((stationId, index) => {
+    const station = stationById.get(stationId);
+    return {
+      orderNumber: index + 1,
+      stationDisplayName: station?.stationDisplayName ?? station?.label ?? stationPresentation(stationId).stationDisplayName,
+      actionName: station?.selectedActionName ?? station?.compactSummary?.actionName ?? "No action"
+    };
+  });
+  return {
+    readinessLabel: planReady === true ? "READY FOR PLAN LOCK" : "PLAN INCOMPLETE",
+    planReady: planReady === true,
+    stationsReady: readyStations,
+    stationTotal: stations.length,
+    selectedRiskBids: stations.filter((station) => typeof station?.selectedRiskBidId === "string" && station.selectedRiskBidId.length > 0).length,
+    riskBidDependencies: Array.isArray(riskBidDependencies) ? riskBidDependencies.length : 0,
+    blockers,
+    orderPreview,
+    hasBlockers: blockers.length > 0,
+    hasOrderPreview: orderPreview.length > 0
+  };
+}
+export class ArcflightHazardInspection extends HandlebarsApplicationMixin(ApplicationV2) {
+  #hazards = [];
+
+  static DEFAULT_OPTIONS = {
+    id: "arcflight-hazard-inspection",
+    classes: ["arcflight", "hazard-inspection"],
+    tag: "section",
+    position: { width: 560, height: 460 },
+    window: { title: "Active Hazards", resizable: true }
+  };
+
+  static PARTS = { body: { template: arcflightTemplatePath("voyage/hazard-inspection.hbs") } };
+
+  constructor(hazards = [], options = {}) {
+    super(options);
+    this.#hazards = Array.isArray(hazards) ? hazards.map((hazard) => ({ ...hazard })) : [];
+  }
+
+  async _prepareContext() {
+    return { hazards: this.#hazards.map((hazard) => ({ ...hazard })), hasHazards: this.#hazards.length > 0 };
+  }
+}
 export class ArcflightEventManager extends HandlebarsApplicationMixin(ApplicationV2) {
   #expectedRevision = 0;
   #authorityEpoch = 0;
@@ -246,16 +494,18 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
   #operatorSelections = Object.fromEntries(M12_STATION_IDS.map((stationId) => [stationId, null]));
   #shipId = "";
   #dragStationId = null;
-  #activeTab = "overview";
+  #activeTab = "event";
   #tabScrollPositions = Object.create(null);
   #pendingViewState = null;
   #expandedStationId = null;
+  #roundCloseoutPending = false;
+  #statusRail = null;
 
   static DEFAULT_OPTIONS = {
     id: "arcflight-event-manager",
     classes: ["arcflight", "event-manager"],
     tag: "section",
-    position: { width: 720, height: 680 },
+    position: { width: 1280, height: 720 },
     window: { resizable: true }
   };
 
@@ -283,24 +533,56 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     const planningProjection = planning?.ok ? planning.projection : null;
     const planLocked = planningProjection?.sessionState === "plan-locked" || planningProjection?.sessionState === "station-resolution";
     const planUnlockAvailable = Boolean(this.#mode === "live" && planLocked && planningProjection?.sessionState === "plan-locked" && game.user?.isGM === true && activeGmId() === game.user?.id);
-    const planningStations = planningProjection ? buildPlanningStations(planningProjection, planLocked, this.#expandedStationId) : [];
+    const currentRoundNumber = resolution?.projection?.roundNumber ?? planningProjection?.roundNumber ?? dashboard?.roundNumber;
+    const currentRound = M12_EVENT_PRESENTATION.rounds?.find((round) => round.roundNumber === currentRoundNumber) ?? null;
+    const planningStationsRaw = planningProjection ? buildPlanningStations(planningProjection, planLocked, this.#expandedStationId, allActors) : [];
+    const selectedPlanStationId = this.#expandedStationId && planningStationsRaw.some((station) => station.stationId === this.#expandedStationId) ? this.#expandedStationId : planningStationsRaw.find((station) => station.ready)?.stationId ?? planningStationsRaw[0]?.stationId ?? null;
+    const planningStations = planningStationsRaw.map((station) => ({ ...station, active: station.stationId === selectedPlanStationId }));
     const proposedOrder = planningProjection ? buildVoyagePlanningOrder(planningProjection) : [];
     const planReady = isVoyagePlanReady(planningProjection, planningStations, proposedOrder);
     const planReview = buildVoyagePlanReview(planningProjection, planningStations, proposedOrder);
     const riskBidDependencies = buildVoyageRiskBidDependencies(planningStations, proposedOrder);
-    const resolutionProjection = resolution?.ok ? {
+    const planSummary = buildVoyagePlanSummary(planningProjection, planningStations, proposedOrder, riskBidDependencies, planReady);
+    const authoredStations = new Map((currentRound?.availableStations ?? []).map((entry) => [entry.stationId, entry]));
+    let resolutionProjection = resolution?.ok ? {
       ...resolution.projection,
-      stations: (resolution.projection.stations ?? []).map((station) => ({ ...station, ...stationPresentation(station.stationId), operator: station.operator ? { ...station.operator } : null, riskBidEffects: (station.riskBidEffects ?? []).map((effect) => ({
-        ...effect,
-        sourceStation: stationPresentation(effect.sourceStationId),
-        targetStation: stationPresentation(effect.targetStationId),
-        effectText: riskBidEffectText({ effectKind: effect.effectKind, value: effect.effectValue }),
-        consumptionLabel: effect.consumptionTiming === "on-target-resolution" ? "Consumed when target resolves" : "Consumed at this station's resolution"
-      })) })),
+      stations: (resolution.projection.stations ?? []).map((station) => {
+        const authoredStation = authoredStations.get(station.stationId);
+        const authoredAction = authoredStation?.actions?.find((action) => action.actionId === station.actionId);
+        const authoredApproach = authoredAction?.approaches?.find((approach) => approach.approachId === station.approachId);
+        const operator = station.operator ? { ...station.operator } : null;
+        const actor = allActors.find((candidate) => [candidate?.id, candidate?.uuid].includes(operator?.uuid ?? operator?.id));
+        const focusPool = (resolution.projection.focusPools ?? planningProjection?.focusPools ?? []).find((pool) => pool?.stationId === station.stationId && [pool?.operatorId, pool?.operatorUuid].includes(operator?.uuid ?? operator?.id)) ?? null;
+        return {
+          ...station,
+          ...stationPresentation(station.stationId),
+          operator,
+          actionName: authoredAction?.name ?? station.actionId ?? "Selected action",
+          actionDescription: authoredAction?.description ?? "",
+          approachName: authoredApproach?.name ?? station.approachId ?? "Selected approach",
+          statisticLabel: formatVoyageStatisticLabel(station.statisticSlugOrAbilityId ?? authoredApproach?.statisticSlugOrAbilityId),
+          skillModifier: readVoyageActorStatisticModifier(actor, station.statisticSlugOrAbilityId ?? authoredApproach?.statisticSlugOrAbilityId),
+          skillModifierLabel: (() => { const modifier = readVoyageActorStatisticModifier(actor, station.statisticSlugOrAbilityId ?? authoredApproach?.statisticSlugOrAbilityId); return modifier === null ? "Modifier unavailable" : `${modifier >= 0 ? "+" : ""}${modifier}`; })(),
+          focusLabel: Number.isSafeInteger(focusPool?.current) && Number.isSafeInteger(focusPool?.capacity) ? `Focus ${focusPool.current} / ${focusPool.capacity}` : "Focus unavailable",
+          riskBidEffects: (station.riskBidEffects ?? []).map((effect) => ({
+            ...effect,
+            sourceStation: stationPresentation(effect.sourceStationId),
+            targetStation: stationPresentation(effect.targetStationId),
+            effectText: riskBidEffectText({ effectKind: effect.effectKind, value: effect.effectValue }),
+            consumptionLabel: effect.consumptionTiming === "on-target-resolution" ? "Consumed when target resolves" : "Consumed at this station's resolution"
+          }))
+        };
+      }),
       reactionWindowPending: (resolution.projection.reactionWindowPending ?? []).map((entry) => ({ ...entry, focusResource: resourcePresentation("focus"), focusAbility: entry.focusAbility ? { ...entry.focusAbility, sourceStation: stationPresentation(entry.focusAbility.sourceStationId), targetStation: stationPresentation(entry.focusAbility.targetStationId) } : null }))
     } : null;
     const resolutionPresentation = buildEventManagerResolutionPresentation({ planLocked, resolutionPhase: resolutionProjection?.phase ?? null });
-    const currentRound = M12_EVENT_PRESENTATION.rounds?.find((round) => round.roundNumber === (planningProjection?.roundNumber ?? dashboard?.roundNumber)) ?? null;
+    const roundCloseoutPresentation = buildEventManagerRoundCloseoutPresentation({ resolution: resolutionProjection, isGM: game.user?.isGM === true, activeGmUserId: activeGmId(), userId: game.user?.id ?? null });
+    const progressSegments = buildEventManagerProgressSegments({ sessionState: dashboard?.sessionState ?? planningProjection?.sessionState, lifecycleState: dashboard?.lifecycleState, phase: resolutionProjection?.phase ?? planningProjection?.phase ?? dashboard?.phase, completed: resolutionProjection?.completed === true });
+    const statusRail = buildEventManagerStatusRail(dashboard);
+    this.#statusRail = statusRail;
+    const resolutionStations = resolutionProjection?.stations ?? [];
+    const currentResolutionIndex = resolutionStations.findIndex((station) => station.current === true);
+    if (resolutionProjection) resolutionProjection = { ...resolutionProjection, stations: resolutionStations.map((station, index) => ({ ...station, resolutionBucket: station.result ? "previous" : station.current ? "current" : (currentResolutionIndex >= 0 && index > currentResolutionIndex ? "upcoming" : "previous") })) };
     return {
       mode: this.#mode,
       event: M12_EVENT_PRESENTATION,
@@ -328,31 +610,46 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
           ...stationPresentation(stationId),
           orderNumber: index + 1,
           stationLabel: station?.label ?? stationId,
+          stationThemeClass: station?.stationThemeClass ?? stationPresentation(stationId).stationThemeClass,
           stationIconPath: station?.stationIconPath ?? stationPresentation(stationId).stationIconPath,
-          stationOrderIconSize: 128,
+          stationOrderIconSize: 56,
+          focusLabel: station?.focusLabel ?? "Focus unavailable",
+          approachModifierLabel: station?.selectedApproachModifierLabel ?? "Modifier unavailable",
           stationOrderIconTitle: station?.stationIconTitle ?? stationPresentation(stationId).stationIconTitle,
           operatorName: station?.operator?.name ?? "Unassigned",
           actionName: action?.displayName ?? action?.name ?? action?.label ?? action?.actionId ?? "No action",
           approachName: station?.approaches?.find((entry) => entry.selected)?.name ?? (station?.selectedApproachId || "No approach"),
+          approachModifierLabel: station?.selectedApproachModifierLabel ?? "Modifier unavailable",
+          focusLabel: station?.focusLabel ?? "Focus unavailable",
           riskBidName: riskBid ? (riskBid.displayName ?? `+${riskBid.dcAdjustment}`) : "No Bid",
           riskBidAdjustment: riskBid?.dcAdjustment ?? null,
           riskBidFinalDc: riskBid?.finalDc ?? null,
           selectedRiskBidResource: riskBid ? resourcePresentation("riskBid", riskBid.dcAdjustment) : null,
           riskBidAvailableResource: !riskBid && station?.actions?.find((entry) => entry.actionId === station.selectedActionId)?.riskBidCapable ? resourcePresentation("riskBid") : null,
+           orderIconPath: EVENT_MANAGER_UI_ICON_PATHS.order,
+           orderLinkIconPath: EVENT_MANAGER_UI_ICON_PATHS.orderLink,
           canMoveUp: index > 0,
           canMoveDown: index < proposedOrder.length - 1
         };
       }) : [],
       planReviewRows: planReview.rows,
+      planSummary,
       incompleteStations: planReview.incompleteStations,
       activeTab: this.#activeTab,
+      activeGmUserId: activeGmId(),
+      activeGmDisplayName: activeGmDisplayName(),
+      progressSegments,
+      currentRoundLabel: currentRound ? `Round ${currentRound.roundNumber} â€” ${currentRound.title}` : (currentRoundNumber ? `Round ${currentRoundNumber}` : ""),
       tabIds: EVENT_MANAGER_TAB_IDS,
+      selectedPlanStationId,
+      statusRail,
       planReady,
       planLocked,
       planUnlockAvailable,
       abandoned: planningProjection?.sessionState === "aborted",
       abandonEnabled: Boolean(dashboard && !["completed", "aborted"].includes(dashboard.sessionState)),
       ...resolutionPresentation,
+      ...roundCloseoutPresentation,
       resolutionReadyToStart: resolutionPresentation.readyToStart,
       resolutionRollAvailable: resolutionPresentation.rollAvailable
     };
@@ -381,10 +678,10 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
   _onRender(context, options) {
     super._onRender(context, options);
     this.element.querySelectorAll("[data-m12-tab]").forEach((tab) => tab.addEventListener("click", () => this.#navigateToTab(tab.dataset.tabId)));
-    this.element.querySelectorAll("[data-m12-ship]").forEach((input) => input.addEventListener("change", (event) => { this.#shipId = event.currentTarget.value; this.render(); }));
-    this.element.querySelectorAll("[data-m12-operator]").forEach((input) => input.addEventListener("change", (event) => { this.#operatorSelections[event.currentTarget.dataset.m12Operator] = event.currentTarget.value || null; this.render(); }));
+    this.element.querySelectorAll("[data-m12-ship]").forEach((input) => input.addEventListener("change", (event) => { this.#captureViewState(); this.#shipId = event.currentTarget.value; this.render(); }));
+    this.element.querySelectorAll("[data-m12-operator]").forEach((input) => input.addEventListener("change", (event) => { this.#captureViewState(); this.#operatorSelections[event.currentTarget.dataset.m12Operator] = event.currentTarget.value || null; this.render(); }));
     this.element.querySelector("[data-m12-launch]")?.addEventListener("click", () => this.#launch());
-    this.element.querySelector("[data-m12-refresh]")?.addEventListener("click", () => this.render());
+    this.element.querySelector("[data-m12-refresh]")?.addEventListener("click", () => { this.#pendingViewState = this.#captureViewState(); this.render(); });
     this.element.querySelector("[data-m12-new-session]")?.addEventListener("click", () => { this.#mode = "setup"; this.#sessionId = null; this.render(); });
     this.element.querySelectorAll("[data-m12-action-picker]").forEach((picker) => {
       picker.addEventListener("click", () => this.#toggleActionPicker(picker));
@@ -399,7 +696,9 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
       const command = buildVoyageStationSelectionClearCommand(event.currentTarget.dataset.stationId);
       if (command) this.#dispatchPlanning(command.commandKind, command.payload);
     }));
+    this.element.querySelectorAll("[data-m12-plan-station]").forEach((button) => button.addEventListener("click", (event) => { this.#expandedStationId = event.currentTarget.dataset.stationId; this.#navigateToTab("plan"); this.render(); }));
     this.element.querySelectorAll("[data-m12-edit-station]").forEach((button) => button.addEventListener("click", (event) => {
+      this.#pendingViewState = this.#captureViewState();
       this.#expandedStationId = event.currentTarget.dataset.stationId;
       this.render();
     }));
@@ -433,8 +732,9 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     this.element.querySelectorAll("[data-m12-order-move]").forEach((button) => button.addEventListener("click", (event) => this.#moveOrder(event.currentTarget)));
     this.element.querySelector("[data-m12-plan-lock]")?.addEventListener("click", () => this.#dispatchPlanning("plan-lock", { phaseStartSnapshotId: randomId("m12-plan-lock") }));
     this.element.querySelector("[data-m12-plan-unlock]")?.addEventListener("click", () => this.#unlockPlan());
-    this.element.querySelector("[data-m12-go-resolution]")?.addEventListener("click", () => this.#navigateToTab("resolution"));
+    this.element.querySelector("[data-m12-go-resolution]")?.addEventListener("click", () => this.#navigateToTab("resolve"));
     this.element.querySelector("[data-m12-resolution-start]")?.addEventListener("click", () => this.#beginResolution());
+    this.element.querySelector("[data-m12-round-closeout]")?.addEventListener("click", () => this.#closeRound());
     this.element.querySelector("[data-m12-roll-check]")?.addEventListener("click", () => this.#resolveStation());
     this.element.querySelectorAll("[data-m12-focus-pass]").forEach((button) => button.addEventListener("click", () => this.#focusReaction("focus-reaction-pass", button.dataset.reactionId)));
     this.element.querySelectorAll("[data-m12-focus-use]").forEach((button) => button.addEventListener("click", () => this.#focusReaction("focus-reaction-use", button.dataset.reactionId)));
@@ -446,28 +746,15 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
   #navigateToTab(tabId) {
     const viewState = this.#captureViewState() ?? { scrollPositions: { ...this.#tabScrollPositions } };
     this.#activeTab = normalizeEventManagerTab(tabId);
-    this.#pendingViewState = { ...viewState, activeTab: this.#activeTab, stationId: null, controlId: null, actionId: null };
+    this.#pendingViewState = { ...viewState, activeTab: this.#activeTab };
     this.#applyTabState();
-    this.#restoreViewState();
   }
 
   #captureViewState() {
-    const root = this.element;
-    if (!root) return this.#pendingViewState;
-    const activeTab = normalizeEventManagerTab(this.#activeTab);
-    const panels = [...root.querySelectorAll("[data-m12-tab-content]")];
-    const scrollPositions = { ...this.#tabScrollPositions };
-    for (const panel of panels) {
-      const tabId = normalizeEventManagerTab(panel.dataset.tabId);
-      if (panel.dataset.tabId === tabId && Number.isFinite(panel.scrollTop)) scrollPositions[tabId] = panel.scrollTop;
-    }
-    this.#tabScrollPositions = scrollPositions;
-    const activeElement = root.ownerDocument?.activeElement;
-    const station = activeElement?.closest?.("[data-station-id]");
-    const control = activeElement?.dataset?.controlId ?? activeElement?.dataset?.m12ControlId ?? null;
-    const actionId = activeElement?.dataset?.actionId ?? null;
-    this.#pendingViewState = { activeTab, scrollPositions, stationId: station?.dataset?.stationId ?? null, controlId: control, actionId };
-    return this.#pendingViewState;
+    const state = captureEventManagerViewState(this.element, this.#activeTab, this.#tabScrollPositions);
+    this.#tabScrollPositions = state.scrollPositions;
+    this.#pendingViewState = state;
+    return state;
   }
 
   #applyTabState() {
@@ -489,22 +776,10 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
   #restoreViewState() {
     if (!this.element) return;
     const state = this.#pendingViewState;
-    const activeTab = normalizeEventManagerTab(state?.activeTab ?? this.#activeTab);
-    this.#activeTab = activeTab;
-    const panel = [...this.element.querySelectorAll("[data-m12-tab-content]")].find((entry) => entry.dataset.tabId === activeTab);
-    const scrollTop = state?.scrollPositions?.[activeTab] ?? this.#tabScrollPositions[activeTab];
-    if (panel && Number.isFinite(scrollTop)) panel.scrollTop = scrollTop;
-    if (state?.stationId) {
-      const escape = (value) => globalThis.CSS?.escape?.(value) ?? String(value).replace(/(["\\])/g, "\\$1");
-      const station = panel?.querySelector(`[data-station-id="${escape(state.stationId)}"]`) ?? this.element.querySelector(`[data-station-id="${escape(state.stationId)}"]`);
-      station?.scrollIntoView?.({ block: "nearest" });
-      const selector = state.controlId ? `[data-control-id="${escape(state.controlId)}"]` : state.actionId ? `[data-action-id="${escape(state.actionId)}"]` : null;
-      const target = selector ? station?.querySelector(selector) : null;
-      target?.focus?.({ preventScroll: true });
-    }
+    this.#activeTab = restoreEventManagerViewState(this.element, state, this.#activeTab);
+    if (state?.scrollPositions) this.#tabScrollPositions = { ...state.scrollPositions };
     this.#pendingViewState = null;
   }
-
   #actionPickerMenu(picker) {
     const menuId = picker?.getAttribute?.("aria-controls");
     return menuId ? this.element.querySelector(`#${menuId}`) : null;
@@ -561,17 +836,8 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
   }
 
   #selection(element) {
-    const stationId = element.dataset.stationId;
-    const actionId = this.element.querySelector(`[data-m12-action-picker][data-station-id="${stationId}"]`)?.dataset.selectedActionId ?? "";
-    const action = [...this.element.querySelectorAll(`[data-m12-action-option="${stationId}"]`)].find((entry) => entry.dataset.actionId === actionId);
-    const actionChanged = Boolean(element.dataset.m12Action);
-    const approachId = actionChanged
-      ? action?.dataset.approachId || ""
-      : this.element.querySelector(`[data-m12-approach="${stationId}"]`)?.value || action?.dataset.approachId || "";
-    const riskBidId = actionChanged
-      ? null
-      : this.element.querySelector(`[data-m12-risk-bid="${stationId}"]`)?.value || null;
-    this.#dispatchPlanning("station-selection", { stationId, actionId, approachId, riskBidId });
+    const payload = buildVoyageStationSelectionPayload(this.element, element);
+    if (payload) this.#dispatchPlanning("station-selection", payload);
   }
 
   #dropOrder(event) {
@@ -679,12 +945,13 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
   }
 
   async #focusReaction(commandKind, reactionId = null) {
+    const viewState = this.#captureViewState();
     reactionId ??= this.element.querySelector("[data-m12-focus-use], [data-m12-focus-pass]")?.dataset?.reactionId;
     if (!reactionId) return null;
     const result = await game.arcflight?.dispatchVoyageEventSessionCommand?.({ kind: "voyage.m11-command", requestId: randomId("m12-focus"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision, authorityEpoch: this.#authorityEpoch, commandKind, payload: { reactionId } });
     if (!result?.ok) ui.notifications?.error?.(result?.errors?.[0]?.message ?? "Focus reaction was rejected.");
     const reread = reloadVoyageEventSession(this.#sessionId, eventContext());
-    if (reread.ok) { this.#expectedRevision = reread.revision; this.#authorityEpoch = reread.authorityEpoch; this.render(); }
+    if (reread.ok) { this.#expectedRevision = reread.revision; this.#authorityEpoch = reread.authorityEpoch; this.#pendingViewState = viewState; this.render(); }
     return result;
   }
 
@@ -714,20 +981,62 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     return result;
   }
 
+  async #closeRound() {
+    if (this.#roundCloseoutPending || this.#mode !== "live" || !this.#sessionId || game.user?.isGM !== true || activeGmId() !== game.user.id) return null;
+    const button = this.element.querySelector("[data-m12-round-closeout]");
+    const roundId = button?.dataset?.roundId ?? null;
+    const command = buildEventManagerRoundCloseoutCommand({ requestId: randomId("m12-round-closeout"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision, authorityEpoch: this.#authorityEpoch, roundId });
+    if (!command) return ui.notifications?.error?.("Round closeout is not ready.");
+    const dispatch = game.arcflight?.dispatchVoyageEventSessionCommand;
+    if (typeof dispatch !== "function") return ui.notifications?.error?.("Round closeout transport is unavailable.");
+    const viewState = this.#captureViewState();
+    this.#roundCloseoutPending = true;
+    try {
+      const result = await dispatch(command);
+      const reread = this.#sessionId ? reloadVoyageEventSession(this.#sessionId, eventContext()) : null;
+      if (reread?.ok) {
+        this.#expectedRevision = reread.revision;
+        this.#authorityEpoch = reread.authorityEpoch;
+      }
+      if (!result?.ok) {
+        ui.notifications?.error?.(result?.errors?.[0]?.message ?? "Round closeout was rejected.");
+        this.#pendingViewState = viewState;
+        this.render();
+        return result;
+      }
+      if (!reread?.ok) {
+        ui.notifications?.error?.("Round closeout was persisted but could not be verified.");
+        this.#pendingViewState = viewState;
+        this.render();
+        return reread;
+      }
+      this.#pendingViewState = viewState;
+      this.render();
+      return result;
+    } finally {
+      this.#roundCloseoutPending = false;
+    }
+  }
   async #abandonEvent() {
     if (!globalThis.confirm?.("Abandon this Event Session? It will remain in history and allow a new event to be launched.")) return null;
+    const viewState = this.#captureViewState();
     const result = await game.arcflight?.abortVoyageEventSession?.({ kind: "voyage.m11-abort-session", requestId: randomId("m12-abandon"), sessionId: this.#sessionId, expectedRevision: this.#expectedRevision, authorityEpoch: this.#authorityEpoch, reason: "GM abandoned Event Session", confirmation: true });
     if (!result?.ok) {
       ui.notifications?.error?.(result?.errors?.[0]?.message ?? "The Event Session could not be abandoned.");
+      this.#pendingViewState = viewState;
+      this.render();
       return result;
     }
     const reread = reloadVoyageEventSession(this.#sessionId, eventContext());
     if (!reread.ok) {
       ui.notifications?.error?.("The Event Session was abandoned but could not be reread.");
+      this.#pendingViewState = viewState;
+      this.render();
       return reread;
     }
     this.#expectedRevision = reread.revision;
     this.#authorityEpoch = reread.authorityEpoch;
+    this.#pendingViewState = viewState;
     this.render();
     return result;
   }

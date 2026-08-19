@@ -1691,7 +1691,7 @@ test("no-roll actions survive the complete lock-to-Consequences pipeline without
   }
 });
 
-test("mixed multi-station pipeline preserves committed order, station-local bids, and three-bid maximum", () => {
+test("mixed multi-station pipeline preserves committed order and station-local bids", () => {
   const captain = checkAction("command", 0, "critical-success", "shared-normal");
   captain.approaches = [{ approachId: "diplomacy", statisticSlugOrAbilityId: "diplomacy" }];
   captain.riskBidOptions = [riskBidOption("captain-bid", 5, { criticalSuccess: ["shared-risk"] })];

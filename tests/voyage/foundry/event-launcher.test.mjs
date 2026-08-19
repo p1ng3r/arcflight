@@ -8,7 +8,7 @@ import { analyzeVoyageEventDefinitionRoundActionAuthoring } from "../../../scrip
 import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 
 globalThis.foundry ??= { applications: { api: { HandlebarsApplicationMixin: (base) => base, ApplicationV2: class {} } } };
-const { buildEventManagerResolutionPresentation, buildPlanningStations, buildVoyagePlanReview, buildVoyagePlanningOrder, buildVoyageRiskBidDependencies, buildVoyageStationSelectionClearCommand, isVoyagePlanReady, reorderVoyagePlanningOrder, EVENT_MANAGER_TAB_IDS, normalizeEventManagerTab } = await import("../../../scripts/voyage/apps/event-manager.js");
+const { buildEventManagerResolutionPresentation, buildEventManagerRoundCloseoutPresentation, buildEventManagerRoundCloseoutCommand, buildPlanningStations, buildVoyagePlanReview, buildVoyagePlanningOrder, buildVoyageRiskBidDependencies, buildVoyageStationSelectionClearCommand, buildEventManagerProgressSegments, buildEventManagerStatusRail, buildVoyagePlanSummary, readVoyageActorStatisticModifier, isVoyagePlanReady, reorderVoyagePlanningOrder, EVENT_MANAGER_TAB_IDS, normalizeEventManagerTab, captureEventManagerViewState, restoreEventManagerViewState, buildVoyageStationSelectionPayload } = await import("../../../scripts/voyage/apps/event-manager.js");
 const { VOYAGE_STATION_ICON_REGISTRY, stationPresentation } = await import("../../../scripts/voyage/apps/station-icons.js");
 const { VOYAGE_RESOURCE_ICON_REGISTRY, resourcePresentation } = await import("../../../scripts/voyage/apps/resource-icons.js");
 
@@ -433,10 +433,15 @@ test("M12 Task 2 drag order uses only the persisted participating station IDs", 
 });
 
 test("M12 Event Manager tabs have a deterministic default and navigation vocabulary", () => {
-  assert.deepEqual(EVENT_MANAGER_TAB_IDS, ["overview", "crew-plan", "resolution-order", "plan-review", "resolution"]);
-  assert.equal(normalizeEventManagerTab(undefined), "overview");
-  assert.equal(normalizeEventManagerTab("not-a-tab"), "overview");
-  assert.equal(normalizeEventManagerTab("crew-plan"), "crew-plan");
+  assert.deepEqual(EVENT_MANAGER_TAB_IDS, ["event", "plan", "resolve"]);
+  assert.equal(normalizeEventManagerTab(undefined), "event");
+  assert.equal(normalizeEventManagerTab("not-a-tab"), "event");
+  assert.equal(normalizeEventManagerTab("plan"), "plan");
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /data-tab-id="event"[^>]*>EVENT/);
+  assert.match(template, /data-tab-id="plan"[^>]*>PLAN/);
+  assert.match(template, /data-tab-id="resolve"[^>]*>RESOLVE/);
+  assert.doesNotMatch(template, /data-tab-id="(?:overview|crew-plan|resolution-order|plan-review|resolution)"/);
 });
 
 test("M12 Event Manager keeps Resolution after Plan Review and gates its controls on the canonical handoff", () => {
@@ -453,7 +458,7 @@ test("M12 Event Manager keeps Resolution after Plan Review and gates its control
   const resolving = buildEventManagerResolutionPresentation({ planLocked: true, resolutionPhase: "resolution" });
   assert.equal(resolving.readyToStart, false);
   assert.equal(resolving.rollAvailable, true);
-  assert.equal(EVENT_MANAGER_TAB_IDS.indexOf("resolution") > EVENT_MANAGER_TAB_IDS.indexOf("plan-review"), true);
+  assert.deepEqual(EVENT_MANAGER_TAB_IDS, ["event", "plan", "resolve"]);
 });
 
 test("M12 Resolution pre-lock guard uses the prepared model key", () => {
@@ -466,6 +471,34 @@ test("M12 Resolution pre-lock guard uses the prepared model key", () => {
   assert.doesNotMatch(template, /resolutionAwaitingPlanLock[\s\S]*ROLL CHECK/);
 });
 
+test("M12 Task 5 close-round presentation is canonical, GM-only, and dispatches the existing command", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const controller = readFileSync(new URL("../../../scripts/voyage/apps/event-manager.js", import.meta.url), "utf8");
+  const ready = buildEventManagerRoundCloseoutPresentation({ resolution: { completed: true, roundCloseoutReady: true, roundId: "m12-round-1" }, isGM: true, activeGmUserId: "gm-1", userId: "gm-1" });
+  assert.equal(ready.roundCloseoutReady, true);
+  assert.equal(buildEventManagerRoundCloseoutPresentation({ resolution: { completed: false, roundCloseoutReady: true }, isGM: true, activeGmUserId: "gm-1", userId: "gm-1" }).roundCloseoutReady, false);
+  assert.equal(buildEventManagerRoundCloseoutPresentation({ resolution: { completed: true, roundCloseoutReady: false }, isGM: true, activeGmUserId: "gm-1", userId: "gm-1" }).roundCloseoutReady, false);
+  assert.equal(buildEventManagerRoundCloseoutPresentation({ resolution: { completed: true, roundCloseoutReady: true, roundId: "m12-round-1" }, isGM: false, activeGmUserId: "gm-1", userId: "player-1" }).roundCloseoutReady, false);
+  assert.deepEqual(buildEventManagerRoundCloseoutCommand({ requestId: "close-1", sessionId: "session-1", expectedRevision: 26, authorityEpoch: 0, roundId: "m12-round-1" }), { kind: "voyage.m11-command", requestId: "close-1", sessionId: "session-1", expectedRevision: 26, authorityEpoch: 0, commandKind: "round-closeout", payload: { roundId: "m12-round-1" } });
+  assert.match(template, /data-m12-round-closeout/);
+  assert.match(controller, /data-m12-round-closeout.*#closeRound/);
+  assert.match(controller, /currentRoundNumber = resolution\?\.projection\?\.roundNumber \?\? planningProjection\?\.roundNumber/);
+  assert.match(template, /\{\{#if roundCloseoutReady\}\}[\s\S]*data-m12-round-closeout/);
+  assert.match(template, /CLOSE ROUND/);
+});
+test("M12 Task 5 rendered close-round button carries the canonical resolution round ID", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const buttonBlock = template.match(/\{\{#if roundCloseoutReady\}\}([\s\S]*?)\{\{\/if\}\}/)?.[1];
+  assert.ok(buttonBlock);
+  const render = (context) => context.roundCloseoutReady ? buttonBlock.replace("{{resolution.roundId}}", context.resolution.roundId) : "";
+  const roundOne = render({ roundCloseoutReady: true, resolution: { roundId: "m12-round-1" } });
+  const roundTwo = render({ roundCloseoutReady: true, resolution: { roundId: "m12-round-2" } });
+  assert.match(roundOne, /data-round-id="m12-round-1"/);
+  assert.match(roundTwo, /data-round-id="m12-round-2"/);
+  assert.equal(render({ roundCloseoutReady: false, resolution: { roundId: "m12-round-1" } }), "");
+  assert.doesNotMatch(roundOne, /data-round-id=""/);
+  assert.match(template, /data-round-id="\{\{resolution\.roundId\}\}"/);
+});
 test("M12 paused nonterminal session blocks a fresh launch but abandoned history does not", async () => {
   const fx = fixture();
   fx.context.applyVoyageEncounterAbortTransition = applyVoyageEncounterAbortTransition;
@@ -532,42 +565,41 @@ test("M12 Crew Plan keeps an unselected action blank and gates approach/risk unt
   ] }], selections: {}, riskBids: {} };
   const blank = buildPlanningStations(planning)[0];
   assert.equal(blank.selectedActionId, "");
-  assert.equal(blank.actions.some((action) => action.selected), false);
+  assert.equal(blank.actions.filter((action) => action.selected).length, 0);
   assert.deepEqual(blank.approaches, []);
   assert.deepEqual(blank.riskBidOptions, []);
   const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
-  assert.match(template, /data-m12-action-picker/);
-  assert.match(template, /role="listbox"/);
-  assert.match(template, /role="option"/);
-  assert.doesNotMatch(template, /data-m12-action-option="\{\{\.\.\/stationId\}\}"[^>]*<option/);
-  assert.match(template, /riskBidAvailableResource/);
-  assert.match(template, /Select an Action first/);
+  assert.match(template, /data-m12-action-option/);
+  assert.match(template, /class="action-card-grid"/);
+  assert.doesNotMatch(template, /<select[^>]*data-m12-action/);
+  assert.match(template, /selected-action-detail/);
+  assert.match(template, /selected-action-detail/);
+  assert.match(template, /data-m12-station-selection/);
   const selected = buildPlanningStations({ ...planning, selections: { captain: { actionId: "action-1", approachId: "", statisticSlugOrAbilityId: null } } })[0];
   assert.equal(selected.actions.find((action) => action.actionId === "action-1").selected, true);
   assert.equal(selected.approaches.length, 1);
   assert.deepEqual(selected.riskBidOptions.map((option) => option.dcAdjustment), [2]);
 });
 
-test("M12 Crew Plan action picker marks only authored Risk Bid actions and keeps the canonical selection path", () => {
+test("M12 Crew Plan action cards keep the canonical selection path", () => {
   const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
   const runtime = readFileSync(new URL("../../../scripts/voyage/apps/event-manager.js", import.meta.url), "utf8");
-  assert.match(template, /data-m12-action-picker/);
   assert.match(template, /data-m12-action-option/);
+  assert.match(template, /class="action-card-grid"/);
   assert.match(template, /data-action-id="\{\{actionId\}\}"/);
   assert.match(template, /data-approach-id="\{\{approaches\.\[0\]\.approachId\}\}"/);
   assert.match(template, /resourceIconPath/);
-  assert.match(template, /aria-label="\{\{riskBidAvailableResource\.resourceIconTitle\}\}"/);
+  assert.match(template, /aria-label="\{\{stationIconTitle\}\}"/);
   assert.match(runtime, /#selectActionOption/);
-  assert.match(runtime, /#actionPickerKeydown/);
   assert.match(runtime, /riskBidId: null/);
   assert.match(template, /selectedActionHasRiskBids/);
-  assert.match(template, /action-picker-readonly/);
+  assert.match(template, /data-m12-plan-station/);
 });
 
 test("M12 choice transparency names authored Risk Bid and Focus consequences", () => {
   const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
   assert.match(template, /displayName/);
-  assert.match(template, /adjustedDc/);
+  assert.match(template, /finalDc/);
   assert.match(template, /presentation\.intendedBenefit/);
   assert.match(template, /presentation\.outcome\.failure/);
   assert.match(template, /focusAbility\.name/);
@@ -577,6 +609,95 @@ test("M12 choice transparency names authored Risk Bid and Focus consequences", (
   assert.doesNotMatch(template, /<p>Eligible: \{\{operatorId\}\} \/ \{\{focusAbilityId\}\}<\/p>/);
 });
 
+test("M12 Event Manager progress tracker maps canonical states without inventing phases", () => {
+  const labels = ["SITUATION", "CREW PLAN", "ORDER", "PLAN REVIEW", "RESOLUTION", "ROUND OUTCOME"];
+  assert.deepEqual(buildEventManagerProgressSegments({ sessionState: "crew-planning", phase: "crew-planning" }).map((segment) => segment.label), labels);
+  assert.equal(buildEventManagerProgressSegments({ sessionState: "crew-planning", phase: "crew-planning" }).find((segment) => segment.active).id, "crew-plan");
+  assert.equal(buildEventManagerProgressSegments({ sessionState: "plan-locked", phase: "lock-readiness" }).find((segment) => segment.active).id, "plan-review");
+  assert.equal(buildEventManagerProgressSegments({ sessionState: "station-resolution", phase: "resolution" }).find((segment) => segment.active).id, "resolution");
+  assert.equal(buildEventManagerProgressSegments({ lifecycleState: "completed-success", completed: true }).find((segment) => segment.active).id, "round-outcome");
+});
+
+test("M12 command console exposes the persistent status rail for all station pressure systems", () => {
+  const rail = buildEventManagerStatusRail({ momentum: 2, pressureSystems: [
+    { pressureSystemId: "crew-morale", value: 1, capacity: 2 },
+    { pressureSystemId: "arkengine", value: 2, capacity: 2 },
+    { pressureSystemId: "levstone-array", value: 0, capacity: 2 },
+    { pressureSystemId: "solar-sail-rig", value: 1, capacity: 2 },
+    { pressureSystemId: "lifeveil", value: 1, capacity: 2 }
+  ], activeHazards: [{ hazardId: "hazard-1", name: "Arkengine Breach", timing: "Starts next round" }] });
+  assert.equal(rail.momentum.value, 2);
+  assert.match(rail.momentum.iconPath, /momentum_icon\.webp$/);
+  assert.equal(rail.pressureRows.length, 5);
+  assert.equal(rail.pressureRows.find((row) => row.stationId === "engineer").danger, true);
+  assert.equal(rail.hazards[0].name, "Arkengine Breach");
+  assert.match(rail.hazards[0].iconPath, /hazard_icon\.webp$/);
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /data-component="event-status-rail"/);
+  assert.match(template, /MOMENTUM/);
+  assert.match(template, /HAZARDS/);
+});
+
+test("M12 station identity and restrained themes stay canonical across presentation surfaces", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+  const themes = new Set();
+  for (const stationId of stationIds) {
+    const presentation = stationPresentation(stationId);
+    themes.add(presentation.stationThemeClass);
+    assert.match(presentation.stationThemeClass, /^station-theme--/);
+    assert.match(presentation.stationAccent, /^#[0-9a-f]{6}$/i);
+    assert.equal(presentation.stationIconSize, 48);
+    assert.equal(presentation.stationIconMajorSize, 56);
+    assert.equal(presentation.stationIconTitle, `${presentation.stationDisplayName} Station`);
+  }
+  assert.equal(themes.size, stationIds.length);
+  assert.match(template, /class="roster-item \{\{stationThemeClass\}\}"/);
+  assert.match(template, /class="plan-station-tab \{\{stationThemeClass\}\}/);
+  assert.match(template, /class="resolution-order-card station-cell \{\{stationThemeClass\}\}"/);
+  assert.match(template, /class="plan-review-station station-cell \{\{stationThemeClass\}\}"/);
+  assert.match(template, /class="resolution-current-card station-cell \{\{stationThemeClass\}\}"/);
+  assert.match(template, /class="pressure-row \{\{stationThemeClass\}\}/);
+  assert.match(template, /data-m12-focus-use/);
+  assert.match(template, /data-m12-focus-pass/);
+});
+
+
+test("M12 Crew Plan reads available Actor modifiers and Focus pools without authoring state", () => {
+  const planning = {
+    roundNumber: 1,
+    stationAssignments: [{ stationId: "engineer", operator: { id: "engineer", uuid: "Actor.engineer", name: "Engineer Orr" } }],
+    stations: [{ stationId: "engineer", actions: [{ actionId: "repair", name: "Repair the Aether Coil", description: "Stabilize the damaged coil.", approaches: [{ approachId: "craft", name: "Crafting", statisticSlugOrAbilityId: "crafting" }], riskBidOptions: [] }] }],
+    selections: { engineer: { actionId: "repair", approachId: "craft" } },
+    riskBids: {},
+    focusPools: [{ stationId: "engineer", operatorId: "Actor.engineer", current: 1, capacity: 2 }],
+    focusAbilities: [{ focusAbilityId: "focus-repair", stationId: "engineer", name: "Calibrate", trigger: "Before a check" }]
+  };
+  const actorList = [{ id: "engineer", uuid: "Actor.engineer", skills: { crafting: { mod: 11 } } }];
+  const station = buildPlanningStations(planning, false, null, actorList)[0];
+  assert.equal(readVoyageActorStatisticModifier(actorList[0], "crafting"), 11);
+  assert.equal(station.selectedApproachModifierLabel, "+11");
+  assert.equal(station.approaches[0].modifierLabel, "+11");
+  assert.equal(station.focusLabel, "Focus 1 / 2");
+  assert.deepEqual(station.focusAbilities.map((ability) => ability.focusAbilityId), ["focus-repair"]);
+  const unavailable = buildPlanningStations(planning)[0];
+  assert.equal(unavailable.approaches[0].modifierLabel, "Modifier unavailable");
+  assert.equal(unavailable.focusLabel, "Focus 1 / 2");
+  const unoccupied = buildPlanningStations({ ...planning, stationAssignments: [], stations: [] });
+  assert.deepEqual(unoccupied, []);
+});
+
+test("M12 action cards keep compact disclosure while exposing selected authored detail", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /class="action-card\{\{#if selected\}\} is-selected/);
+  assert.match(template, /data-component="selected-action-detail"/);
+  assert.match(template, /class="action-card-grid"/);
+  assert.match(template, /class="focus-pool"/);
+  assert.match(template, /class="resolution-current-card/);
+  assert.match(template, /class="resolve-compact/);
+  assert.match(template, /data-m12-roll-check/);
+  assert.match(template, /data-m12-round-closeout/);
+});
 test("M12 Event Manager body template has one ApplicationV2 root", () => {
   const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
   const staticMarkup = template.replace(/\{\{[\s\S]*?\}\}/g, "");
@@ -598,10 +719,28 @@ test("M12 Event Manager body template has one ApplicationV2 root", () => {
   }
   assert.equal(roots, 1);
   assert.equal(depth, 0);
-  assert.match(staticMarkup.trim(), /^<div class="arcflight-event-manager event-manager-shell"/);
+  assert.match(staticMarkup.trim(), /^<div class="arcflight-event-manager event-manager-shell command-console"/);
   assert.match(staticMarkup, /<style data-component="event-manager-task4-ui">/);
 });
 
+test("M12 Event Manager Handlebars blocks are fully balanced", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const stack = [];
+  const lines = template.replace(/\{\{!--[\s\S]*?--\}\}/g, "").split(/\r?\n/);
+  for (let lineNumber = 0; lineNumber < lines.length; lineNumber += 1) {
+    const tokens = lines[lineNumber].match(/\{\{[#^/]\s*[^}]+\}\}|\{\{else(?:\s+if[^}]*)?\}\}/g) ?? [];
+    for (const token of tokens) {
+      if (token.startsWith("{{#") || token.startsWith("{{^")) stack.push({ name: token.slice(3, -2).trim().split(/\s+/)[0], lineNumber: lineNumber + 1 });
+      else if (token.startsWith("{{else")) assert.ok(stack.length > 0, `orphan else at line ${lineNumber + 1}`);
+      else {
+        const name = token.slice(3, -2).trim().split(/\s+/)[0];
+        const opening = stack.pop();
+        assert.deepEqual(opening?.name, name, `mismatched Handlebars close at line ${lineNumber + 1}`);
+      }
+    }
+  }
+  assert.deepEqual(stack, []);
+});
 test("M12 station icon registry decorates planning, order, Risk Bid, and template models", () => {
   const expected = {
     captain: "modules/arcflight/assets/ui/stations/captain_icon.webp",
@@ -651,14 +790,14 @@ test("M12 station icon registry decorates planning, order, Risk Bid, and templat
   assert.match(template, /stationIconSize/);
   assert.match(template, /stationIconMajorSize/);
   assert.match(template, /station-cell/);
-  assert.match(template, /targetStations/);
-  assert.match(template, /risk-bid-target-cell/);
-  assert.match(template, /FAILURE \/ CRITICAL FAILURE/);
+  assert.match(template, /TARGET: \{\{#each payoffEffects\}\}/);
+  assert.match(template, /risk-bid-stakes/);
+  assert.match(template, /FAILURE: \{\{presentation\.outcome\.failure\}\}/);
   assert.match(template, /ACTIVE BENEFIT/);
   assert.match(template, /sourceActionId/);
   assert.match(template, /effectText/);
   assert.match(template, /consumptionLabel/);
-  assert.match(template, /No Risk Bid is authored for this action/);
+  assert.match(template, /selected-action-detail/);
 });
 
 test("M12 resource registry decorates Risk Bid tiers, Focus, and Resolution Order cards", () => {
@@ -680,40 +819,32 @@ test("M12 resource registry decorates Risk Bid tiers, Focus, and Resolution Orde
   assert.match(template, /resolution-order-rail/);
   assert.match(template, /stationOrderIconSize/);
   assert.match(template, /selectedRiskBidResource/);
-  assert.match(template, /action-picker-option:hover/);
-  assert.match(template, /aria-selected="true"\]::before/);
-  assert.match(template, /crew-plan-controls/);
-  assert.match(template, /station-compact-summary/);
-  assert.match(template, /data-m12-edit-station/);
-  assert.match(template, /risk-bid-tier-summary/);
+  assert.match(template, /class="action-card/);
+  assert.match(template, /aria-selected/);
+  assert.match(template, /plan-station-selector/);
+  assert.match(template, /selected-action-detail/);
+  assert.match(template, /data-m12-edit-station|data-m12-plan-station/);
+  assert.match(template, /risk-bid-stakes/);
   assert.match(template, /selectedRiskBidId/);
   assert.match(template, /riskBidFinalDc/);
   assert.match(template, /resourceIconPath/);
   assert.match(template, /focusResource/);
-  assert.match(template, /OPERATOR:/);
-  assert.match(template, /ACTION:/);
   assert.match(template, /APPROACH:/);
-  assert.match(template, /data-m12-order-station/);
   assert.match(template, /data-m12-order-move/);
-  assert.match(template, /stationOrderIconSize/);
   assert.match(template, /canMoveUp/);
   assert.match(template, /canMoveDown/);
-  assert.match(template, /resolution-order-status/);
-  assert.match(template, /overview-station-cell/);
-  assert.match(template, /plan-review-station/);
-  assert.match(template, /selectedRiskBidAvailableResource/);
   assert.match(template, /selectedActionHasRiskBids/);
   assert.doesNotMatch(template, /riskBidBadge/);
   assert.match(template, /font-family/);
   assert.match(template, /Cinzel/);
   assert.match(template, /Inter/);
   assert.match(template, /selectedRiskBidResource/);
-  assert.match(template, /riskBidPayoffEffects/);
-  const orderCard = template.slice(template.indexOf('<ol data-m12-order-list'), template.indexOf('</ol>'));
+  const orderStart = template.indexOf('<ol data-m12-order-list');
+  const orderCard = template.slice(orderStart, template.indexOf('</ol>', orderStart));
   assert.ok(orderCard.indexOf('resolution-order-rail') < orderCard.indexOf('resolution-order-identity'));
   assert.ok(orderCard.indexOf('resolution-order-identity') < orderCard.indexOf('resolution-order-fields'));
   assert.ok(orderCard.indexOf('resolution-order-fields') < orderCard.indexOf('resolution-order-risk'));
-  assert.ok(orderCard.indexOf('resolution-order-risk') < orderCard.indexOf('resolution-order-status'));
+  assert.ok(orderCard.indexOf("resolution-order-risk") > orderCard.indexOf("resolution-order-fields"));
   const planCard = template.slice(template.indexOf('<div class="plan-review-stations"'), template.indexOf('</div>', template.indexOf('<div class="plan-review-stations"')));
   assert.ok(planCard.indexOf('station-identity') < planCard.indexOf('station-detail-fields'));
   assert.ok(planCard.indexOf('station-detail-fields') < planCard.indexOf('plan-review-status'));
@@ -1338,4 +1469,247 @@ test("M12 Event Manager reopens one durable live session read-only and resolves 
       if (value === undefined) delete globalThis[key]; else globalThis[key] = value;
     }
   }
+});
+
+test("M12 V2 density refinement keeps action cards name-only with one detail pane", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const cardStart = template.indexOf('class="action-card-grid"');
+  const detailStart = template.indexOf('class="selected-action-detail"');
+  assert.ok(cardStart >= 0 && detailStart > cardStart);
+  const cards = template.slice(cardStart, detailStart);
+  assert.doesNotMatch(cards, /displayDescription|<span>|<small>/);
+  assert.equal((template.match(/data-component="selected-action-detail"/g) ?? []).length, 1);
+  assert.match(template, /<p>\{\{selectedActionDescription\}\}<\/p>/);
+});
+
+test("M12 V2 density refinement exposes momentum overlay and compact hazard states", () => {
+  const zero = buildEventManagerStatusRail({ momentum: 0, pressureSystems: [], activeHazards: [] });
+  const active = buildEventManagerStatusRail({ momentum: 3, pressureSystems: [], activeHazards: [{ hazardId: "h1", name: "Arkengine Breach", timing: "Starts next round" }] });
+  assert.equal(zero.momentum.overlayText, "+0");
+  assert.equal(active.momentum.overlayText, "+3");
+  assert.equal(active.momentum.iconSize, 64);
+  assert.equal(zero.hazardCount, 0);
+  assert.equal(active.hazardCount, 1);
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /momentum-icon-frame/);
+  assert.match(template, /momentum-overlay/);
+  assert.match(template, /hazard-count/);
+  const statusRailMarkup = template.slice(template.indexOf("data-component=\"event-status-rail\""), template.indexOf("</aside>", template.indexOf("data-component=\"event-status-rail\"")));
+  assert.doesNotMatch(statusRailMarkup, /statusRail\.momentum\.value|hazard-count-label/);
+});
+test("M12 HUD Pressure gauges follow capacity and danger state without writes", () => {
+  const rail = buildEventManagerStatusRail({ momentum: 1, pressureSystems: [
+    { pressureSystemId: "crew-morale", value: 1, capacity: 2 },
+    { pressureSystemId: "arkengine", value: 4, capacity: 5 }
+  ], activeHazards: [] });
+  const captain = rail.pressureRows.find((row) => row.stationId === "captain");
+  const engineer = rail.pressureRows.find((row) => row.stationId === "engineer");
+  assert.equal(captain.gaugeSegments.length, 2);
+  assert.equal(captain.gaugeSegments.filter((segment) => segment.filled).length, 1);
+  assert.equal(captain.pressureState, "ELEVATED");
+  assert.equal(engineer.gaugeSegments.length, 5);
+  assert.equal(engineer.gaugeSegments.filter((segment) => segment.filled).length, 4);
+  assert.equal(engineer.pressureState, "ELEVATED");
+  const danger = buildEventManagerStatusRail({ pressureSystems: [{ pressureSystemId: "crew-morale", value: 2, capacity: 2 }] }).pressureRows.find((row) => row.stationId === "captain");
+  assert.equal(danger.pressureState, "DANGER");
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /pressure-gauge__segments/);
+  assert.match(template, /pressureState/);
+});
+
+test("M12 HUD Hazard widget uses a 64px count socket and isolated inspection projection", () => {
+  const source = { hazardId: "h1", name: "Arkengine Breach", pressureSystemId: "arkengine", timing: "Starts next round", description: "Visible effect", secretGMField: "must not leak" };
+  const rail = buildEventManagerStatusRail({ activeHazards: [source, { hazardId: "h2", name: "Wake Shear" }] });
+  assert.equal(rail.hazardCount, 2);
+  assert.equal(rail.hazardOverlayText, "2");
+  assert.equal(rail.hazardIconSize, 64);
+  assert.equal(rail.hazards[0].secretGMField, undefined);
+  rail.hazards[0].name = "Changed locally";
+  assert.equal(source.name, "Arkengine Breach");
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const popup = readFileSync(new URL("../../../templates/voyage/hazard-inspection.hbs", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../../styles/arcflight.css", import.meta.url), "utf8");
+  const runtime = readFileSync(new URL("../../../scripts/voyage/apps/event-manager.js", import.meta.url), "utf8");
+  assert.doesNotMatch(template, /data-m12-hazard-inspect/);
+  assert.match(template, /resource-socket__number/);
+  assert.match(popup, /NO ACTIVE HAZARDS/);
+  assert.match(popup, /CURRENT EFFECT/);
+  assert.doesNotMatch(runtime, /data-m12-hazard-inspect/);
+  assert.match(template, /hazard-count hazard-overlay/);
+  assert.match(runtime, /assets\/ui\/icons\/hazard_icon\.webp/);
+  const hazardGeometry = css.slice(css.lastIndexOf("/* M12 focused Hazard socket alignment"));
+  assert.match(css, /status-resource-row \{[^}]*align-items:\s*start/);
+  assert.match(css, /status-resource-widget \{[^}]*align-content:\s*start/);
+  assert.match(css, /status-resource-widget \{[^}]*align-self:\s*start/);
+  assert.match(hazardGeometry, /hazard-icon-frame \.hazard-overlay[^}]*top:\s*69%[^}]*right:\s*7%[^}]*width:\s*24%[^}]*height:\s*24%/s);
+  assert.match(hazardGeometry, /display:\s*flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
+});
+
+test("M12 Event Manager UI polish keeps GM tools in the header and exposes scoped Risk Bid affordances", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../../styles/arcflight.css", import.meta.url), "utf8");
+  const headerStart = template.indexOf('command-header');
+  const headerEnd = template.indexOf('</header>', headerStart);
+  const header = template.slice(headerStart, headerEnd);
+  assert.match(header, /class="command-header__meta"[\s\S]*data-component="gm-tools"/);
+  assert.doesNotMatch(template.slice(template.indexOf('class="event-command-workspace"')), /data-component="gm-tools"/);
+  assert.match(header, /data-m12-refresh/);
+  assert.match(header, /data-m12-abandon/);
+  assert.match(header, /data-m12-new-session/);
+  assert.match(template, /riskBidAvailableResource/);
+  assert.match(template, /class="risk-bid-action-icon"/);
+  assert.match(template, /selectedRiskBidAvailableResource/);
+  assert.match(css, /risk-bid-action-icon[^}]*width:\s*18px/);
+});
+
+test("M12 Event Manager compact roster and Plan Summary use existing safe projection data", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const planningStations = [
+    { stationId: "captain", stationDisplayName: "Captain", label: "Captain", ready: true, selectedActionName: "Command the Escape", selectedRiskBidId: "captain-risk-2", statusMessage: "Ready for Plan Lock." },
+    { stationId: "engineer", stationDisplayName: "Engineer", label: "Engineer", ready: false, selectedActionName: "No action", selectedRiskBidId: "", statusMessage: "Choose one of the three authored actions." }
+  ];
+  const ready = buildVoyagePlanSummary({ sessionState: "crew-planning" }, planningStations, ["captain", "engineer"], [{ sourceStationId: "captain", targetStationId: "engineer" }], false);
+  assert.equal(ready.readinessLabel, "PLAN INCOMPLETE");
+  assert.equal(ready.stationsReady, 1);
+  assert.equal(ready.stationTotal, 2);
+  assert.equal(ready.selectedRiskBids, 1);
+  assert.equal(ready.riskBidDependencies, 1);
+  assert.deepEqual(ready.orderPreview.map((entry) => entry.stationDisplayName), ["Captain", "Engineer"]);
+  assert.match(ready.blockers[0], /Engineer/);
+  const complete = buildVoyagePlanSummary({ sessionState: "crew-planning" }, [{ ...planningStations[0], ready: true }, { ...planningStations[1], ready: true, selectedActionName: "Stabilize the Core" }], ["engineer", "captain"], [], true);
+  assert.equal(complete.readinessLabel, "READY FOR PLAN LOCK");
+  assert.equal(complete.hasBlockers, false);
+  assert.deepEqual(complete.orderPreview.map((entry) => entry.actionName), ["Stabilize the Core", "Command the Escape"]);
+  assert.match(template, /\{\{#if operator\}\}\{\{operator\.name\}\}\{\{else\}\}Unassigned/);
+  assert.match(template, /PLAN SUMMARY/);
+  assert.match(template, /Stations Ready: \{\{planSummary\.stationsReady\}\}/);
+  assert.match(template, /RESOLUTION ORDER PREVIEW/);
+});
+test("M12 HUD keeps GM tools out of gameplay panels and structures order/review/resolve fields", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /data-component="gm-tools"/);
+  assert.match(template, /data-m12-refresh/);
+  assert.match(template, /data-m12-abandon/);
+  assert.match(template, /data-m12-new-session/);
+  const planStart = template.indexOf('data-tab-id="plan"');
+  const resolveStart = template.indexOf('data-tab-id="resolve"');
+  const gameplayPlan = template.slice(planStart, resolveStart);
+  assert.doesNotMatch(gameplayPlan, /data-m12-refresh|data-m12-abandon|data-m12-new-session/);
+  assert.match(template, /class="order-field"/);
+  assert.match(template, /class="review-field"/);
+  assert.match(template, /class="resolution-current-fields"/);
+  assert.doesNotMatch(template, /ACTION: \{\{actionName\}\}.*APPROACH: \{\{approachName\}\}/s);
+});
+test("M12 resource sockets retain a winning fixed 64px browser geometry", () => {
+  const css = readFileSync(new URL("../../../styles/arcflight.css", import.meta.url), "utf8");
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const marker = css.lastIndexOf("/* M12 live socket geometry correction: fixed 64px resource widgets. */");
+  assert.ok(marker >= 0);
+  const winning = css.slice(marker);
+  assert.match(winning, /\.resource-socket\s*\{[^}]*width:\s*64px\s*!important;[^}]*height:\s*64px\s*!important;[^}]*min-width:\s*64px;[^}]*min-height:\s*64px;[^}]*flex:\s*0 0 64px/s);
+  assert.match(winning, /\.resource-socket \.resource-icon\s*\{[^}]*display:\s*block\s*!important;[^}]*width:\s*64px\s*!important;[^}]*height:\s*64px\s*!important;[^}]*max-width:\s*none\s*!important;[^}]*max-height:\s*none\s*!important;[^}]*flex:\s*0 0 64px/s);
+  assert.match(winning, /\.resource-socket__number\s*\{[^}]*left:\s*18%;[^}]*right:\s*18%;[^}]*bottom:\s*5%;[^}]*height:\s*25%;[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center/s);
+  assert.match(template, /resource-socket momentum-icon-frame/);
+  assert.match(template, /resource-socket hazard-icon-frame/);
+  assert.ok(css.lastIndexOf(".resource-socket .resource-icon") > css.lastIndexOf(".event-manager-shell .resource-icon"));
+});
+test("M12 Event Manager preserves legal workspace, station, focus, and scroll continuity", () => {
+  let focused = 0;
+  const target = { focus: () => { focused += 1; } };
+  const station = { dataset: { stationId: "engineer" }, querySelector: () => target };
+  const main = { dataset: { m12ScrollRegion: "main" }, scrollTop: 140, scrollLeft: 8 };
+  const plan = { dataset: { m12ScrollRegion: "plan", tabId: "plan" }, scrollTop: 275, scrollLeft: 12 };
+  const activeElement = { dataset: { controlId: "approach" }, closest: () => station };
+  const root = {
+    ownerDocument: { activeElement, body: {} },
+    querySelectorAll: (selector) => selector === "[data-m12-scroll-region]" ? [main, plan] : [],
+    querySelector: () => station,
+    contains: () => true
+  };
+  const state = captureEventManagerViewState(root, "plan", {});
+  assert.equal(state.activeTab, "plan");
+  assert.equal(state.stationId, "engineer");
+  assert.equal(state.controlId, "approach");
+  assert.deepEqual(state.scrollRegions, { main: { top: 140, left: 8 }, plan: { top: 275, left: 12 } });
+  main.scrollTop = 0; main.scrollLeft = 0; plan.scrollTop = 0; plan.scrollLeft = 0;
+  root.ownerDocument.activeElement = root.ownerDocument.body;
+  assert.equal(restoreEventManagerViewState(root, state, "event"), "plan");
+  assert.equal(main.scrollTop, 140);
+  assert.equal(main.scrollLeft, 8);
+  assert.equal(plan.scrollTop, 275);
+  assert.equal(plan.scrollLeft, 12);
+  assert.equal(focused, 1);
+
+  const staleRoot = { ...root, querySelector: () => null };
+  assert.equal(restoreEventManagerViewState(staleRoot, { ...state, stationId: "removed" }, "event"), "plan");
+  assert.equal(focused, 1);
+
+  const outsideRoot = { ...root, contains: () => false };
+  const outsideState = captureEventManagerViewState(outsideRoot, "plan", {});
+  assert.equal(outsideState.stationId, null);
+  assert.equal(outsideState.controlId, null);
+  assert.equal(outsideState.actionId, null);
+});
+
+test("M12 Crew Planning selection payloads retain the rendered canonical action across controls and stations", () => {
+  const option = (stationId, actionId, approachId, selected = true) => ({
+    dataset: { stationId, actionId, approachId },
+    getAttribute: (name) => name === "aria-selected" ? (selected ? "true" : "false") : null,
+    classList: { contains: (name) => name === "is-selected" && selected }
+  });
+  const rootFor = (stationId, action, approachValue, riskValue = "") => ({
+    querySelectorAll: (selector) => selector === `[data-m12-action-option="${stationId}"]` ? [action] : [],
+    querySelector: (selector) => selector === `[data-m12-approach="${stationId}"]` ? { value: approachValue } : selector === `[data-m12-risk-bid="${stationId}"]` ? { value: riskValue } : null
+  });
+  const captainAction = option("captain", "captain-round-2-action-1", "captain-round-2-action-1-approach");
+  const captainApproach = buildVoyageStationSelectionPayload(rootFor("captain", captainAction, "captain-round-2-action-1-approach-2"), { dataset: { stationId: "captain" } });
+  assert.deepEqual(captainApproach, { stationId: "captain", actionId: "captain-round-2-action-1", approachId: "captain-round-2-action-1-approach-2", riskBidId: null });
+
+  const engineerAction = option("engineer", "engineer-round-2-action-2", "engineer-round-2-action-2-approach");
+  const engineerBid = buildVoyageStationSelectionPayload(rootFor("engineer", engineerAction, "engineer-round-2-action-2-approach", "engineer-round-2-action-2-risk-5"), { dataset: { stationId: "engineer" } });
+  assert.deepEqual(engineerBid, { stationId: "engineer", actionId: "engineer-round-2-action-2", approachId: "engineer-round-2-action-2-approach", riskBidId: "engineer-round-2-action-2-risk-5" });
+  const engineerNoBid = buildVoyageStationSelectionPayload(rootFor("engineer", engineerAction, "engineer-round-2-action-2-approach", ""), { dataset: { stationId: "engineer" } });
+  assert.deepEqual(engineerNoBid, { stationId: "engineer", actionId: "engineer-round-2-action-2", approachId: "engineer-round-2-action-2-approach", riskBidId: null });
+
+  const navigatorAction = option("navigator", "navigator-round-2-action-3", "navigator-round-2-action-3-approach");
+  const navigatorActionSelection = buildVoyageStationSelectionPayload(rootFor("navigator", navigatorAction, ""), { dataset: { stationId: "navigator", m12Action: "true" } });
+  assert.deepEqual(navigatorActionSelection, { stationId: "navigator", actionId: "navigator-round-2-action-3", approachId: "navigator-round-2-action-3-approach", riskBidId: null });
+
+  const rerendered = buildVoyageStationSelectionPayload(rootFor("captain", option("captain", captainAction.dataset.actionId, captainAction.dataset.approachId), "captain-round-2-action-1-approach-2"), { dataset: { stationId: "captain" } });
+  assert.deepEqual(rerendered, captainApproach);
+
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const runtime = readFileSync(new URL("../../../scripts/voyage/apps/event-manager.js", import.meta.url), "utf8");
+  assert.match(runtime, /buildVoyageStationSelectionPayload\(this\.element, element\)/);
+  assert.match(template, /data-m12-action-option="\{\{\.\.\/stationId\}\}"/);
+  assert.match(template, /data-station-id="\{\{\.\.\/stationId\}\}"/);
+  assert.match(template, /data-action-id="\{\{actionId\}\}"/);
+  assert.match(template, /data-approach-id="\{\{approaches\.\[0\]\.approachId\}\}"/);
+  assert.match(template, /data-m12-approach="\{\{stationId\}\}"/);
+  assert.match(template, /data-m12-risk-bid="\{\{stationId\}\}"/);
+  assert.doesNotMatch(template, /data-m12-action-picker/);
+});
+test("M12 GM Tools owns Active GM and order controls use directional accessible buttons", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const toolsStart = template.indexOf('class="gm-tools"');
+  const toolsEnd = template.indexOf("</details>", toolsStart);
+  const tools = template.slice(toolsStart, toolsEnd);
+  assert.match(tools, /ACTIVE GM/);
+  assert.match(tools, /activeGmDisplayName/);
+  assert.match(tools, /data-m12-refresh/);
+  assert.match(tools, /data-m12-abandon/);
+  assert.match(tools, /data-m12-new-session/);
+  const gameplay = template.slice(template.indexOf('class="event-command-workspace"'));
+  assert.doesNotMatch(gameplay, /active-gm|Active GM/);
+  const orderStart = template.indexOf('class="resolution-order-rail"');
+  const order = template.slice(orderStart, template.indexOf('</ol>', orderStart));
+  assert.doesNotMatch(order, /orderIconPath|order_link|orderLink/);
+  assert.match(order, /Move \{\{stationDisplayName\}\} earlier/);
+  assert.match(order, /Move \{\{stationDisplayName\}\} later/);
+  assert.match(order, /&#9650;/);
+  assert.match(order, /&#9660;/);
+  assert.match(order, /class="order-position"/);
+  assert.match(template, /data-m12-scroll-region="main"/);
+  assert.match(template, /data-m12-scroll-region="plan"/);
+  assert.match(template, /data-m12-scroll-region="resolve"/);
 });

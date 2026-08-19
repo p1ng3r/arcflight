@@ -1491,7 +1491,7 @@ export function analyzeVoyagePressureBreachCloseoutTransaction({
       nextPressureSystems,
       nextActiveHazards,
       breach,
-      hazard: sparseHazard,
+      hazard: activeHazardCapture.record,
       ordinaryScarProposal,
       pressureReset,
       event,

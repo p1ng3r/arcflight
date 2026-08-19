@@ -260,7 +260,7 @@ Only tiers authored for that action are available. An action may offer no bids, 
 - Authoring may expose Risk Bids on at most four action choices across an entire round.
 - No station may author Risk Bids on more than two of its three actions; every station retains at least one normal no-bid action.
 - Maximum one selected Risk Bid per station per round.
-- Maximum three selected Risk Bids across the entire round.
+- Maximum one selected Risk Bid per occupied station; total selected Risk Bids may not exceed the number of occupied stations in the round.
 - A station using the base action without a bid does not count toward the round limit.
 
 ### 7.3 Single-roll resolution

@@ -23,12 +23,19 @@ import {
 } from "../domain/station-order-proposal.js";
 import { applyVoyageEncounterCrewPlanningLock } from "../domain/crew-planning-lock.js";
 import { prepareVoyageEncounterCrewPlanningReadiness } from "../domain/crew-planning-readiness.js";
-import { validateVoyageHazardRecord } from "../domain/hazard-schema.js";
+import { validateVoyageHazardRecord, VOYAGE_HAZARD_RECORD_FIELDS } from "../domain/hazard-schema.js";
 import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../domain/constants.js";
 import { analyzeVoyagePressureBreachCloseoutTransaction } from "../domain/pressure-breach.js";
-import { validateVoyageEncounterCloseoutSnapshot } from "../domain/closeout.js";
+import { analyzeVoyageEncounterPressurePlan } from "../domain/pressure.js";
+import { analyzeVoyageEncounterHazardCloseout, validateVoyageEncounterCloseoutSnapshot } from "../domain/closeout.js";
 import { analyzeVoyageEncounterCloseoutReview } from "../domain/closeout-review.js";
 import { applyVoyageEncounterResolutionTransition } from "../domain/resolution-transition.js";
+import { applyVoyageEncounterConsequencesTransition } from "../domain/consequences-transition.js";
+import { applyVoyageEncounterCrewPlanningTransition } from "../domain/crew-planning-transition.js";
+import { analyzeVoyageEncounterRoundUnitAggregation } from "../domain/round-unit-aggregation.js";
+import { analyzeVoyageEncounterRoundResult } from "../domain/round-result-classification.js";
+import { analyzeVoyageEncounterActionOutcomes } from "../domain/action-outcome-interpretation.js";
+import { analyzeVoyageEncounterActionOutcomeDefinitions } from "../domain/consequence-rules.js";
 import { prepareVoyageEncounterActionExecutionRequests } from "../domain/resolution-execution-requests.js";
 import { applyVoyageEncounterPendingCheckPreparation } from "../domain/pending-checks.js";
 import { applyVoyageEncounterPendingCheckResult } from "../domain/resolution-results.js";
@@ -112,6 +119,12 @@ const TRANSPORT_WITNESS_FIELDS = Object.freeze(["connectionId", "occurredAt"]);
 const AUDIT_FIELDS = Object.freeze(["auditId", "kind", "sessionId", "requestId", "actorUserId", "authorityEpoch", "previousRevision", "revision", "occurredAt", "details"]);
 const AUDIT_DETAILS_FIELDS = Object.freeze(["previousActiveGmUserId", "nextActiveGmUserId", "bootstrap", "reason"]);
 const M12_AUDIT_DETAILS_FIELDS = Object.freeze(["transitionKind", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision", "eventCount"]);
+const ROUND_CLOSEOUT_EVENT_FIELDS = Object.freeze(["type", "sessionId", "eventId", "definitionSnapshotId", "shipId", "roundId", "roundNumber", "previousRevision", "revision", "previousAuthorityEpoch", "authorityEpoch", "previousSessionState", "nextSessionState", "previousPhase", "nextPhase", "stationResultIds", "successUnits", "failureUnits", "roundResult", "momentumBefore", "momentumAfter", "pressureBefore", "pressureAfter", "pressureEffects", "breaches", "hazardEffects", "consequenceEffects", "benefitTransition", "focusTransition", "riskBidTransition", "recoveryControlTransition", "nextRoundId"]);
+const ROUND_CLOSEOUT_AUDIT_DETAILS_FIELDS = Object.freeze(["roundId", "roundNumber", "runtimeEventType", "checkpointId", "stationResultIds", "successUnits", "failureUnits", "roundResult", "momentumBefore", "momentumAfter", "pressureEffectIds", "breachIds", "hazardEffectIds", "consequenceEffectIds", "benefitTransition", "focusTransition", "riskBidTransition", "recoveryControlTransition", "previousSessionState", "nextSessionState", "nextRoundId"]);
+const ROUND_CLOSEOUT_PRESSURE_EFFECT_FIELDS = Object.freeze(["pressureEffectId", "encounterId", "stageId", "roundNumber", "sequence", "stationId", "actionId", "pressureSystemId", "delta", "timing", "sourceKind", "sourceIntentId", "activationSource", "branch", "visibility"]);
+const ROUND_CLOSEOUT_BREACH_FIELDS = Object.freeze(["pressureBreachId", "encounterId", "stageId", "roundNumber", "effectIndex", "sequence", "stationId", "actionId", "pressureSystemId", "pressureEffectId", "sourceKind", "sourceIntentId", "activationSource", "branch", "timing", "visibility", "previousValue", "capacity", "remainingCapacity", "attemptedDelta", "overflowDelta"]);
+const ROUND_CLOSEOUT_BENEFIT_FIELDS = Object.freeze(["effectId", "sourceStationId", "sourceActionId", "riskBidId", "sourceRevision", "sourceEncounterRevision", "sourceResult", "targetStationId", "targetPendingCheckId", "effectKind", "effectValue", "activationTiming", "consumptionTiming", "roundNumber", "requiresSourceBeforeTarget", "previousStatus", "persistence", "status", "consumedAtRevision"]);
+const TASK5_BENEFIT_PERSISTENCE = new Set(["round-local", "next-round", "event"]);
 const TASK2_COMMANDS = new Set(["station-selection", "station-selection-clear", "station-order", "plan-lock"]);
 const TASK3_COMMANDS = new Set(["resolution-start", "action-segment"]);
 const TASK3_RECORD_COMMANDS = new Set(["resolution-start", "action-segment", "pending-checks-prepared"]);
@@ -381,7 +394,7 @@ const RISK_BID_EFFECT_FIELDS = Object.freeze([
   "effectKind", "effectValue", "activationTiming", "consumptionTiming",
   "roundNumber", "requiresSourceBeforeTarget", "status", "consumedAtRevision"
 ]);
-function validStoredRiskBidEffects(state) {
+function validStoredRiskBidEffects(state, session = null) {
   try {
     const effects = state?.metadata?.riskBidEffects;
     if (effects === undefined) return true;
@@ -390,6 +403,20 @@ function validStoredRiskBidEffects(state) {
     const order = Array.isArray(state.committedStationOrder) ? state.committedStationOrder : [];
     const indexByStation = new Map(order.map((stationId, index) => [stationId, index]));
     return effects.every((effect) => {
+      const historical = Number.isSafeInteger(effect?.roundNumber) && effect.roundNumber < state.roundNumber;
+      const historicalOwners = historical
+        ? (session?.events?.filter((event) => event?.type === "voyage.m12-round-closeout"
+          && Array.isArray(event.benefitTransition)
+          && event.benefitTransition.some((candidate) => candidate?.effectId === effect.effectId
+            && RISK_BID_EFFECT_FIELDS.every((field) => candidate[field] === effect[field]))) ?? [])
+        : [];
+      const historicalPersistence = historical && historicalOwners.length === 1
+        ? historicalOwners[0].benefitTransition.find((candidate) => candidate?.effectId === effect.effectId)?.persistence
+        : null;
+      const authoredPersistence = !historical ? task5AuthoredBenefitPersistence(state, effect) : historicalPersistence;
+      if (historical && (historicalOwners.length !== 1 || !TASK5_BENEFIT_PERSISTENCE.has(historicalPersistence)
+        || (historicalPersistence === "next-round" && state.roundNumber !== effect.roundNumber + 1)
+        || historicalPersistence === "round-local")) return false;
       if (!isPlainObject(effect) || !exactKeys(effect, RISK_BID_EFFECT_FIELDS)
         || !nonBlank(effect.effectId) || ids.has(effect.effectId) || !ids.add(effect.effectId)
         || !nonBlank(effect.sourceStationId) || !nonBlank(effect.sourceActionId) || !nonBlank(effect.riskBidId)
@@ -400,14 +427,14 @@ function validStoredRiskBidEffects(state) {
         || !["roll-bonus", "degree-shift"].includes(effect.effectKind)
         || !safeInteger(effect.effectValue) || effect.effectValue <= 0
         || effect.activationTiming !== "next-unresolved-check" || effect.consumptionTiming !== "on-target-resolution"
-        || !safeInteger(effect.roundNumber) || effect.roundNumber !== state.roundNumber || effect.requiresSourceBeforeTarget !== true
+        || !safeInteger(effect.roundNumber) || effect.roundNumber > state.roundNumber || effect.requiresSourceBeforeTarget !== true
         || !["active", "consumed", "blocked"].includes(effect.status)
         || (effect.consumedAtRevision !== null && (!safeInteger(effect.consumedAtRevision) || effect.consumedAtRevision < effect.sourceRevision || effect.consumedAtRevision > state.revision))
         || (effect.status === "blocked" && effect.consumedAtRevision !== null)
         || (effect.status === "consumed" && effect.consumedAtRevision === null)
         || !indexByStation.has(effect.sourceStationId) || !indexByStation.has(effect.targetStationId)) return false;
-      const sourceCheck = state.pendingChecks.find((check) => check.stationId === effect.sourceStationId && check.status === "resolved");
-      const targetCheck = state.pendingChecks.find((check) => check.pendingCheckId === effect.targetPendingCheckId && check.stationId === effect.targetStationId);
+      const sourceCheck = historical ? null : state.pendingChecks.find((check) => check.stationId === effect.sourceStationId && check.status === "resolved");
+      const targetCheck = historical ? null : state.pendingChecks.find((check) => check.pendingCheckId === effect.targetPendingCheckId && check.stationId === effect.targetStationId);
       const selection = state.selections?.[effect.sourceStationId];
       const bid = state.riskBids?.[effect.sourceStationId];
       const station = state.availableStations?.find((entry) => entry.stationId === effect.sourceStationId);
@@ -417,10 +444,10 @@ function validStoredRiskBidEffects(state) {
         && entry.effectKind === effect.effectKind && entry.value === effect.effectValue);
       const sourceIndex = indexByStation.get(effect.sourceStationId);
       const targetIndex = indexByStation.get(effect.targetStationId);
-      return sourceCheck && targetCheck && selection?.actionId === effect.sourceActionId && bid?.riskBidId === effect.riskBidId
+      return historical || (authoredPersistence && sourceCheck && targetCheck && selection?.actionId === effect.sourceActionId && bid?.riskBidId === effect.riskBidId
         && sourceCheck.result?.degreeOfSuccessSlug === effect.sourceResult && authored
         && effect.sourceEncounterRevision >= sourceCheck.preparedRevision
-        && (effect.status === "blocked" ? sourceIndex >= targetIndex : sourceIndex < targetIndex);
+        && (effect.status === "blocked" ? sourceIndex >= targetIndex : sourceIndex < targetIndex));
     });
   } catch { return false; }
 }
@@ -482,10 +509,10 @@ function focusEvidenceBinding(entry, state) {
       : null;
   } catch { return null; }
 }
-function validStoredFocusMetadata(state) {
+function validStoredFocusMetadata(state, session = null) {
   try {
     const metadata = state?.metadata; if (!isPlainObject(metadata)) return true;
-    if (!validStoredRiskBidEffects(state)) return false;
+    if (!validStoredRiskBidEffects(state, session)) return false;
     if (metadata.focusPendingCheck !== null && metadata.focusPendingCheck !== undefined && !validPendingFocusCheck(metadata.focusPendingCheck, { encounterState: state })) return false;
     if (metadata.focusResults !== undefined) {
       if (!Array.isArray(metadata.focusResults)) return false;
@@ -806,6 +833,22 @@ function exactCommitReceipt(receipt, closeout = null, session = null) {
 }
 function closeoutLifecycleAllowed(session, commandKind) {
   if (!session) return false;
+  if (commandKind === "round-closeout") {
+    const state = session.encounterState;
+    const metadata = state?.metadata;
+    const unresolvedReaction = metadata?.reactionWindow?.status === "open" && Array.isArray(metadata.reactionWindow.opportunities) && metadata.reactionWindow.opportunities.some((entry) => !(metadata.reactionWindow.resolved ?? []).includes(entry?.reactionId));
+    const pendingFocus = metadata?.focusPendingCheck !== null && metadata?.focusPendingCheck !== undefined;
+    const unresolvedRecovery = session.recovery?.status !== "none" || metadata?.recoveryControl?.status === "required";
+    const unresolvedRetryStatuses = new Set(["pending", "executing", "failed", "uncertain", "recovery-required", "invalid", "erroneous", "voidable"]);
+    const pendingRetry = Array.isArray(metadata?.sliceIRecovery) && metadata.sliceIRecovery.some((entry) => entry?.kind === "retry-roll-integration" && (
+      !nonBlank(entry.replacementPendingCheckId)
+      || state.pendingChecks?.some((check) => check?.pendingCheckId === entry.replacementPendingCheckId && check.status !== "resolved")
+      || unresolvedRetryStatuses.has(entry.integrationStatus ?? entry.evidence?.integrationStatus ?? "")
+    ));
+    return session.sessionState === "station-resolution" && state?.lifecycleState === "active" && state?.phase === "resolution"
+      && session.closeout.status === "none" && Array.isArray(state.pendingThresholdQueue) && state.pendingThresholdQueue.length === 0
+      && !unresolvedReaction && !pendingFocus && !unresolvedRecovery && !pendingRetry;
+  }
   if (commandKind === "closeout-review") return session.sessionState === "event-closeout-review" && session.closeout.status === "review-required";
   if (session.sessionState !== "persistent-application") return false;
   return commandKind === "closeout-prepare" ? session.closeout.status === "accepted-for-application"
@@ -839,10 +882,367 @@ function validM12RuntimeEvent(event, session) {
     && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1
     && safeInteger(event.previousRevision) && safeInteger(event.revision) && event.revision === event.previousRevision + 1 && event.revision <= session.revision;
 }
+function task5DefinitionRound(definition, roundNumber) {
+  try {
+    const rounds = Array.isArray(definition?.rounds) ? definition.rounds : null;
+    return rounds?.find((round) => round?.roundNumber === roundNumber) ?? rounds?.[roundNumber - 1] ?? null;
+  } catch { return null; }
+}
+function task5AuthoredBenefitPersistence(state, effect) {
+  try {
+    const station = state?.availableStations?.find((entry) => entry?.stationId === effect?.sourceStationId);
+    const action = station?.actions?.find((entry) => entry?.actionId === effect?.sourceActionId);
+    const bid = state?.riskBids?.[effect?.sourceStationId];
+    const presentation = action?.riskBidPresentation?.[String(bid?.dcAdjustment)];
+    const authoredEffects = presentation?.mechanicalEffect?.effects;
+    if (!Array.isArray(authoredEffects)) return null;
+    const matches = authoredEffects.filter((candidate) => Array.isArray(candidate?.targetStationIds)
+      && candidate.targetStationIds.includes(effect.targetStationId)
+      && candidate.effectKind === effect.effectKind
+      && candidate.value === effect.effectValue
+      && candidate.activationTiming === effect.activationTiming
+      && candidate.consumptionTiming === effect.consumptionTiming
+      && candidate.requiresSourceBeforeTarget === effect.requiresSourceBeforeTarget);
+    if (matches.length !== 1) return null;
+    const persistence = Object.prototype.hasOwnProperty.call(matches[0], "persistence") ? matches[0].persistence : "round-local";
+    return TASK5_BENEFIT_PERSISTENCE.has(persistence) ? persistence : null;
+  } catch { return null; }
+}
+function task5BenefitTransitionEvidence(state, effect) {
+  try {
+    if (!isPlainObject(effect) || !exactKeys(effect, RISK_BID_EFFECT_FIELDS)
+      || !["active", "consumed", "blocked"].includes(effect.status)) return null;
+    const persistence = task5AuthoredBenefitPersistence(state, effect);
+    if (!persistence) return null;
+    const evidence = {};
+    for (const field of ROUND_CLOSEOUT_BENEFIT_FIELDS) evidence[field] = field === "previousStatus" ? effect.status : field === "persistence" ? persistence : effect[field];
+    const captured = capture(evidence);
+    return captured.ok && exactKeys(captured.value, ROUND_CLOSEOUT_BENEFIT_FIELDS) ? captured.value : null;
+  } catch { return null; }
+}
+function task5BenefitTransitionEvidenceList(state, effects) {
+  try {
+    if (!Array.isArray(effects)) return null;
+    const result = [];
+    for (const effect of effects) {
+      const evidence = task5BenefitTransitionEvidence(state, effect);
+      if (!evidence) return null;
+      result.push(evidence);
+    }
+    return result;
+  } catch { return null; }
+}
+function task5CarryoverRiskBidEffects(state, effects) {
+  try {
+    if (!Array.isArray(effects)) return null;
+    const result = [];
+    for (const effect of effects) {
+      const evidence = task5BenefitTransitionEvidence(state, effect);
+      if (!evidence) return null;
+      if (evidence.persistence === "next-round" || evidence.persistence === "event") result.push(capture(effect).value);
+    }
+    return result;
+  } catch { return null; }
+}function task5StationResultEvidence(state, events, roundNumber, roundId) {
+  try {
+    if (!isPlainObject(state) || !Array.isArray(events) || !Array.isArray(state.committedStationOrder)) return null;
+    const startIndex = events.findIndex((entry) => entry?.type === "voyage.resolution-started" && entry.encounterId === state.encounterId && entry.roundNumber === roundNumber);
+    const preparedIndex = events.findIndex((entry, index) => index > startIndex && entry?.type === "voyage.pending-checks-prepared" && entry.encounterId === state.encounterId && entry.roundNumber === roundNumber);
+    if (startIndex < 0 || preparedIndex < 0) return null;
+    const nextRoundStart = events.findIndex((entry, index) => index > preparedIndex && entry?.type === "voyage.resolution-started" && entry.roundNumber !== roundNumber);
+    const endIndex = nextRoundStart < 0 ? events.length : nextRoundStart;
+    const results = events.slice(preparedIndex + 1, endIndex).filter((entry) => entry?.type === "voyage.pending-check-resolved" && entry.roundNumber === roundNumber);
+    if (results.length === 0 || results.some((entry) => !isPlainObject(entry) || entry.encounterId !== state.encounterId || entry.lifecycleState !== "active" || entry.phase !== "resolution" || !nonBlank(entry.pendingCheckId) || !nonBlank(entry.stationId) || !nonBlank(entry.actionId) || !safeInteger(entry.sequence) || !safeInteger(entry.previousRevision) || !safeInteger(entry.revision) || entry.revision !== entry.previousRevision + 1 || typeof entry.allChecksResolved !== "boolean" || !safeInteger(entry.remainingCheckCount) || entry.remainingCheckCount < 0 || !safeInteger(entry.resolvedCheckCount) || entry.resolvedCheckCount < 1)) return null;
+    const expected = new Map();
+    for (const stationId of state.committedStationOrder) {
+      const selection = state.selections?.[stationId];
+      const pending = (state.pendingChecks ?? []).find((entry) => entry?.stationId === stationId && entry?.status === "resolved");
+      if (!selection?.actionId || !pending) continue;
+      if (expected.has(stationId)) return null;
+      expected.set(stationId, { pendingCheckId: pending.pendingCheckId, actionId: selection.actionId, sequence: pending.sequence });
+    }
+    if (expected.size !== state.committedStationOrder.length || expected.size !== results.length) return null;
+    const ids = [];
+    for (const result of results) {
+      if (expected.has(result.stationId) === false || ids.includes(result.pendingCheckId)) return null;
+      const binding = expected.get(result.stationId);
+      if (binding.pendingCheckId !== result.pendingCheckId || binding.actionId !== result.actionId || binding.sequence !== result.sequence) return null;
+      ids.push(result.pendingCheckId);
+    }
+    if (new Set(ids).size !== ids.length) return null;
+    const finalResult = results[results.length - 1];
+    if (finalResult.allChecksResolved !== true || finalResult.remainingCheckCount !== 0 || finalResult.resolvedCheckCount !== state.committedStationOrder.length) return null;
+    return { ids, results };
+  } catch { return null; }
+}function task5RoundAnalysis(state, roundId, sourceEvents = []) {
+  try {
+    const aggregate = analyzeVoyageEncounterRoundUnitAggregation(state);
+    const classification = analyzeVoyageEncounterRoundResult(state);
+    if (!aggregate?.readyForAggregation || !classification?.readyForRoundResult) return null;
+    const evidence = task5StationResultEvidence(state, sourceEvents, state.roundNumber, roundId);
+    if (!evidence) return null;
+    return { stationResultIds: evidence.ids, successUnits: classification.successUnits, failureUnits: classification.failureUnits, roundResult: classification.roundResult, results: evidence.results };
+  } catch { return null; }
+}
+function task5PressureEffectFromIntent(intent, state) {
+  try {
+    if (intent?.intentType !== "pressure-change" || !isPlainObject(intent.payload)) return null;
+    const pressureSystemId = intent.target?.kind === "pressure-system" ? intent.target.targetId : intent.payload.pressureSystemId;
+    if (!VOYAGE_PRESSURE_SYSTEM_IDS.includes(pressureSystemId) || !safeInteger(intent.payload.delta) || intent.payload.delta === 0) return null;
+    return {
+      pressureEffectId: `arcflight-pressure-effect:${JSON.stringify([state.encounterId, intent.stageId, state.roundNumber, intent.sequence, "outcome-intent", intent.intentId])}`,
+      encounterId: state.encounterId, stageId: intent.stageId, roundNumber: state.roundNumber, sequence: intent.sequence,
+      stationId: intent.stationId, actionId: intent.actionId, pressureSystemId, delta: intent.payload.delta,
+      timing: intent.timing, sourceKind: "outcome-intent", sourceIntentId: intent.intentId,
+      activationSource: intent.activationSource, branch: intent.branch, visibility: intent.visibility
+    };
+  } catch { return null; }
+}
+function task5StandardPressureEffect(action, state) {
+  const delta = action?.branch === "failure" ? 1 : action?.branch === "critical-failure" ? 2 : 0;
+  if (!delta) return null;
+  const pressureSystemId = { captain: "crew-morale", engineer: "arkengine", navigator: "navigation", watchmaster: "hull-integrity", veilwarden: "veil-stability" }[action.stationId];
+  if (!pressureSystemId) return null;
+  return {
+    pressureEffectId: `arcflight-pressure-effect:${JSON.stringify([state.encounterId, state.currentStage?.stageId, state.roundNumber, action.sequence, "standard-result"])}`,
+    encounterId: state.encounterId, stageId: state.currentStage?.stageId, roundNumber: state.roundNumber, sequence: action.sequence,
+    stationId: action.stationId, actionId: action.actionId, pressureSystemId, delta, timing: "consequences", sourceKind: "standard-result",
+    sourceIntentId: null, activationSource: null, branch: action.branch, visibility: "public"
+  };
+}
+function task5RoundEffects(state, sourceEvents = [], session = null, roundId = null, roundAnalysis = null) {
+  try {
+    const definitions = analyzeVoyageEncounterActionOutcomeDefinitions(state);
+    if (!definitions?.definitionsValid) return null;
+    const pressurePlan = analyzeVoyageEncounterPressurePlan(state);
+    if (!pressurePlan?.readyForPressurePlanning || !Array.isArray(pressurePlan.effects)) return null;
+    const priorPressureIds = new Set((Array.isArray(sourceEvents) ? sourceEvents : []).flatMap((entry) => [
+      ...(Array.isArray(entry?.pressureEffects) ? entry.pressureEffects : []),
+      ...(Array.isArray(entry?.effects) ? entry.effects : [])
+    ]).map((entry) => entry?.pressureEffectId).filter(nonBlank));
+    const pressureEffects = capture(pressurePlan.effects.filter((effect) => !priorPressureIds.has(effect?.pressureEffectId)));
+    if (!pressureEffects.ok) return null;
+    const consequenceEffects = [];
+    for (const stationId of state.committedStationOrder ?? []) {
+      const selection = state.selections?.[stationId]; if (!selection?.actionId) continue;
+      const station = (state.availableStations ?? []).find((entry) => entry?.stationId === stationId);
+      const action = station?.actions?.find((entry) => entry?.actionId === selection.actionId);
+      const definition = definitions.actions?.find((entry) => entry?.stationId === stationId && entry?.actionId === selection.actionId);
+      if (!action || !definition) return null;
+      const pending = (state.pendingChecks ?? []).find((entry) => entry.stationId === stationId && entry.status === "resolved");
+      const branch = pending ? pending.result?.degreeOfSuccessSlug : "no-roll";
+      const refs = [...(definition.branches?.[branch] ?? [])];
+      const bid = state.riskBids?.[stationId];
+      const bidOption = bid?.riskBidId ? definition.riskBidOptions?.find((entry) => entry?.riskBidId === bid.riskBidId) : null;
+      if (bidOption) refs.push(...(bidOption.outcomes?.[branch === "critical-success" ? "criticalSuccess" : branch] ?? []));
+      for (const effectId of refs) {
+        const rule = definition.effectRules?.find((entry) => entry?.effectId === effectId); if (!rule) return null;
+        const capturedRule = capture(rule); if (!capturedRule.ok) return null;
+        if (rule.intentType !== "pressure-change") consequenceEffects.push(capturedRule.value);
+      }
+    }
+    pressureEffects.value.sort((a, b) => a.sequence - b.sequence || a.pressureEffectId.localeCompare(b.pressureEffectId));
+    const sourceSystems = Array.isArray(state.pressureSystems) ? state.pressureSystems : Object.values(state.pressureSystems ?? {});
+    const nextSystems = Object.fromEntries(sourceSystems.map((entry) => [entry.pressureSystemId, { ...entry }]));
+    const initialActiveHazards = capture(state.activeHazards ?? []).value;
+    let nextActiveHazards = capture(initialActiveHazards).value;
+    const generatedHazards = [];
+    let encounterRevision = state.revision;
+    const breaches = [], hazardEffects = [];
+    for (const effect of pressureEffects.value) {
+      const system = nextSystems[effect.pressureSystemId]; if (!system) return null;
+      const proposed = system.value + effect.delta;
+      if (effect.delta > 0 && proposed > system.capacity) {
+        const transaction = analyzeVoyagePressureBreachCloseoutTransaction({
+          expectedEncounterRevision: encounterRevision,
+          closeoutContext: { eventId: state.encounterId, sessionId: session?.sessionId ?? state.encounterId, stageId: state.currentStage?.stageId ?? state.currentStage, roundNumber: state.roundNumber, phase: "cleanup-advance" },
+          pressureSystems: Object.values(nextSystems), activeHazards: nextActiveHazards, pressureEffect: { ...effect, sourceKind: "hazard-closeout", timing: "gm-confirmed", activationSource: "event-closeout", branch: "no-roll", stationId: null, actionId: null, sourceIntentId: effect.sourceIntentId ?? effect.pressureEffectId }
+        });
+        if (!transaction?.ok || !transaction.breachRequired) return null;
+        Object.assign(nextSystems, Object.fromEntries(transaction.nextPressureSystems.map((entry) => [entry.pressureSystemId, entry])));
+        nextActiveHazards = capture(transaction.nextActiveHazards).value;
+        if (transaction.hazard) generatedHazards.push(transaction.hazard);
+        breaches.push(transaction.breach); if (transaction.hazard) hazardEffects.push(transaction.hazard); encounterRevision = transaction.encounterRevision;
+      } else system.value = Math.max(0, proposed);
+    }
+
+    if (nextActiveHazards.length > 0) {
+      const eventId = session?.eventId ?? state.encounterId;
+      const sessionId = session?.sessionId ?? state.encounterId;
+      const definitionSnapshotId = session?.definitionSnapshotId;
+      const shipId = session?.shipId;
+      const stageId = state.currentStage?.stageId ?? state.currentStage;
+      if (![eventId, sessionId, definitionSnapshotId, shipId, stageId].every(nonBlank)) return null;
+      const rounds = new Map();
+      for (const source of Array.isArray(sourceEvents) ? sourceEvents : []) {
+        if (source?.type === "voyage.m12-round-closeout" && safeInteger(source.roundNumber) && nonBlank(source.roundId) && ["critical-round-success", "round-success", "round-failure", "round-neutral", "critical-round-failure"].includes(source.roundResult)) {
+          rounds.set(source.roundNumber, { roundId: source.roundId, roundNumber: source.roundNumber, roundResult: source.roundResult });
+        }
+      }
+      if (!nonBlank(roundId) || !roundAnalysis?.roundResult) return null;
+      rounds.set(state.roundNumber, { roundId, roundNumber: state.roundNumber, roundResult: roundAnalysis.roundResult });
+      const completedRounds = [];
+      for (let number = 1; number <= state.roundNumber; number += 1) {
+        const round = rounds.get(number); if (!round) return null;
+        completedRounds.push(round);
+      }
+      const snapshot = {
+        schemaVersion: 1, eventId, sessionId, definitionSnapshotId, shipId,
+        encounterRevision, shipRevision: state.metadata?.shipRevision ?? 0, lifecycleState: "active", stageId,
+        roundNumber: state.roundNumber, phase: "cleanup-advance",
+        completedRoundHistory: { schemaVersion: 1, eventId, sessionId, definitionSnapshotId, roundCount: completedRounds.length, rounds: completedRounds },
+        momentum: state.momentum,
+        focusPools: capture(state.metadata?.focusPools ?? []).value,
+        pressureSystems: Object.values(nextSystems),
+        activeHazards: initialActiveHazards,
+        pendingStationBenefitIds: [], unconsumedRiskBidBenefitIds: [], temporaryFocusPenaltyIds: [],
+        roundOrderRestrictions: [], hazardSuppressions: [], temporaryConsequenceIds: []
+      };
+      const hazardCloseout = analyzeVoyageEncounterHazardCloseout({
+        kind: "m10-hazard-closeout", sessionId, expectedEncounterRevision: encounterRevision, closeoutSnapshot: snapshot
+      });
+      if (!hazardCloseout?.ok) return null;
+      const hazardPressureEffects = [];
+      for (const result of hazardCloseout.hazardCloseoutResults ?? []) {
+        if (result.pressureEffect && !priorPressureIds.has(result.pressureEffect.pressureEffectId) && !pressureEffects.value.some((entry) => entry.pressureEffectId === result.pressureEffect.pressureEffectId)) hazardPressureEffects.push(result.pressureEffect);
+      }
+      pressureEffects.value.push(...hazardPressureEffects);
+      for (const result of hazardCloseout.pressureBreachResults ?? []) {
+        if (result.breachRequired && result.breach) breaches.push(result.breach);
+        if (result.breachRequired && result.hazard) hazardEffects.push(result.hazard);
+      }
+      const finalSystems = capture(hazardCloseout.postHazardPressureSystems);
+      if (!finalSystems.ok) return null;
+      Object.assign(nextSystems, Object.fromEntries(finalSystems.value.map((entry) => [entry.pressureSystemId, entry])));
+      nextActiveHazards = [...generatedHazards];
+      for (const result of hazardCloseout.pressureBreachResults ?? []) if (result.breachRequired && result.hazard) nextActiveHazards.push(result.hazard);
+      encounterRevision += (hazardCloseout.hazardCloseoutResults?.length ?? 0) + (hazardCloseout.pressureBreachResults ?? []).filter((entry) => entry.breachRequired).length;
+    }
+    pressureEffects.value.sort((a, b) => a.sequence - b.sequence || a.pressureEffectId.localeCompare(b.pressureEffectId));
+    return { pressureEffects: pressureEffects.value, breaches, hazardEffects, consequenceEffects, pressureAfter: nextSystems, activeHazardsAfter: nextActiveHazards, encounterRevision };
+  } catch { return null; }
+}function validRoundCloseoutNestedEvidence(event) {
+  try {
+    if (![event.pressureEffects, event.breaches, event.hazardEffects, event.consequenceEffects, event.benefitTransition].every(Array.isArray)) return false;
+    const pressureIds = new Set();
+    for (let index = 0; index < event.pressureEffects.length; index += 1) {
+      const effect = event.pressureEffects[index];
+      if (!isPlainObject(effect) || !exactKeys(effect, ROUND_CLOSEOUT_PRESSURE_EFFECT_FIELDS) || !nonBlank(effect.pressureEffectId) || pressureIds.has(effect.pressureEffectId)
+        || effect.encounterId !== event.eventId || effect.roundNumber !== event.roundNumber || effect.sequence < 0 || !safeInteger(effect.sequence) || !safeInteger(effect.delta)
+        || !nonBlank(effect.stageId) || (effect.stationId !== null && !nonBlank(effect.stationId)) || (effect.actionId !== null && !nonBlank(effect.actionId)) || !VOYAGE_PRESSURE_SYSTEM_IDS.includes(effect.pressureSystemId)
+        || !["standard-result", "outcome-intent", "hazard-closeout"].includes(effect.sourceKind) || !["consequences", "gm-confirmed"].includes(effect.timing)
+        || (effect.sourceKind === "hazard-closeout" ? effect.activationSource !== "event-closeout" || effect.branch !== "no-roll" || !nonBlank(effect.sourceIntentId) || effect.stationId !== null || effect.actionId !== null
+          : effect.sourceKind === "standard-result" ? effect.sourceIntentId !== null || effect.activationSource !== null || !["failure", "critical-failure"].includes(effect.branch)
+            : !nonBlank(effect.sourceIntentId) || !nonBlank(effect.activationSource))
+        || !["public", "gm", "secret"].includes(effect.visibility)) return false;
+      pressureIds.add(effect.pressureEffectId);
+    }
+    const breachIds = new Set();
+    for (const breach of event.breaches) {
+      if (!isPlainObject(breach) || !exactKeys(breach, ROUND_CLOSEOUT_BREACH_FIELDS) || !nonBlank(breach.pressureBreachId) || breachIds.has(breach.pressureBreachId)
+        || breach.encounterId !== event.eventId || breach.roundNumber !== event.roundNumber || !safeInteger(breach.effectIndex) || !safeInteger(breach.sequence)
+        || !nonBlank(breach.stageId) || (breach.stationId !== null && !nonBlank(breach.stationId)) || (breach.actionId !== null && !nonBlank(breach.actionId)) || !VOYAGE_PRESSURE_SYSTEM_IDS.includes(breach.pressureSystemId)
+        || breach.sourceKind !== "hazard-closeout" || !nonBlank(breach.sourceIntentId) || breach.activationSource !== "event-closeout" || breach.branch !== "no-roll" || breach.timing !== "gm-confirmed"
+        || !["public", "gm", "secret"].includes(breach.visibility) || !pressureIds.has(breach.pressureEffectId) || !safeInteger(breach.previousValue) || !safeInteger(breach.capacity) || !safeInteger(breach.remainingCapacity)
+        || !safeInteger(breach.attemptedDelta) || !safeInteger(breach.overflowDelta)) return false;
+      breachIds.add(breach.pressureBreachId);
+    }
+    for (const hazard of event.hazardEffects) if (!isPlainObject(hazard) || !exactKeys(hazard, VOYAGE_HAZARD_RECORD_FIELDS) || !validateVoyageHazardRecord(hazard, { mode: "snapshot", expectedEncounterId: event.eventId }).valid) return false;
+    const consequenceIds = new Set();
+    for (const effect of event.consequenceEffects) if (!isPlainObject(effect) || !exactKeys(effect, ["effectId", "intentType", "timing", "visibility", "target", "payload"]) || !nonBlank(effect.effectId) || consequenceIds.has(effect.effectId) || !capture(effect.target).ok || !capture(effect.payload).ok) return false; else consequenceIds.add(effect.effectId);
+    for (const benefit of event.benefitTransition) if (!isPlainObject(benefit) || !exactKeys(benefit, ["effectId", "sourceStationId", "sourceActionId", "riskBidId", "sourceRevision", "sourceEncounterRevision", "sourceResult", "targetStationId", "targetPendingCheckId", "effectKind", "effectValue", "activationTiming", "consumptionTiming", "roundNumber", "requiresSourceBeforeTarget", "previousStatus", "persistence", "status", "consumedAtRevision"]) || !nonBlank(benefit.effectId) || !nonBlank(benefit.sourceStationId) || !nonBlank(benefit.sourceActionId) || !nonBlank(benefit.riskBidId) || !safeInteger(benefit.sourceRevision) || !safeInteger(benefit.sourceEncounterRevision) || !["success", "critical-success"].includes(benefit.sourceResult) || !nonBlank(benefit.targetStationId) || !nonBlank(benefit.targetPendingCheckId) || !["roll-bonus", "degree-shift"].includes(benefit.effectKind) || !safeInteger(benefit.effectValue) || benefit.effectValue <= 0 || benefit.activationTiming !== "next-unresolved-check" || benefit.consumptionTiming !== "on-target-resolution" || benefit.roundNumber !== event.roundNumber || benefit.requiresSourceBeforeTarget !== true || !["active", "consumed", "blocked"].includes(benefit.status) || !["round-local", "next-round", "event"].includes(benefit.persistence) || ![null, "active", "consumed", "blocked"].includes(benefit.previousStatus) || (benefit.status === "consumed" ? !safeInteger(benefit.consumedAtRevision) : benefit.consumedAtRevision !== null)) return false;
+    const validTransition = (value) => value === null || (isPlainObject(value) && exactKeys(value, ["previous", "next"]) && capture(value.previous).ok && capture(value.next).ok);
+    return validTransition(event.focusTransition) && validTransition(event.riskBidTransition) && validTransition(event.recoveryControlTransition);
+  } catch { return false; }
+}
+function validRoundCloseoutDerivedEvidence(event, checkpoint, session = null) {
+  try {
+    const transition = applyVoyageEncounterConsequencesTransition(checkpoint.encounterState, { phaseStartSnapshotId: `arcflight-voyage-task5-validation:${JSON.stringify([checkpoint.sessionId, checkpoint.revision])}` });
+    if (!transition?.ok) return false;
+    const sourceEvents = session?.events?.slice(0, checkpoint.eventCount) ?? [];
+    const analysis = task5RoundAnalysis(transition.nextState, event.roundId, sourceEvents);
+    const effects = task5RoundEffects(transition.nextState, sourceEvents, session, event.roundId, analysis);
+    const historicalNext = effects ? effects.pressureAfter : null;
+    const checkpointRiskEffects = Array.isArray(checkpoint.encounterState?.metadata?.riskBidEffects)
+      ? checkpoint.encounterState.metadata.riskBidEffects.filter((effect) => effect?.roundNumber === event.roundNumber)
+      : [];
+    const expectedBenefits = task5BenefitTransitionEvidenceList(checkpoint.encounterState, checkpointRiskEffects);
+    if (!expectedBenefits) return false;
+    const continuing = event.nextSessionState === "crew-planning";
+    const expectedFocusTransition = continuing ? { previous: capture(checkpoint.encounterState.metadata?.focusEffects ?? []).value, next: [] } : null;
+    const expectedRiskBidNext = continuing && Array.isArray(checkpoint.encounterState.metadata?.riskBidEffects)
+      ? task5CarryoverRiskBidEffects(checkpoint.encounterState, checkpoint.encounterState.metadata.riskBidEffects)
+      : null;
+    if (continuing && !expectedRiskBidNext) return false;
+    const expectedRiskBidTransition = continuing ? { previous: capture(checkpoint.encounterState.metadata?.riskBidEffects ?? []).value, next: capture(expectedRiskBidNext ?? []).value } : null;
+    const expectedRecoveryControlTransition = continuing ? { previous: capture(checkpoint.encounterState.metadata?.recoveryControl ?? null).value, next: null } : null;
+
+    const latestOnly = !session || event.revision === session.revision;
+    return Boolean(analysis && effects) && event.roundNumber === checkpoint.encounterState.roundNumber && analysis.successUnits === event.successUnits && analysis.failureUnits === event.failureUnits && analysis.roundResult === event.roundResult
+      && equal(analysis.stationResultIds, event.stationResultIds) && equal(event.pressureBefore, checkpoint.encounterState.pressureSystems) && event.momentumBefore === checkpoint.encounterState.momentum
+      && equal(event.pressureEffects, effects.pressureEffects) && equal(event.breaches, effects.breaches) && equal(event.hazardEffects, effects.hazardEffects)
+      && equal(event.consequenceEffects, effects.consequenceEffects) && equal(event.benefitTransition, expectedBenefits) && equal(event.focusTransition, expectedFocusTransition)
+      && equal(event.riskBidTransition, expectedRiskBidTransition) && equal(event.recoveryControlTransition, expectedRecoveryControlTransition) && equal(event.pressureAfter, historicalNext)
+      && (!session || (!latestOnly || (event.momentumAfter === session.encounterState.momentum && equal(event.pressureAfter, session.encounterState.pressureSystems) && equal(checkpoint.encounterState.currentStage, session.encounterState.currentStage) && equal(checkpoint.encounterState.tracks, session.encounterState.tracks))));
+  } catch { return false; }
+}
+function validRoundCloseoutEvent(event, session) {
+  try {
+    const checks = {
+      keys: exactKeys(event, ROUND_CLOSEOUT_EVENT_FIELDS),
+      type: event.type === "voyage.m12-round-closeout",
+      id: event.sessionId === session.sessionId && event.eventId === session.eventId && event.definitionSnapshotId === session.definitionSnapshotId && event.shipId === session.shipId,
+      round: nonBlank(event.roundId) && safeInteger(event.roundNumber) && event.roundNumber > 0,
+      rev: safeInteger(event.previousRevision) && safeInteger(event.revision) && event.revision === event.previousRevision + 1 && event.revision <= session.revision,
+      epoch: safeInteger(event.previousAuthorityEpoch) && safeInteger(event.authorityEpoch) && event.previousAuthorityEpoch === event.authorityEpoch && event.authorityEpoch <= session.authorityEpoch,
+      state: event.previousSessionState === "station-resolution" && ["crew-planning", "event-closeout-review"].includes(event.nextSessionState) && event.previousPhase === "resolution",
+      phase: (event.nextSessionState === "crew-planning" ? event.nextPhase === "crew-planning" && nonBlank(event.nextRoundId) : event.nextPhase === "cleanup-advance" && event.nextRoundId === null),
+      ids: Array.isArray(event.stationResultIds) && event.stationResultIds.length > 0 && event.stationResultIds.every(nonBlank) && new Set(event.stationResultIds).size === event.stationResultIds.length,
+      units: safeInteger(event.successUnits) && event.successUnits >= 0 && safeInteger(event.failureUnits) && event.failureUnits >= 0,
+      result: ["critical-round-success", "round-success", "round-failure", "critical-round-failure", "round-neutral"].includes(event.roundResult),
+      momentum: safeInteger(event.momentumBefore) && event.momentumBefore >= 0 && event.momentumBefore <= 3 && safeInteger(event.momentumAfter) && event.momentumAfter >= 0 && event.momentumAfter <= 3,
+      momentumTransition: event.roundResult === "round-neutral" ? event.momentumAfter === event.momentumBefore : event.momentumAfter === (event.roundResult.includes("success") ? Math.min(3, event.momentumBefore + 1) : Math.max(0, event.momentumBefore - 1)),
+      pressure: validPressureSystemsMap(event.pressureBefore) && validPressureSystemsMap(event.pressureAfter),
+      nested: validRoundCloseoutNestedEvidence(event)
+    };
+
+    return Object.values(checks).every(Boolean);
+  } catch { return false; }
+}function validRoundCloseoutRecord(record, session, audit, event) {
+  try {
+    const tuple = parseStoredFingerprint(record?.fingerprint);
+    const response = record?.response;
+    const details = audit?.details;
+    const expectedPressureEffectIds = Array.isArray(event?.pressureEffects) ? event.pressureEffects.map((entry) => entry.pressureEffectId) : null;
+    const expectedBreachIds = Array.isArray(event?.breaches) ? event.breaches.map((entry) => entry.pressureBreachId) : null;
+    const expectedHazardEffectIds = Array.isArray(event?.hazardEffects) ? event.hazardEffects.map((entry) => entry.hazardId) : null;
+    const expectedConsequenceEffectIds = Array.isArray(event?.consequenceEffects) ? event.consequenceEffects.map((entry) => entry.effectId) : null;
+    return exactKeys(record, PROCESSED_REQUEST_FIELDS) && record.commandKind === "round-closeout" && record.resultKind === "round-closeout-completed" && record.projectionKind === "gm"
+      && safeInteger(record.resultRevision) && record.resultRevision > 0 && tuple.ok && tuple.value[0] === session.sessionId && tuple.value[1] === record.principalUserId && tuple.value[2] === "gm"
+      && safeInteger(tuple.value[3]) && tuple.value[3] === event.authorityEpoch && safeInteger(tuple.value[4]) && tuple.value[4] === event.previousRevision
+      && tuple.value[5] === "round-closeout" && exactKeys(tuple.value[6], ["roundId"]) && tuple.value[6].roundId === event.roundId
+      && validStoredResponse(response, record, session.sessionId, event.authorityEpoch) && response.status === event.nextSessionState && response.revision === event.revision && response.authorityEpoch === event.authorityEpoch
+      && response.events.length === 1 && equal(response.events[0], event)
+      && validRoundCloseoutEvent(event, session) && event.revision === record.resultRevision
+      && exactKeys(audit, AUDIT_FIELDS) && audit.kind === "round-closeout" && audit.sessionId === session.sessionId && audit.requestId === record.requestId
+      && audit.actorUserId === record.principalUserId && safeInteger(audit.authorityEpoch) && audit.authorityEpoch === event.authorityEpoch
+      && audit.previousRevision === event.previousRevision && audit.revision === event.revision && validIsoTimestamp(audit.occurredAt)
+      && exactKeys(details, ROUND_CLOSEOUT_AUDIT_DETAILS_FIELDS) && details.roundId === event.roundId && details.roundNumber === event.roundNumber
+      && details.runtimeEventType === event.type && details.checkpointId === `arcflight-voyage-checkpoint:${JSON.stringify([session.sessionId, "before-round-closeout", event.previousRevision])}`
+      && equal(details.stationResultIds, event.stationResultIds) && details.successUnits === event.successUnits && details.failureUnits === event.failureUnits && details.roundResult === event.roundResult
+      && details.momentumBefore === event.momentumBefore && details.momentumAfter === event.momentumAfter
+      && equal(details.pressureEffectIds, expectedPressureEffectIds) && equal(details.breachIds, expectedBreachIds)
+      && equal(details.hazardEffectIds, expectedHazardEffectIds) && equal(details.consequenceEffectIds, expectedConsequenceEffectIds)
+      && equal(details.benefitTransition, event.benefitTransition) && equal(details.focusTransition, event.focusTransition)
+      && equal(details.riskBidTransition, event.riskBidTransition) && equal(details.recoveryControlTransition, event.recoveryControlTransition)
+      && details.previousSessionState === event.previousSessionState && details.nextSessionState === event.nextSessionState && details.nextRoundId === event.nextRoundId;
+  } catch { return false; }
+}
 function validRuntimeEvent(event, session, index) {
   if (!isPlainObject(event) || !nonBlank(event.sessionId) || event.sessionId !== session.sessionId || event.eventId !== session.eventId
     || event.definitionSnapshotId !== session.definitionSnapshotId || event.shipId !== session.shipId || !safeInteger(event.previousRevision) || !safeInteger(event.revision)
     || event.revision !== event.previousRevision + 1 || event.revision > session.revision) return false;
+  if (event?.type === "voyage.m12-round-closeout") return validRoundCloseoutEvent(event, session);
   if (isM12RuntimeEvent(event)) return validM12RuntimeEvent(event, session);
   if (["voyage.m11-recovery-rebuilt", "voyage.m11-closeout-review-accepted", "voyage.m11-closeout-session-reserved", "voyage.m11-closeout-session-commit-pending", "voyage.m11-closeout-session-committed"].includes(event.type) && !exactKeys(event, M11_EVENT_FIELDS)) return false;
   if (event.type === "voyage.m11-recovery-rebuilt") return nonBlank(event.sourceCheckpointId) && safeInteger(event.sourceCheckpointRevision) && nonBlank(event.recoveryAuthorityUserId);
@@ -1062,7 +1462,7 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
     if (!exactKeys(session, SESSION_FIELDS) || session.schemaVersion !== 1 || session.sessionDocumentId !== documentIdValue
       || ![session.sessionId, session.eventId, session.definitionSnapshotId, session.shipId].every(nonBlank) || !safeInteger(session.revision) || !SESSION_STATES.has(session.sessionState)
       || (!nonBlank(session.activeGmUserId) && !(allowBootstrapNull && session.activeGmUserId === null)) || !safeInteger(session.authorityEpoch)
-       || !validEncounterState(session.encounterState, session) || !validStoredFocusMetadata(session.encounterState) || !lifecycleMappingValid(session) || !Array.isArray(session.events) || !Array.isArray(session.checkpoints)
+       || !validEncounterState(session.encounterState, session) || !validStoredFocusMetadata(session.encounterState, session) || !lifecycleMappingValid(session) || !Array.isArray(session.events) || !Array.isArray(session.checkpoints)
        || !Array.isArray(session.processedRequests) || !Array.isArray(session.auditHistory) || !validCloseout(session.closeout, session) || !validStoredCloseoutPlan(session.closeout, session) || !exactKeys(session.recovery, RECOVERY_FIELDS)
       || !new Set(["none", "required", "resolved"]).has(session.recovery.status)) return false;
     const immutableEnvelope = recoveryEnvelope(session, documentIdValue);
@@ -1083,7 +1483,8 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
     let owner = session.processedRequests[0].principalUserId, expectedAuthorityEpoch = 0, transferCount = 0, recoveryCount = 0, bootstrapRecoveryCount = 0, lastRecoveryRevision = 0, latestRecoveryEvidence = null;
     for (let index = 1; index < session.processedRequests.length; index += 1) {
       const record = session.processedRequests[index]; if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || requestIds.has(record.requestId)) return false;
-      const audit = session.auditHistory.find((entry) => entry?.requestId === record.requestId && (record.commandKind === TRANSFER_COMMAND_KIND ? entry.kind.startsWith("control-transfer") : record.commandKind === RECOVERY_COMMAND_KIND ? ["recovery-rebuilt", "recovery-aborted"].includes(entry.kind) : record.commandKind === "m12-launch" ? entry.kind === "m12-launch" : TASK2_COMMANDS.has(record.commandKind) ? entry.kind === TASK2_AUDIT_KINDS[record.commandKind] : TASK3_RECORD_COMMANDS.has(record.commandKind) ? entry.kind === TASK3_AUDIT_KINDS[record.commandKind] : record.commandKind === FOCUS_PENDING_COMMAND_KIND ? entry.kind === FOCUS_PENDING_AUDIT_KIND : FOCUS_COMMANDS.has(record.commandKind) ? entry.kind === FOCUS_AUDIT_KINDS[record.commandKind] : record.commandKind === "closeout-review" ? entry.kind === "closeout-review-accepted" : record.commandKind === "closeout-reserve" ? entry.kind === "closeout-session-reserved" : record.commandKind === "closeout-session-commit" ? ["closeout-session-commit-pending", "closeout-session-committed"].includes(entry.kind) : record.commandKind === "abort-session" ? ["setup-cancelled", "event-aborted"].includes(entry.kind) : record.commandKind === "correct-session" ? entry.kind === "correction-applied" : false));
+
+      const audit = session.auditHistory.find((entry) => entry?.requestId === record.requestId && (record.commandKind === TRANSFER_COMMAND_KIND ? entry.kind.startsWith("control-transfer") : record.commandKind === RECOVERY_COMMAND_KIND ? ["recovery-rebuilt", "recovery-aborted"].includes(entry.kind) : record.commandKind === "m12-launch" ? entry.kind === "m12-launch" : TASK2_COMMANDS.has(record.commandKind) ? entry.kind === TASK2_AUDIT_KINDS[record.commandKind] : TASK3_RECORD_COMMANDS.has(record.commandKind) ? entry.kind === TASK3_AUDIT_KINDS[record.commandKind] : record.commandKind === FOCUS_PENDING_COMMAND_KIND ? entry.kind === FOCUS_PENDING_AUDIT_KIND : FOCUS_COMMANDS.has(record.commandKind) ? entry.kind === FOCUS_AUDIT_KINDS[record.commandKind] : record.commandKind === "round-closeout" ? entry.kind === "round-closeout" : record.commandKind === "closeout-review" ? entry.kind === "closeout-review-accepted" : record.commandKind === "closeout-reserve" ? entry.kind === "closeout-session-reserved" : record.commandKind === "closeout-session-commit" ? ["closeout-session-commit-pending", "closeout-session-committed"].includes(entry.kind) : record.commandKind === "abort-session" ? ["setup-cancelled", "event-aborted"].includes(entry.kind) : record.commandKind === "correct-session" ? entry.kind === "correction-applied" : false));
       if (record.commandKind === TRANSFER_COMMAND_KIND) {
         const tuple = parseStoredFingerprint(record.fingerprint); if (!audit || !tuple.ok || tuple.value[3] !== expectedAuthorityEpoch || !validTransferRecord(record, session, expectedAuthorityEpoch, audit, owner)) return false;
         owner = tuple.value[6].targetUserId; expectedAuthorityEpoch += 1; transferCount += 1;
@@ -1110,6 +1511,11 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
         lastRecoveryRevision = record.resultRevision;
         recoveryCount += 1;
         latestRecoveryEvidence = { record, event, audit, sourceCheckpoint, recoveryCheckpoint, replayedState };
+      } else if (record.commandKind === "round-closeout") {
+        const event = session.events.find((entry) => entry?.type === "voyage.m12-round-closeout" && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        const audit = session.auditHistory.find((entry) => entry?.requestId === record.requestId && entry.kind === "round-closeout");
+        const checkpoint = event && session.checkpoints.find((entry) => entry?.kind === "before-round-closeout" && entry.revision === event.previousRevision && entry.eventCount === session.events.indexOf(event));
+        if (!event || !audit || !checkpoint || !validCheckpoint(checkpoint, session, session.events, session.checkpoints.indexOf(checkpoint)) || !validRoundCloseoutDerivedEvidence(event, checkpoint, session) || !validRoundCloseoutRecord(record, session, audit, event)) return false;
       } else if (record.commandKind === "closeout-prepare") {
         if (!validCloseoutRecord(record, session, null, null)) return false;
       } else if (record.commandKind === "closeout-ship-apply") {
@@ -1153,7 +1559,7 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
     const storedTransferCount = session.auditHistory.filter((entry) => entry?.kind === "control-transfer" || entry?.kind === "control-transfer-bootstrap").length;
     const closeoutAuditCount = session.auditHistory.filter((entry) => Object.hasOwn(CLOSEOUT_AUDIT_TRANSITIONS, entry?.kind)).length;
     const task7AuditCount = session.auditHistory.filter((entry) => ["setup-cancelled", "event-aborted", "correction-applied"].includes(entry?.kind)).length;
-    const m12AuditCount = session.auditHistory.filter((entry) => entry?.kind === "m12-launch" || Object.values(TASK2_AUDIT_KINDS).includes(entry?.kind) || Object.values(TASK3_AUDIT_KINDS).includes(entry?.kind) || Object.values(FOCUS_AUDIT_KINDS).includes(entry?.kind) || entry?.kind === FOCUS_PENDING_AUDIT_KIND).length;
+    const m12AuditCount = session.auditHistory.filter((entry) => entry?.kind === "m12-launch" || Object.values(TASK2_AUDIT_KINDS).includes(entry?.kind) || Object.values(TASK3_AUDIT_KINDS).includes(entry?.kind) || Object.values(FOCUS_AUDIT_KINDS).includes(entry?.kind) || entry?.kind === FOCUS_PENDING_AUDIT_KIND || entry?.kind === "round-closeout").length;
     if (session.authorityEpoch !== expectedAuthorityEpoch || session.auditHistory.length !== transferCount + recoveryCount + bootstrapRecoveryCount + closeoutAuditCount + task7AuditCount + m12AuditCount || storedBootstrapRecoveryCount !== bootstrapRecoveryCount || storedTransferCount !== transferCount || (!allowBootstrapNull && session.activeGmUserId === null)) return false;
     if (recoveryCount === 0) {
       if (session.recovery.status !== "none" || !Object.keys(session.recovery).slice(1).every((key) => session.recovery[key] === null)) return false;
@@ -1534,7 +1940,31 @@ function closeoutBoundary(value, auth, match, context, identities) {
   if (resolved.match.documentId !== match.documentId || resolved.match.session.revision !== value.expectedRevision || resolved.match.session.authorityEpoch !== value.authorityEpoch || resolved.match.session.activeGmUserId !== current.activeGmUserId || !pristineSession(resolved.match.session, resolved.match.documentId, { replayContext: context })) return { error: diagnostic("m11-recovery-required", "recovery") };
   return { match: resolved.match, auth: current };
 }
-async function dispatchCloseoutCommand(value, identities, auth, match, context, coordinated = false, trustedWitness = null) {
+async function dispatchRoundCloseoutCommand(value, identities, initialAuth, initialMatch, context) {
+  const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth, context);
+  if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  return runExclusiveSessionMutation(context, descriptor, async (trustedWitness) => withTransferLock(value.sessionId, async () => {
+    const auth = authority(context, { requireConnection: true });
+    if (auth.error || !coordinatorIdentityMatches(auth, descriptor, context)) return failure([auth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
+    const resolved = resolveSessionDocument(value.sessionId, context);
+    if (resolved.error) return failure([resolved.error], identities);
+    if (resolved.match.documentId !== descriptor.sessionDocumentId || !pristineSession(resolved.match.session, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+    const prior = resolved.match.session;
+    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
+    const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, "gm", fp, identities);
+    if (replay) return replay;
+    if (prior.activeGmUserId !== auth.activeGmUserId || value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+    if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+    if (!closeoutLifecycleAllowed(prior, "round-closeout")) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+    const built = await buildTask5Candidate(prior, value, auth, trustedWitness, context);
+    if (!built?.candidate || !built.response) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+    const candidate = built.candidate, response = built.response;
+    if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+    try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); }
+    catch { return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response }); }
+    return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response });
+  }), identities, { nonWinnerCode: "m11-control-transfer-required", nonWinnerPath: "authorityEpoch" });
+}async function dispatchCloseoutCommand(value, identities, auth, match, context, coordinated = false, trustedWitness = null) {
   const commandKind = value.commandKind;
   if (!["closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"].includes(commandKind)) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
   if (!coordinated) {
@@ -1789,7 +2219,27 @@ function canonicalTask2Stations(session, context) {
   }
 }
 
-function bareTask2Stations(stations) {
+function canonicalTask3SourceBoundStations(session, canonicalStations) {
+  try {
+    if (!isPlainObject(session) || !Array.isArray(canonicalStations)) return null;
+    const assignments = Array.isArray(session.encounterState?.stationAssignments) ? session.encounterState.stationAssignments : [];
+    const captured = capture(canonicalStations); if (!captured.ok) return null;
+    const result = captured.value.map((station) => {
+      const assignment = assignments.find((entry) => entry?.stationId === station?.stationId);
+      const operatorUuid = assignment?.operator?.uuid;
+      const actions = Array.isArray(station?.actions) ? station.actions.map((action) => {
+        const copy = capture(action); if (!copy.ok) return null;
+        if (isPlainObject(copy.value?.check) && isPlainObject(copy.value.check.source)) {
+          copy.value.check.source = operatorUuid ? { kind: "character", uuid: operatorUuid } : { kind: "character" };
+        }
+        return copy.value;
+      }) : null;
+      if (!actions || actions.some((action) => action === null)) return null;
+      return { ...station, actions };
+    });
+    return result.every((station) => station !== null) ? result : null;
+  } catch { return null; }
+}function bareTask2Stations(stations) {
   return Array.isArray(stations) && stations.every((station) => isPlainObject(station) && Object.keys(station).length === 1 && nonBlank(station.stationId));
 }
 
@@ -2170,8 +2620,7 @@ function recoveryCheckpointValid(checkpoint, envelope) {
       || checkpoint.authorityEpoch > envelope.authorityEpoch || !validEncounterState(checkpoint.encounterState, envelope) || !lifecycleMappingValid({ ...envelope, sessionState: checkpoint.sessionState, encounterState: checkpoint.encounterState })) return false;
     return checkpoint.encounterRevision === checkpoint.encounterState.revision;
   } catch { return false; }
-}
-function recoveryInvalidationValid(checkpoint, envelope) {
+}function recoveryInvalidationValid(checkpoint, envelope) {
   if (checkpoint.invalidated === false) return true;
   return envelope.auditHistory.some((audit) => {
     if (!exactKeys(audit, AUDIT_FIELDS) || audit.kind !== "recovery-rebuilt" || !nonBlank(audit.requestId) || !nonBlank(audit.actorUserId)
@@ -2188,54 +2637,106 @@ function recoveryInvalidationValid(checkpoint, envelope) {
 function recoveryCheckpointJournalValid(envelope) {
   try {
     const ids = new Set(); let previousRevision = -1, previousAuthorityEpoch = -1, previousEventCount = -1;
-    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
+    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision, authorityEpoch: envelope.authorityEpoch };
     let previousChainRevision = 0; const runtimeRevisions = new Set();
-    for (const event of envelope.events) {
-      if (event?.type?.startsWith("voyage.m11-") || isM12RuntimeEvent(event)) {
+    for (let eventIndex = 0; eventIndex < envelope.events.length; eventIndex += 1) {
+      const event = envelope.events[eventIndex];
+      if (event?.type?.startsWith('voyage.m11-') || isM12RuntimeEvent(event)) {
         if (runtimeRevisions.has(event.revision)) return false;
-        if (!validRuntimeEvent(event, identity, 0) || (event.previousRevision !== previousChainRevision && !(event.previousRevision + 1 === previousChainRevision && event.revision === previousChainRevision))) return false;
+        if (!validRuntimeEvent(event, identity, eventIndex) || (event.previousRevision !== previousChainRevision && !(event.previousRevision + 1 === previousChainRevision && event.revision === previousChainRevision))) return false;
         runtimeRevisions.add(event.revision);
         previousChainRevision = Math.max(previousChainRevision, event.revision);
       } else {
         const pair = storedEventRevisionPair(event);
-        const nextType = envelope.events[envelope.events.indexOf(event) + 1]?.type;
+        const nextType = envelope.events[eventIndex + 1]?.type;
         const task7Domain = isTask7RuntimeType(nextType);
-        const task3Domain = isTask3DomainEvent(event) && isM12RuntimeEvent(envelope.events[envelope.events.indexOf(event) + 1]);
-        if (!isPlainObject(event) || !safeInteger(pair[1]) || !safeInteger(pair[0]) || (!task7Domain && pair[0] !== previousChainRevision) || pair[1] !== pair[0] + 1
-          || (task3Domain && !validTask3DomainEvent(event, identity))) return false;
-        if (!task7Domain) previousChainRevision = pair[1];
+        const task3Domain = isTask3DomainEvent(event) && isM12RuntimeEvent(envelope.events[eventIndex + 1]);
+        if (!isPlainObject(event) || !safeInteger(pair[1]) || !safeInteger(pair[0]) || (!task7Domain && !task3Domain && pair[0] !== previousChainRevision) || pair[1] !== pair[0] + 1
+          || (task3Domain && (!validTask3DomainEvent(event, identity) || event.revision !== envelope.events[eventIndex + 1]?.previousEncounterRevision + 1 || envelope.events[eventIndex + 1]?.previousRevision !== previousChainRevision || envelope.events[eventIndex + 1]?.revision !== previousChainRevision + 1))) return false;        if (!task7Domain && !task3Domain) previousChainRevision = pair[1];
       }
     }
     for (const checkpoint of envelope.checkpoints) {
       if (!recoveryCheckpointValid(checkpoint, envelope)) return false;
       if (ids.has(checkpoint.checkpointId) || checkpoint.revision <= previousRevision || checkpoint.authorityEpoch < previousAuthorityEpoch || checkpoint.eventCount < previousEventCount
-         || (previousRevision >= 0 && checkpoint.revision !== previousRevision + 1
-           && !Array.from({ length: checkpoint.revision - previousRevision - 1 }, (_, offset) => previousRevision + offset + 1)
-             .every((revision) => envelope.events.some((event) => {
-               const pair = isM12RuntimeEvent(event) ? [event.previousRevision, event.revision] : storedEventRevisionPair(event);
-               return safeInteger(pair[1]) && pair[1] === revision;
-             })))
+        || (previousRevision >= 0 && checkpoint.revision !== previousRevision + 1
+          && !Array.from({ length: checkpoint.revision - previousRevision - 1 }, (_, offset) => previousRevision + offset + 1)
+            .every((revision) => envelope.events.some((event) => {
+              const pair = isM12RuntimeEvent(event) ? [event.previousRevision, event.revision] : storedEventRevisionPair(event);
+              return safeInteger(pair[1]) && pair[1] === revision;
+            })))
         || !recoveryInvalidationValid(checkpoint, envelope)) return false;
       for (let index = 0; index < checkpoint.eventCount; index += 1) {
         const event = envelope.events[index];
         const pair = isM12RuntimeEvent(event) ? [event.previousRevision, event.revision] : storedEventRevisionPair(event);
-        if (!event || !capture(event).ok || !safeInteger(pair?.[0]) || !safeInteger(pair?.[1]) || pair[1] > checkpoint.revision) return false;
+        const prefixRevision = isTask3DomainEvent(event) && isM12RuntimeEvent(envelope.events[index + 1]) ? envelope.events[index + 1].revision : pair[1];
+        if (!event || !capture(event).ok || !safeInteger(pair?.[0]) || !safeInteger(pair?.[1]) || !safeInteger(prefixRevision) || prefixRevision > checkpoint.revision) return false;
       }
       ids.add(checkpoint.checkpointId); previousRevision = checkpoint.revision; previousAuthorityEpoch = checkpoint.authorityEpoch; previousEventCount = checkpoint.eventCount;
     }
     return previousChainRevision === envelope.revision;
   } catch { return false; }
-}
+}async function buildTask5Candidate(prior, value, auth, trustedWitness, context) {
+  try {
+    if (prior.sessionState !== "station-resolution" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "resolution" || !Array.isArray(prior.encounterState.pendingThresholdQueue) || prior.encounterState.pendingThresholdQueue.length !== 0) return null;
+    const consequences = applyVoyageEncounterConsequencesTransition(prior.encounterState, { phaseStartSnapshotId: `arcflight-voyage-task5:${JSON.stringify([prior.sessionId, prior.encounterState.revision + 1])}` });
+    if (!consequences?.ok) return null;
+    const definitionResult = typeof context?.resolveEventDefinitionSnapshot === "function" ? await context.resolveEventDefinitionSnapshot(prior.eventId, prior.definitionSnapshotId) : null;
+    const definition = capture(definitionResult); if (!definition.ok) return null;
+    const round = task5DefinitionRound(definition.value, prior.encounterState.roundNumber);
+    if (!round || round.roundId !== value.payload.roundId) return null;
+    const analysis = task5RoundAnalysis(consequences.nextState, round.roundId, prior.events);
+    if (!analysis) return null;
+    const effects = task5RoundEffects(consequences.nextState, prior.events, prior, round.roundId, analysis); if (!effects) return null;
+    let nextState = capture(consequences.nextState).value;
+    nextState.pressureSystems = capture(effects.pressureAfter).value;
+    nextState.activeHazards = capture(effects.activeHazardsAfter ?? nextState.activeHazards ?? []).value;
+    nextState.revision = effects.encounterRevision;
+    const nextRound = task5DefinitionRound(definition.value, prior.encounterState.roundNumber + 1);
+    let nextSessionState = "event-closeout-review", nextPhase = "cleanup-advance", nextRoundId = null;
+    if (nextRound) {
+      nextRoundId = nextRound.roundId;
+      nextState.title = nextRound.title;
+      nextState.description = nextRound.vignette ?? nextRound.description ?? nextRound.situation;
+      nextState.currentSituation = nextRound.situation;
+      nextState.objective = nextRound.objective;
+      nextState.availableStations = capture(nextRound.availableStations).value;
+      nextState.roundNumber = nextRound.roundNumber;
+      nextState.phase = "situation";
+      nextState.selections = {}; nextState.targets = {}; nextState.riskBids = {}; nextState.assistance = []; nextState.reservations = []; nextState.pendingChecks = [];
+      nextState.pendingConsequences = []; nextState.temporaryConsequences = []; nextState.proposedStationOrder = []; nextState.committedStationOrder = [];
+      nextState.metadata.reactionWindow = null; nextState.metadata.focusEffects = []; nextState.metadata.riskBidEffects = Array.isArray(prior.encounterState.metadata?.riskBidEffects) ? task5CarryoverRiskBidEffects(prior.encounterState, prior.encounterState.metadata.riskBidEffects) : []; if (!nextState.metadata.riskBidEffects) return null; nextState.metadata.recoveryControl = null;
+      const planning = applyVoyageEncounterCrewPlanningTransition(nextState, { phaseStartSnapshotId: `arcflight-voyage-task5-planning:${JSON.stringify([prior.sessionId, prior.revision + 1])}` });
+      if (!planning?.ok) return null;
+      nextState = planning.nextState; nextSessionState = "crew-planning"; nextPhase = "crew-planning";
+    } else { nextState.phase = "cleanup-advance"; nextState.revision += 1; }
+    nextState.lifecycleState = "active";
+    const candidate = capture(prior); if (!candidate.ok) return null;
+    const next = candidate.value, previousRevision = prior.revision, revision = previousRevision + 1;
+    next.revision = revision; next.sessionState = nextSessionState; next.encounterState = nextState;
+     const priorRiskEffects = Array.isArray(prior.encounterState.metadata?.riskBidEffects) ? prior.encounterState.metadata.riskBidEffects.filter((effect) => effect?.roundNumber === prior.encounterState.roundNumber) : [];
+     const benefitTransition = task5BenefitTransitionEvidenceList(prior.encounterState, priorRiskEffects);
+     if (!benefitTransition) return null;
+     const event = { type: "voyage.m12-round-closeout", sessionId: next.sessionId, eventId: next.eventId, definitionSnapshotId: next.definitionSnapshotId, shipId: next.shipId, roundId: round.roundId, roundNumber: prior.encounterState.roundNumber, previousRevision, revision, previousAuthorityEpoch: prior.authorityEpoch, authorityEpoch: prior.authorityEpoch, previousSessionState: prior.sessionState, nextSessionState, previousPhase: prior.encounterState.phase, nextPhase, stationResultIds: analysis.stationResultIds, successUnits: analysis.successUnits, failureUnits: analysis.failureUnits, roundResult: analysis.roundResult, momentumBefore: prior.encounterState.momentum, momentumAfter: analysis.roundResult === "round-neutral" ? prior.encounterState.momentum : analysis.roundResult.includes("success") ? Math.min(3, prior.encounterState.momentum + 1) : Math.max(0, prior.encounterState.momentum - 1), pressureBefore: capture(prior.encounterState.pressureSystems).value, pressureAfter: capture(effects.pressureAfter).value, pressureEffects: capture(effects.pressureEffects).value, breaches: capture(effects.breaches).value, hazardEffects: capture(effects.hazardEffects).value, consequenceEffects: capture(effects.consequenceEffects).value, benefitTransition, focusTransition: nextRound ? { previous: capture(prior.encounterState.metadata?.focusEffects ?? []).value, next: [] } : null, riskBidTransition: nextRound ? { previous: capture(prior.encounterState.metadata?.riskBidEffects ?? []).value, next: capture(nextState.metadata?.riskBidEffects ?? []).value } : null, recoveryControlTransition: nextRound ? { previous: capture(prior.encounterState.metadata?.recoveryControl ?? null).value, next: null } : null, nextRoundId };
+     next.encounterState.momentum = event.momentumAfter;
+     const checkpoint = { checkpointId: `arcflight-voyage-checkpoint:${JSON.stringify([next.sessionId, "before-round-closeout", previousRevision])}`, kind: "before-round-closeout", sessionId: next.sessionId, revision: previousRevision, encounterRevision: prior.encounterState.revision, eventCount: prior.events.length, sessionState: prior.sessionState, encounterState: capture(prior.encounterState).value, closeout: capture(prior.closeout).value, authorityEpoch: prior.authorityEpoch, invalidated: false };
+     if (!trustedWitness?.occurredAt) return null;
+     const audit = { auditId: auditId(next.sessionId, next.auditHistory.length, "round-closeout"), kind: "round-closeout", sessionId: next.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: next.authorityEpoch, previousRevision, revision, occurredAt: trustedWitness.occurredAt, details: { roundId: event.roundId, roundNumber: event.roundNumber, runtimeEventType: event.type, checkpointId: checkpoint.checkpointId, stationResultIds: capture(event.stationResultIds).value, successUnits: event.successUnits, failureUnits: event.failureUnits, roundResult: event.roundResult, momentumBefore: event.momentumBefore, momentumAfter: event.momentumAfter, pressureEffectIds: event.pressureEffects.map((entry) => entry.pressureEffectId), breachIds: event.breaches.map((entry) => entry.pressureBreachId), hazardEffectIds: event.hazardEffects.map((entry) => entry.hazardId), consequenceEffectIds: event.consequenceEffects.map((entry) => entry.effectId), benefitTransition: capture(event.benefitTransition).value, focusTransition: event.focusTransition, riskBidTransition: event.riskBidTransition, recoveryControlTransition: event.recoveryControlTransition, previousSessionState: event.previousSessionState, nextSessionState, nextRoundId } };
+     next.checkpoints.push(checkpoint); next.events.push(event); next.auditHistory.push(audit);
+     const response = closeoutResponse(next, value.requestId, event);
+     next.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fingerprint(next.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, "round-closeout", value.payload), commandKind: "round-closeout", resultKind: "round-closeout-completed", resultRevision: revision, response });
+     return { candidate: next, response };
+   } catch { return null; }
+ }
 function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, checkpoint = null) {
   try {
-    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
+    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision, authorityEpoch: envelope.authorityEpoch };
     let priorRevision = startRevision, index = startIndex, replayedState = checkpoint ? { sessionState: checkpoint.sessionState, encounterState: capture(checkpoint.encounterState).value, closeout: capture(checkpoint.closeout).value } : null; const runtimeRevisions = new Set();
     while (index < envelope.events.length) {
       const event = envelope.events[index];
       if (isTask3DomainEvent(event) && isM12RuntimeEvent(envelope.events[index + 1])) {
         const runtime = envelope.events[index + 1];
         if (!validTask3DomainEvent(event, identity) || !validM12RuntimeEvent(runtime, identity)
-          || event.previousRevision !== priorRevision || event.revision !== runtime.previousEncounterRevision + 1
+          || event.revision !== runtime.previousEncounterRevision + 1
           || runtime.previousRevision !== priorRevision || runtime.revision !== priorRevision + 1) return null;
         priorRevision = runtime.revision;
         index += 2;
@@ -2302,7 +2803,7 @@ function validRecoveryReplayRecord(record, envelope, request, authenticatedUserI
       || value.resultRevision < 1 || !parsed.ok || !validStoredResponse(response, value, envelope.sessionId, envelope.authorityEpoch)
       || response.projection !== null || response.events.length !== (value.resultKind === "recovered-aborted" ? 2 : 1) || response.errors.length !== 0 || response.warnings.length !== 0) return false;
     const tuple = parsed.value, payload = tuple[6], event = response.events.at(-1);
-    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
+    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision, authorityEpoch: envelope.authorityEpoch };
     const responseRuntimeEvent = response.events.at(-1);
     const matchingEvent = envelope.events.find((storedEvent) => isPlainObject(storedEvent) && storedEvent.type === responseRuntimeEvent?.type && storedEvent.revision === responseRuntimeEvent?.revision
       && storedEvent.previousRevision === event?.previousRevision && storedEvent.recoveryAuthorityUserId === event?.recoveryAuthorityUserId && equal(storedEvent, event));
@@ -2431,6 +2932,12 @@ function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = nu
         const sliceI = tuple.ok && SLICE_I_CORRECTION_KINDS.includes(tuple.value[6]?.correctionKind);
         const expectedEvents = sliceI ? 1 : (tuple.ok && tuple.value[6]?.correctionKind === "plan-unlock" ? 1 : 2);
         if (!event || !audit || !validTask7Record(record, sessionEvidence, audit, event) || record.response.events.length !== expectedEvents || !equal(record.response.events.at(-1), event)) return false;
+        lastEvidenceRevision = record.resultRevision; auditIndex += 1;
+      } else if (sessionEvidence && record.commandKind === "round-closeout") {
+        const event = envelope.events.find((entry) => entry?.type === "voyage.m12-round-closeout" && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        const audit = envelope.auditHistory[auditIndex];
+        const checkpoint = event && envelope.checkpoints.find((entry) => entry?.kind === "before-round-closeout" && entry.revision === event.previousRevision && entry.eventCount === envelope.events.indexOf(event));
+        if (!event || !audit || !checkpoint || !validRoundCloseoutRecord(record, sessionEvidence, audit, event) || !validRoundCloseoutDerivedEvidence(event, checkpoint, sessionEvidence)) return false;
         lastEvidenceRevision = record.resultRevision; auditIndex += 1;
       } else if (sessionEvidence && (record.commandKind === "closeout-review" || record.commandKind === "closeout-prepare" || record.commandKind === "closeout-reserve" || record.commandKind === "closeout-ship-apply" || record.commandKind === "closeout-session-commit")) {
         if (record.commandKind === "closeout-prepare" || record.commandKind === "closeout-ship-apply") {
@@ -3444,7 +3951,23 @@ function validFocusPendingRecord(record, session, audit, event) {
     const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[0] !== session.sessionId || tuple.value[1] !== record.principalUserId || tuple.value[2] !== record.projectionKind
       || !safeInteger(tuple.value[3]) || !safeInteger(tuple.value[4]) || tuple.value[4] + 1 !== record.resultRevision || tuple.value[5] !== FOCUS_PENDING_COMMAND_KIND || !focusPayloadValid(tuple.value[6])) return false;
     const pending = session.encounterState.metadata?.focusPendingCheck;
-    const ok = (!pending || validPendingFocusCheck(pending, session)) && (!pending || pending.reactionId === tuple.value[6].reactionId)
+    const reactionId = tuple.value[6].reactionId;
+    const pendingMatches = pending?.reactionId === reactionId;
+    const completed = Array.isArray(session.encounterState.metadata?.focusResults)
+      && session.encounterState.metadata.focusResults.some((entry) => entry?.reactionId === reactionId)
+      && Array.isArray(session.encounterState.metadata?.focusEffects)
+      && session.encounterState.metadata.focusEffects.some((entry) => entry?.reactionId === reactionId);
+    const passed = session.processedRequests.some((candidate) => {
+      if (candidate?.commandKind !== "focus-reaction-pass" || candidate.resultRevision <= record.resultRevision) return false;
+      const candidateFingerprint = parseStoredFingerprint(candidate.fingerprint);
+      return candidateFingerprint.ok && candidateFingerprint.value[6]?.reactionId === reactionId
+        && session.events.some((entry) => entry?.type === "voyage.m12-focus-reaction-pass"
+          && entry.revision === candidate.resultRevision && entry.previousRevision === candidate.resultRevision - 1);
+    });
+    const pendingEvidenceValid = pending
+      ? (pendingMatches ? validPendingFocusCheck(pending, session) : completed || passed)
+      : completed || passed;
+    const ok = pendingEvidenceValid
       && validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && record.response.status === "station-resolution" && record.response.events.length === 1 && equal(record.response.events[0], event)
       && validM12RuntimeEvent(event, session) && exactKeys(audit, AUDIT_FIELDS) && audit.auditId === auditId(session.sessionId, session.auditHistory.indexOf(audit), audit.kind)
       && audit.sessionId === session.sessionId && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId && audit.authorityEpoch === tuple.value[3]
@@ -3626,10 +4149,13 @@ async function dispatchFocusReactionCommand(value, identities, initialAuth, init
       const rawDegree = focusResult.result?.degreeOfSuccessSlug ?? focusResult.degreeOfSuccessSlug ?? focusResult.result?.degreeOfSuccess;
       const degree = normalizeFocusDegree(rawDegree); modifier = focusOutcomeModifier(ability, degree); if (modifier === null) return failure([diagnostic("m11-command-payload-invalid", "focusResult")], identities);
     }
-    const candidate = capture(prior).value; const metadata = candidate.encounterState.metadata; metadata.focusPools = metadata.focusPools.map((entry) => entry.stationId === pool.stationId && entry.operatorId === pool.operatorId ? { ...entry, current: value.commandKind === "focus-reaction-use" ? entry.current - 1 : entry.current } : entry);
+    const candidate = capture(prior).value; const metadata = candidate.encounterState.metadata;
+    const terminalPending = existingPending?.reactionId === opportunity.reactionId;
+    if (value.commandKind === "focus-reaction-pass" && terminalPending) metadata.focusPendingCheck = null;
+    metadata.focusPools = metadata.focusPools.map((entry) => entry.stationId === pool.stationId && entry.operatorId === pool.operatorId ? { ...entry, current: value.commandKind === "focus-reaction-use" ? entry.current - 1 : entry.current } : entry);
     const resolvedIds = [...(window.resolved ?? []), opportunity.reactionId];
     const remaining = window.opportunities.some((entry) => !resolvedIds.includes(entry.reactionId));
-    metadata.reactionWindow = { ...window, status: remaining ? "open" : "closed", resolved: resolvedIds, result: value.commandKind === "focus-reaction-use" ? { reactionId: opportunity.reactionId, focusAbilityId: opportunity.focusAbilityId, stationId: opportunity.stationId, targetStationId: opportunity.targetStationId, modifier, result: focusResult.result ?? focusResult, focusSpent: 1 } : null };
+    metadata.reactionWindow = { ...window, status: remaining ? "open" : "closed", resolved: resolvedIds, committed: terminalPending ? (window.committed ?? []).filter((id) => id !== opportunity.reactionId) : (window.committed ?? []), result: value.commandKind === "focus-reaction-use" ? { reactionId: opportunity.reactionId, focusAbilityId: opportunity.focusAbilityId, stationId: opportunity.stationId, targetStationId: opportunity.targetStationId, modifier, result: focusResult.result ?? focusResult, focusSpent: 1 } : null };
     metadata.focusEffects = Array.isArray(metadata.focusEffects) ? metadata.focusEffects : [];
     if (value.commandKind === "focus-reaction-use") metadata.focusEffects.push({ reactionId: opportunity.reactionId, targetStationId: opportunity.targetStationId, modifier });
     const revision = prior.revision + 1; candidate.revision = revision; candidate.encounterState.revision = prior.encounterState.revision + 1;
@@ -4056,6 +4582,11 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
     if (!focusParticipantAuthorized(auth, match.session, value.payload.reactionId, context)) return failure([diagnostic("m11-projection-not-authorized", "request.payload.reactionId")], identities);
     return dispatchFocusReactionCommand(value, identities, auth, match, context);
   }
+  if (value.commandKind === "round-closeout") {
+    if (auth.user?.isGM !== true || auth.authenticatedUserId !== auth.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.activeGm")], identities);
+    if (!exactKeys(value.payload, ["roundId"]) || !nonBlank(value.payload.roundId)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    return dispatchRoundCloseoutCommand(value, identities, auth, match, context);
+  }
   if (CLOSEOUT_COMMANDS.has(value.commandKind)) return dispatchCloseoutCommand(value, identities, auth, match, context);
   return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
 }
@@ -4315,7 +4846,10 @@ export function readVoyageEventSessionPlanning(sessionId, context = {}) {
     let available = capture(match.session.encounterState.availableStations);
     const canonical = canonicalTask2Stations(match.session, context);
     if (canonical && !equal(available.value, canonical)) {
-      if (bareTask2Stations(available.value)) available = { ok: true, value: canonical };
+      const sourceBound = canonicalTask3SourceBoundStations(match.session, canonical);
+      if (sourceBound && equal(available.value, sourceBound)) {
+        // Resolution-start durably binds authored character checks to their assigned operators.
+      } else if (bareTask2Stations(available.value)) available = { ok: true, value: canonical };
       else return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identity);
     }
     const selections = capture(match.session.encounterState.selections);
@@ -4339,7 +4873,9 @@ export function readVoyageEventSessionPlanning(sessionId, context = {}) {
       selections: selections.value,
       riskBids: riskBids.value,
       proposedStationOrder: proposed.value,
-      committedStationOrder: committed.value
+      committedStationOrder: committed.value,
+      focusPools: capture(match.session.encounterState.metadata?.focusPools ?? []).value,
+      focusAbilities: capture(match.session.encounterState.metadata?.focusAbilities ?? []).value
     };
     const isolated = capture(planning); if (!isolated.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identity);
     const out = success(match.session, null); out.projection = isolated.value; return out;
@@ -4349,6 +4885,10 @@ export function readVoyageEventSessionPlanning(sessionId, context = {}) {
 function resolutionProjection(session, context) {
   try {
     const state = session.encounterState;
+    const resolvedDefinition = typeof context?.resolveEventDefinitionSnapshot === "function" ? context.resolveEventDefinitionSnapshot(session.eventId, session.definitionSnapshotId) : null;
+    const capturedDefinition = resolvedDefinition && typeof resolvedDefinition.then !== "function" ? capture(resolvedDefinition) : null;
+    const authoredRound = capturedDefinition?.ok ? task5DefinitionRound(capturedDefinition.value, state.roundNumber) : null;
+    const roundId = nonBlank(authoredRound?.roundId) ? authoredRound.roundId : null;
     const focus = focusMetadata(state, context);
     const report = prepareVoyageEncounterActionExecutionRequests(state);
     const assignments = new Map((state.stationAssignments ?? []).map((entry) => [entry.stationId, entry.operator]));
@@ -4393,6 +4933,8 @@ function resolutionProjection(session, context) {
       sessionState: session.sessionState,
       roundNumber: state.roundNumber,
       phase: state.phase,
+      roundId,
+      roundCloseoutReady: closeoutLifecycleAllowed(session, "round-closeout"),
       stationOrder: order,
       currentStationId: current?.stationId ?? null,
       currentActionId: current?.actionId ?? null,

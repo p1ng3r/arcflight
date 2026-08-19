@@ -1,0 +1,8 @@
+<div class="arcflight-hazard-inspection" data-component="hazard-inspection">
+  <header class="hazard-inspection-header"><img class="resource-icon--large" src="modules/arcflight/assets/ui/icons/hazard_icon.webp" alt="Hazard" title="Hazard"><div><p class="arcflight-kicker">ACTIVE HAZARDS</p><h2>{{#if hasHazards}}{{hazards.length}} active{{else}}NO ACTIVE HAZARDS{{/if}}</h2></div></header>
+  {{#if hasHazards}}
+    <div class="hazard-inspection-list">{{#each hazards}}<article class="hazard-inspection-card"><header><img class="resource-icon" src="{{iconPath}}" alt="{{iconTitle}}" title="{{iconTitle}}"><div><h3>{{name}}</h3><p>{{status}} · {{timing}}</p></div></header><dl><div><dt>AREA / PRESSURE</dt><dd>{{affectedArea}}</dd></div><div><dt>CURRENT EFFECT</dt><dd>{{effect}}</dd></div><div><dt>REMOVAL</dt><dd>{{removalMethod}}</dd></div><div><dt>IGNORED CONSEQUENCE</dt><dd>{{ignoredConsequence}}</dd></div><div><dt>CREATED ROUND</dt><dd>{{createdRound}}</dd></div>{{#if provenance}}<div><dt>PROVENANCE</dt><dd>{{provenance}}</dd></div>{{/if}}</dl></article>{{/each}}</div>
+  {{else}}
+    <p class="hazard-empty-state">NO ACTIVE HAZARDS</p>
+  {{/if}}
+</div>

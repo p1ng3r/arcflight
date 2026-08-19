@@ -61,7 +61,7 @@ export function analyzeVoyageEncounterResolutionOrder(state) {
       errors,
       "risk-bid-round-limit-exceeded",
       "riskBids",
-      `Resolution allows at most ${bidValidation.riskBidLimit} selected Risk Bids.`
+      `Selected Risk Bids cannot exceed the number of occupied stations.`
     );
   }
 

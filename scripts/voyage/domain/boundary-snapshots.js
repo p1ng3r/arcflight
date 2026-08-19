@@ -83,7 +83,7 @@ function createBoundarySnapshot(encounterState, snapshotRequest) {
       errors: [error(
         "risk-bid-round-limit-exceeded",
         "riskBids",
-        `Boundary snapshots allow at most ${riskBidValidation.riskBidLimit} selected Risk Bids.`
+        `Selected Risk Bids cannot exceed the number of occupied stations.`
       )],
       warnings: validationWarnings
     };

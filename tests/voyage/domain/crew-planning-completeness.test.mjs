@@ -106,7 +106,7 @@ function riskBidOption(riskBidId, dcAdjustment) {
   };
 }
 
-function riskPlanningEncounter(selectedRiskBidStationIds = []) {
+function riskPlanningEncounter(selectedRiskBidStationIds = [], occupiedStationIds = RISK_PLANNING_ORDER) {
   const source = encounter();
   source.availableStations = RISK_PLANNING_ORDER.map((stationId, index) => ({
     stationId,
@@ -118,11 +118,11 @@ function riskPlanningEncounter(selectedRiskBidStationIds = []) {
       ]
     }]
   }));
-  source.stationAssignments = RISK_PLANNING_ORDER.map((stationId) => ({
+  source.stationAssignments = occupiedStationIds.map((stationId) => ({
     stationId,
     operator: { kind: "actor", uuid: `Actor.${stationId}` }
   }));
-  source.selections = Object.fromEntries(RISK_PLANNING_ORDER.map(
+  source.selections = Object.fromEntries(occupiedStationIds.map(
     (stationId) => [stationId, {
       stationId,
       actionId: `action-${stationId}`,
@@ -130,7 +130,7 @@ function riskPlanningEncounter(selectedRiskBidStationIds = []) {
       statisticSlugOrAbilityId: `approach-${stationId}`
     }]
   ));
-  source.proposedStationOrder = [...RISK_PLANNING_ORDER];
+  source.proposedStationOrder = [...occupiedStationIds];
   source.riskBids = Object.fromEntries(selectedRiskBidStationIds.map(
     (stationId) => {
       const index = RISK_PLANNING_ORDER.indexOf(stationId);
@@ -167,7 +167,7 @@ test("zero occupied stations are fully complete with all canonical arrays empty"
     selectedRiskBidCount: 0,
     selectedRiskBidStationIds: [],
     baseActionStationIds: [],
-    riskBidLimit: 3,
+    riskBidLimit: 0,
     overRiskBidLimit: false,
     complete: true,
     errors: [],
@@ -224,8 +224,8 @@ test("valid statistic and no-roll approaches are action-selected and approach-se
   assert.deepEqual(result.errors, []);
 });
 
-test("optional Risk Bids report zero through three selections in occupied order", () => {
-  for (let count = 0; count <= 3; count += 1) {
+test("optional Risk Bids report zero through five selections in occupied order", () => {
+  for (let count = 0; count <= 5; count += 1) {
     const selected = RISK_PLANNING_ORDER.slice(0, count);
     const result = prepareVoyageEncounterCrewPlanningCompleteness(
       riskPlanningEncounter(selected)
@@ -238,31 +238,41 @@ test("optional Risk Bids report zero through three selections in occupied order"
       result.baseActionStationIds,
       RISK_PLANNING_ORDER.slice(count)
     );
-    assert.equal(result.riskBidLimit, 3);
+    assert.equal(result.riskBidLimit, 5);
     assert.equal(result.overRiskBidLimit, false);
     assert.equal(result.complete, true);
     assert.deepEqual(result.errors, []);
   }
 });
 
-test("a fourth valid Risk Bid is reported precisely and blocks completeness", () => {
-  const source = riskPlanningEncounter(RISK_PLANNING_ORDER.slice(0, 4));
+test("occupied-station capacity accepts four and five valid Risk Bids", () => {
+  const four = riskPlanningEncounter(RISK_PLANNING_ORDER.slice(0, 4), RISK_PLANNING_ORDER.slice(0, 4));
+  const fourResult = prepareVoyageEncounterCrewPlanningCompleteness(four);
+  assert.equal(fourResult.selectedRiskBidCount, 4);
+  assert.equal(fourResult.riskBidLimit, 4);
+  assert.equal(fourResult.overRiskBidLimit, false);
+  assert.equal(fourResult.complete, true);
+  assert.deepEqual(fourResult.errors, []);
+
+  const five = riskPlanningEncounter(RISK_PLANNING_ORDER);
+  const fiveResult = prepareVoyageEncounterCrewPlanningCompleteness(five);
+  assert.equal(fiveResult.selectedRiskBidCount, 5);
+  assert.equal(fiveResult.riskBidLimit, 5);
+  assert.equal(fiveResult.overRiskBidLimit, false);
+  assert.equal(fiveResult.complete, true);
+  assert.deepEqual(fiveResult.errors, []);
+});
+
+test("a Risk Bid on an unoccupied station is rejected without increasing capacity", () => {
+  const occupied = RISK_PLANNING_ORDER.slice(0, 4);
+  const source = riskPlanningEncounter([...occupied, "watchmaster"], occupied);
   const before = clonePlainData(source);
   const result = prepareVoyageEncounterCrewPlanningCompleteness(source);
-
-  assert.equal(result.riskBidsValid, true);
   assert.equal(result.selectedRiskBidCount, 4);
-  assert.deepEqual(
-    result.selectedRiskBidStationIds,
-    RISK_PLANNING_ORDER.slice(0, 4)
-  );
-  assert.deepEqual(result.baseActionStationIds, ["watchmaster"]);
-  assert.equal(result.overRiskBidLimit, true);
+  assert.equal(result.riskBidLimit, 4);
+  assert.equal(result.overRiskBidLimit, false);
   assert.equal(result.complete, false);
-  assert.ok(result.errors.some(
-    (entry) => entry.code === "risk-bid-round-limit-exceeded"
-      && entry.path === "riskBids"
-  ));
+  assert.ok(result.errors.some((entry) => entry.code === "risk-bid-selection-missing" && entry.path === "riskBids.watchmaster"));
   assert.deepEqual(source, before);
 });
 

@@ -88,7 +88,7 @@ export function prepareVoyageEncounterCrewPlanningCompleteness(encounterState) {
       errors,
       "risk-bid-round-limit-exceeded",
       "riskBids",
-      `Crew Planning allows at most ${riskBids.riskBidLimit} selected Risk Bids.`
+      `Selected Risk Bids cannot exceed the number of occupied stations.`
     );
   }
   const occupiedStationIds = deriveOccupiedVoyageStationIds(encounterState?.stationAssignments);
