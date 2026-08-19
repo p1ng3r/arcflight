@@ -118,7 +118,7 @@ const RISK_PLANNING_ORDER = [
   "watchmaster"
 ];
 
-function riskPlanningEncounter(selectedRiskBidStationIds = []) {
+function riskPlanningEncounter(selectedRiskBidStationIds = [], occupiedStationIds = RISK_PLANNING_ORDER) {
   const source = encounter();
   source.availableStations = RISK_PLANNING_ORDER.map((stationId, index) => ({
     stationId,
@@ -131,18 +131,18 @@ function riskPlanningEncounter(selectedRiskBidStationIds = []) {
       [riskBidOption(`bid-${stationId}`, [2, 5, 8][index % 3])]
     )]
   }));
-  source.stationAssignments = RISK_PLANNING_ORDER.map((stationId) => ({
+  source.stationAssignments = occupiedStationIds.map((stationId) => ({
     stationId,
     operator: { kind: "actor", uuid: `Actor.${stationId}` }
   }));
-  source.selections = Object.fromEntries(RISK_PLANNING_ORDER.map(
+  source.selections = Object.fromEntries(occupiedStationIds.map(
     (stationId) => [stationId, statisticSelection(
       stationId,
       `action-${stationId}`,
       `approach-${stationId}`
     )]
   ));
-  source.proposedStationOrder = [...RISK_PLANNING_ORDER];
+  source.proposedStationOrder = [...occupiedStationIds];
   source.riskBids = Object.fromEntries(selectedRiskBidStationIds.map(
     (stationId) => {
       const index = RISK_PLANNING_ORDER.indexOf(stationId);
@@ -182,7 +182,7 @@ test("zero occupied stations are complete and ready with all station arrays empt
     selectedRiskBidCount: 0,
     selectedRiskBidStationIds: [],
     baseActionStationIds: [],
-    riskBidLimit: 3,
+    riskBidLimit: 0,
     overRiskBidLimit: false,
     complete: true,
     readyToLock: true,
@@ -516,8 +516,8 @@ test("unoccupied stations create no readiness requirements", () => {
   assert.equal(result.readyToLock, true);
 });
 
-test("readiness accepts zero through three optional Risk Bids across five stations", () => {
-  for (let count = 0; count <= 3; count += 1) {
+test("readiness accepts zero through five optional Risk Bids across five stations", () => {
+  for (let count = 0; count <= 5; count += 1) {
     const selected = RISK_PLANNING_ORDER.slice(0, count);
     const result = prepareVoyageEncounterCrewPlanningReadiness(
       riskPlanningEncounter(selected)
@@ -530,7 +530,7 @@ test("readiness accepts zero through three optional Risk Bids across five statio
       result.baseActionStationIds,
       RISK_PLANNING_ORDER.slice(count)
     );
-    assert.equal(result.riskBidLimit, 3);
+    assert.equal(result.riskBidLimit, 5);
     assert.equal(result.overRiskBidLimit, false);
     assert.equal(result.complete, true);
     assert.equal(result.readyToLock, true);
@@ -538,21 +538,37 @@ test("readiness accepts zero through three optional Risk Bids across five statio
   }
 });
 
-test("readiness rejects a fourth valid bid with the exact cap diagnostic", () => {
-  const source = riskPlanningEncounter(RISK_PLANNING_ORDER.slice(0, 4));
+test("readiness accepts four and five bids at occupied-station capacity", () => {
+  const four = riskPlanningEncounter(RISK_PLANNING_ORDER.slice(0, 4), RISK_PLANNING_ORDER.slice(0, 4));
+  const fourResult = prepareVoyageEncounterCrewPlanningReadiness(four);
+  assert.equal(fourResult.selectedRiskBidCount, 4);
+  assert.equal(fourResult.riskBidLimit, 4);
+  assert.equal(fourResult.overRiskBidLimit, false);
+  assert.equal(fourResult.complete, true);
+  assert.equal(fourResult.readyToLock, true);
+  assert.deepEqual(fourResult.errors, []);
+
+  const five = riskPlanningEncounter(RISK_PLANNING_ORDER);
+  const fiveResult = prepareVoyageEncounterCrewPlanningReadiness(five);
+  assert.equal(fiveResult.selectedRiskBidCount, 5);
+  assert.equal(fiveResult.riskBidLimit, 5);
+  assert.equal(fiveResult.overRiskBidLimit, false);
+  assert.equal(fiveResult.complete, true);
+  assert.equal(fiveResult.readyToLock, true);
+  assert.deepEqual(fiveResult.errors, []);
+});
+
+test("readiness rejects a Risk Bid on an unoccupied station", () => {
+  const occupied = RISK_PLANNING_ORDER.slice(0, 4);
+  const source = riskPlanningEncounter([...occupied, "watchmaster"], occupied);
   const before = clonePlainData(source);
   const result = prepareVoyageEncounterCrewPlanningReadiness(source);
-
-  assert.equal(result.riskBidsValid, true);
   assert.equal(result.selectedRiskBidCount, 4);
-  assert.equal(result.riskBidLimit, 3);
-  assert.equal(result.overRiskBidLimit, true);
+  assert.equal(result.riskBidLimit, 4);
+  assert.equal(result.overRiskBidLimit, false);
   assert.equal(result.complete, false);
   assert.equal(result.readyToLock, false);
-  assert.equal(result.errors.filter(
-    (entry) => entry.code === "risk-bid-round-limit-exceeded"
-      && entry.path === "riskBids"
-  ).length, 1);
+  assert.ok(result.errors.some((entry) => entry.code === "risk-bid-selection-missing" && entry.path === "riskBids.watchmaster"));
   assert.deepEqual(source, before);
 });
 

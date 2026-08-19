@@ -280,7 +280,7 @@ The exact schema may continue using effect references, but it must support:
 - one roll against the increased DC;
 - degree-specific bid benefits and consequences;
 - no second generic normal-action punishment on Failure or Critical Failure;
-- maximum three selected bids across the round;
+- maximum one selected bid per occupied station; total selected bids cannot exceed the number of occupied stations in the round;
 - targeting and timing appropriate to cross-station benefits;
 - effects such as DC reduction, degree shifts, roll twice, Focus restoration, Pressure, Hazard prevention/removal, and system repair.
 
@@ -439,7 +439,7 @@ These must be separate small PRs.
 - exact tiers `+2`, `+5`, `+8`;
 - action may offer any subset or no bid;
 - one bid per station;
-- maximum three bids in the round;
+- maximum one bid per occupied station; total bids cannot exceed the number of occupied stations in the round;
 - four-degree bid branches;
 - selected tier modifies the same action check DC;
 - action change clears incompatible bid.

@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as runtime from "../../../scripts/voyage/foundry/event-session-runtime.js";
-import { createVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, recoverVoyageEventSession, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
+import { authorizeVoyageEventSessionOperator, createVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionPlanning, readVoyageEventSessionResolution, readVoyageEventSessionProjection, recoverVoyageEventSession, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 import { createDraftVoyageEncounterDefaults } from "../../../scripts/voyage/domain/defaults.js";
 import { analyzeVoyageEncounterCloseoutPreview } from "../../../scripts/voyage/domain/closeout.js";
 import { analyzeVoyageEncounterCloseoutReview } from "../../../scripts/voyage/domain/closeout-review.js";
 import { analyzeVoyagePressureBreachCloseoutTransaction } from "../../../scripts/voyage/domain/pressure-breach.js";
 import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../../../scripts/voyage/domain/constants.js";
+import { validateVoyageHazardRecord, VOYAGE_HAZARD_RECORD_FIELDS } from "../../../scripts/voyage/domain/hazard-schema.js";
+import { launchVoyageEventSession } from "../../../scripts/voyage/foundry/event-launcher.js";
+import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID, M12_FOCUS_ABILITIES } from "../../../scripts/voyage/m12/event-definition.js";
 
 const originalFoundryGame = globalThis.game;
 test.afterEach(() => {
@@ -20,6 +23,7 @@ function request(definitionValue = definition(), encounterValue = encounter()) {
   return { kind: "voyage.m11-create-session", requestId: "request-1", sessionId: "session-1", eventId: "event-1", definitionSnapshotId: "definition-1", shipId: "ship-1", eventDefinition: definitionValue, initialEncounterState: encounterValue };
 }
 function command(overrides = {}) { return { kind: "voyage.m11-command", requestId: "command-1", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, commandKind: "pause", payload: {}, ...overrides }; }
+function multiplayerProjectionRequest(overrides = {}) { return { kind: "voyage.m12-read-multiplayer-projection", requestId: "m12-projection-1", sessionId: "session-1", expectedRevision: 0, ...overrides }; }
 function transferRequest(overrides = {}) { return { kind: "voyage.m11-transfer-control", requestId: "transfer-1", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, targetUserId: "gm-1", reason: "election" , ...overrides }; }
 function persistSession(document, payload) { document.__testSource.flags.arcflight.system.voyageSession = structuredClone(payload["flags.arcflight.system.voyageSession"]); return document; }
 function deferred() { let resolve, reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; }
@@ -189,7 +193,11 @@ async function task6CollisionPreparedFixture() {
   const hazardEvent = { type: "voyage.hazard-closeout-consequence-applied", applicationId: "pending", closeoutId: "pending", encounterId: "event-1", eventId: "event-1", sessionId: "session-1", definitionSnapshotId: "definition-1", shipId: "ship-1", stageId: "stage-final", roundNumber: 3, phase: "cleanup-advance", hazardId: "hazard-incoming", consequenceId: "hazard-incoming-consequence", consequenceKind: "pressure-change", pressureSystemId: "crew-morale", pressureEffect: structuredClone(pressureEffect), previousHazard: structuredClone(collisionHazard), disposition: "removed", previousEncounterRevision: 1, encounterRevision: 2 };
   const pressure = analyzeVoyagePressureBreachCloseoutTransaction({ expectedEncounterRevision: 2, closeoutContext: { eventId: "event-1", sessionId: "session-1", stageId: "stage-final", roundNumber: 3, phase: "cleanup-advance" }, pressureSystems: Object.values(pressureSystems), activeHazards: [], pressureEffect: structuredClone(pressureEffect) });
   assert.equal(pressure.ok, true, JSON.stringify(pressure.errors));
-  stored.events.push(hazardEvent, pressure.event);
+  assert.equal(validateVoyageHazardRecord(pressure.hazard, { mode: "active", expectedEncounterId: "event-1" }).valid, true);
+  assert.deepEqual(Object.keys(pressure.hazard), VOYAGE_HAZARD_RECORD_FIELDS);
+  assert.equal(Object.hasOwn(pressure.hazard, "stageId"), false);
+  assert.equal(Object.hasOwn(pressure.hazard, "roundNumber"), false);
+  assert.equal(Object.hasOwn(pressure.hazard, "effectIndex"), false);  stored.events.push(hazardEvent, pressure.event);
   stored.revision = 3; stored.encounterState.revision = 3;
   fixture.context.trustedReplayDependencies = true;
   fixture.context.replayVoyageEventSessionEvidence = ({ previousRevision }) => ({ startIndex: 0, endIndex: stored.events.length, previousRevision, nextRevision: 3, sessionState: "event-closeout-review", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
@@ -242,7 +250,7 @@ async function task6CanonicalM10Fixture() {
   return { actor, fixture, run, previewRequest, preview };
 }
 
-test("M11 runtime exposes the audited boundaries and GM planning/read-resolution APIs", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "applyVoyageEncounterAbortTransition", "beginVoyageEventSessionResolution", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionPlanning", "readVoyageEventSessionProjection", "readVoyageEventSessionResolution", "recoverVoyageEventSession", "reloadVoyageEventSession", "resolveVoyageEventSessionStation", "runExclusiveSessionMutation", "transferVoyageEventSessionControl"]));
+test("M11 runtime exposes the audited boundaries and GM planning/read-resolution APIs", () => assert.deepEqual(Object.keys(runtime).sort(), ["abortVoyageEventSession", "applyVoyageEncounterAbortTransition", "authorizeVoyageEventSessionOperator", "beginVoyageEventSessionResolution", "correctVoyageEventSession", "createVoyageEventSession", "dispatchVoyageEventSessionCommand", "readVoyageEventSessionMultiplayerProjection", "readVoyageEventSessionPlanning", "readVoyageEventSessionProjection", "readVoyageEventSessionResolution", "recoverVoyageEventSession", "reloadVoyageEventSession", "resolveVoyageEventSessionStation", "runExclusiveSessionMutation", "transferVoyageEventSessionControl"]));
 
 test("valid creation uses keepId and stores only pristine voyageSession state", async () => {
   const fixture = makeContext(); const result = await createVoyageEventSession(request(), fixture.context);
@@ -1941,4 +1949,644 @@ test("Task 7 recovery abort preserves its two-event response and rejects checkpo
   const invalidEncounter = reloadVoyageEventSession("session-1", fixture.context);
   assertFailure(invalidEncounter, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
   assert.equal(fixture.tracker.updates, 1);
+});
+
+test("M12 Slice A derives GM, operator, crew, and observer projections from trusted context", async () => {
+  const encounterValue = encounter();
+  encounterValue.stationAssignments = [
+    { stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" } },
+    { stationId: "watchmaster", operator: { kind: "actor", id: "actor-watch", uuid: "Actor.watch", name: "Watchmaster" } },
+    { stationId: "navigator", operator: { kind: "actor", id: "actor-nav", uuid: "Actor.navigator", name: "Navigator" } },
+    { stationId: "engineer", operator: { kind: "actor", id: "actor-eng", uuid: "Actor.engineer", name: "Engineer" } }
+  ];
+  const fixture = makeContext({ encounterValue });
+  assert.equal((await createVoyageEventSession(request(definition(), encounterValue), fixture.context)).ok, true);
+  const gm = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest(), fixture.context);
+  assert.equal(gm.ok, true); assert.equal(gm.projection.projectionRole, "gm");
+  assert.deepEqual(gm.projection.ownedOperators.map((entry) => entry.stationId), ["captain", "watchmaster", "navigator", "engineer"]);
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [
+    { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" },
+    { kind: "actor", id: "actor-watch", uuid: "Actor.watch", name: "Watchmaster" }
+  ] };
+  const player = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "player-projection" }), playerContext);
+  assert.equal(player.ok, true); assert.equal(player.projection.projectionRole, "operator");
+  assert.deepEqual(player.projection.ownedOperators.map((entry) => entry.stationId), ["captain", "watchmaster"]);
+  assert.deepEqual(player.projection.readOnlyStationIds, ["navigator", "engineer"]);
+  assert.equal(player.projection.authorityEpoch, undefined); assert.equal(player.projection.auditHistory, undefined);
+  const crew = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "crew-projection" }), { ...playerContext, resolveVoyageOperatorForPrincipal: () => ({ kind: "actor", id: "unassigned", uuid: "Actor.unassigned" }) });
+  assert.equal(crew.ok, true); assert.equal(crew.projection.projectionRole, "crew"); assert.deepEqual(crew.projection.ownedOperators, []);
+  const observer = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "observer-projection" }), { ...playerContext, resolveVoyageOperatorForPrincipal: () => [] });
+  assert.equal(observer.ok, true); assert.equal(observer.projection.projectionRole, "observer"); assert.deepEqual(observer.projection.ownedOperators, []);
+  player.projection.ownedOperators.push({ stationId: "forged" }); player.projection.stationAssignments[0].operator.name = "forged";
+  const repeat = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "repeat-projection" }), playerContext);
+  assert.equal(repeat.ok, true); assert.deepEqual(repeat.projection.ownedOperators.map((entry) => entry.stationId), ["captain", "watchmaster"]); assert.equal(repeat.projection.stationAssignments[0].operator.name, "Captain");
+  assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.creates, 1); assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("M12 Slice A owned-operator authorization is exact and caller identity cannot forge control", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" } }, { stationId: "navigator", operator: { kind: "actor", id: "actor-nav", uuid: "Actor.navigator", name: "Navigator" } }];
+  const fixture = makeContext({ encounterValue, update: persistSession }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }] };
+  const own = authorizeVoyageEventSessionOperator({ kind: "voyage.m12-authorize-operator", sessionId: "session-1", stationId: "captain" }, playerContext);
+  assert.equal(own.ok, true); assert.equal(own.canAct, true); assert.equal(own.operatorUuid, "Actor.captain");
+  const other = authorizeVoyageEventSessionOperator({ kind: "voyage.m12-authorize-operator", sessionId: "session-1", stationId: "navigator" }, playerContext);
+  assert.equal(other.ok, true); assert.equal(other.canAct, false);
+  const forged = readVoyageEventSessionMultiplayerProjection({ ...multiplayerProjectionRequest(), requestId: "forged", role: "gm", userId: "gm-1" }, playerContext);
+  assertFailure(forged, "m11-invalid-request-shape", "request", "Request shape, order, or root values are invalid.");
+  assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("M12 Slice A hostile trusted-operator evidence fails closed without elevation", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain" } }];
+  const fixture = makeContext({ encounterValue }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const shared = { kind: "actor", id: "actor-captain", uuid: "Actor.captain" };
+  const cycle = { kind: "actor", id: "actor-captain", uuid: "Actor.captain" }; cycle.self = cycle;
+  const inherited = Object.create({ kind: "actor", id: "actor-captain", uuid: "Actor.captain" });
+  const accessor = {}; Object.defineProperty(accessor, "kind", { get() { throw new Error("access"); }, enumerable: true });
+  const revoked = Proxy.revocable({ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }, {}); revoked.revoke();
+  const witnesses = [
+    () => [shared, shared],
+    () => cycle,
+    () => inherited,
+    () => accessor,
+    () => revoked.proxy,
+    () => [{ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }, { kind: "actor", id: "actor-captain", uuid: "Actor.captain" }],
+    () => ({ kind: "wrong", id: "actor-captain" }),
+    () => { throw new Error("resolver failure"); }
+  ];
+  for (const [index, resolver] of witnesses.entries()) {
+    const result = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: `hostile-${index}` }), { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: resolver });
+    assert.equal(result.ok, true); assert.equal(result.projection.projectionRole, "observer"); assert.deepEqual(result.projection.ownedOperators, []); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+  }
+});
+
+test("M12 Slice A unrelated Item ownership cannot authorize an Actor station", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain" } }];
+  const fixture = makeContext({ encounterValue }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", ownedItems: [{ id: "actor-captain", uuid: "Actor.captain" }], resolveVoyageOperatorForPrincipal: () => [] };
+  const projection = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "item-like-projection" }), playerContext);
+  assert.equal(projection.ok, true); assert.equal(projection.projection.projectionRole, "observer"); assert.deepEqual(projection.projection.ownedOperators, []);
+  const authorization = authorizeVoyageEventSessionOperator({ kind: "voyage.m12-authorize-operator", sessionId: "session-1", stationId: "captain" }, playerContext);
+  assert.equal(authorization.ok, true); assert.equal(authorization.canAct, false); assert.equal(fixture.tracker.updates, 0); assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("M12 Slice A reflects session-level M11 control transfer without reassigning stations", async () => {
+  const encounterValue = encounter(); encounterValue.stationAssignments = [{ stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain" } }];
+  const fixture = makeContext({ encounterValue, update: persistSession }); await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const transfer = await transferVoyageEventSessionControl({ kind: "voyage.m11-transfer-control", requestId: "slice-a-transfer", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, targetUserId: "gm-2", reason: "temporary-control" }, { ...fixture.context, activeGmUserId: "gm-2", authenticatedUserId: "gm-2", authenticatedConnectionId: "connection-gm-2" });
+  assert.equal(transfer.ok, true, JSON.stringify(transfer.errors));
+  const transferredSession = fixtureSession(fixture); assert.equal(transferredSession.activeGmUserId, "gm-2"); assert.equal(transferredSession.encounterState.stationAssignments[0].stationId, "captain");
+  const newGm = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "new-gm" }), { ...fixture.context, activeGmUserId: "gm-2", authenticatedUserId: "gm-2", authenticatedConnectionId: "connection-gm-2" });
+  assert.equal(newGm.ok, true); assert.equal(newGm.projection.projectionRole, "gm"); assert.equal(newGm.projection.ownedOperators[0].gmTakeover, true); assert.equal(newGm.projection.ownedOperators[0].canAct, true);
+  const priorGm = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "prior-gm" }), { ...fixture.context, activeGmUserId: "gm-2", authenticatedUserId: "gm-1", authenticatedConnectionId: "connection-gm-1" });
+  assert.equal(priorGm.ok, true); assert.equal(priorGm.projection.projectionRole, "gm"); assert.equal(priorGm.projection.ownedOperators[0].gmTakeover, false); assert.equal(priorGm.projection.ownedOperators[0].canAct, false);
+  assert.equal(fixture.tracker.updates, 1);
+});
+
+test("M12 Slice A read failures resolve no role before valid evidence and remain write-free", async () => {
+  let missingCalls = 0;
+  const missing = makeContext({ operatorResolver: () => { missingCalls += 1; return { kind: "actor", id: "x" }; } });
+  assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest(), missing.context), "m11-session-document-not-found", "sessionId", "Exact Event Session document was not resolved."); assert.equal(missingCalls, 0); assert.equal(missing.tracker.updates, 0);
+  const ambiguous = makeContext(); await createVoyageEventSession(request(), ambiguous.context); ambiguous.journals.push(makeJournalDocument({ _id: "Journal.duplicate", flags: structuredClone(ambiguous.journals[0].__testSource.flags), ownership: {} }, ambiguous.tracker, [])); let ambiguousCalls = 0;
+  assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "ambiguous" }), { ...ambiguous.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => { ambiguousCalls += 1; return { kind: "actor", id: "x" }; } }), "m11-ambiguous-session-document", "sessionId", "More than one Event Session document matched."); assert.equal(ambiguousCalls, 0); assert.equal(ambiguous.tracker.updates, 0);
+  const invalid = makeContext(); await createVoyageEventSession(request(), invalid.context); fixtureSession(invalid).sessionState = "forged"; let invalidCalls = 0;
+  assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "invalid" }), { ...invalid.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => { invalidCalls += 1; return { kind: "actor", id: "x" }; } }), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid."); assert.equal(invalidCalls, 0); assert.equal(invalid.tracker.updates, 0);
+  const stale = makeContext(); await createVoyageEventSession(request(), stale.context); let staleCalls = 0;
+  assertFailure(readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "stale", expectedRevision: 1 }), { ...stale.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => { staleCalls += 1; return { kind: "actor", id: "x" }; } }), "m11-stale-session-revision", "expectedRevision", "Event Session revision is stale."); assert.equal(staleCalls, 1); assert.equal(stale.tracker.updates, 0);
+});
+
+test("M12 Slice C exposes isolated planning options only for owned stations", async () => {
+  const encounterValue = encounter();
+  encounterValue.stationAssignments = [
+    { stationId: "captain", operator: { kind: "actor", id: "actor-captain", uuid: "Actor.captain", name: "Captain" } },
+    { stationId: "navigator", operator: { kind: "actor", id: "actor-nav", uuid: "Actor.navigator", name: "Navigator" } }
+  ];
+  encounterValue.availableStations = [{ stationId: "captain", actions: [{ actionId: "command", name: "Command", description: "Call the line.", approaches: [{ approachId: "command-diplomacy", name: "Diplomacy", description: "A clear call." }], riskBidOptions: [{ riskBidId: "command-risk-2", dcAdjustment: 2 }], riskBidPresentation: { "2": { label: "+2 Risk Bid", intendedBenefit: "Open a lane.", target: "Captain", outcome: { criticalSuccess: "Wide lane", success: "Clear lane", failure: "No payoff", criticalFailure: "Lane closes" }, mechanicalEffect: { hidden: true } } } }] }, { stationId: "navigator", actions: [{ actionId: "chart", name: "Chart", description: "Read the wake.", approaches: [{ approachId: "chart-survival", name: "Survival", description: "Read the current." }], riskBidOptions: [] }] }];
+  const fixture = makeContext({ encounterValue });
+  await createVoyageEventSession(request(definition(), encounterValue), fixture.context);
+  const player = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "slice-c-options" }), { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }] });
+  assert.equal(player.ok, true, JSON.stringify(player.errors));
+  assert.deepEqual(player.projection.ownedPlanningOptions.map((entry) => entry.stationId), ["captain"]);
+  const option = player.projection.ownedPlanningOptions[0];
+  assert.deepEqual(Object.keys(option), ["stationId", "selectedActionId", "selectedApproachId", "selectedRiskBidId", "editable", "ready", "actions"]);
+  assert.deepEqual(Object.keys(option.actions[0]), ["actionId", "displayName", "description", "selected", "approaches", "riskBidCapable", "riskBidOptions", "targetRequired", "eligibleTargets"]);
+  assert.equal(option.actions[0].riskBidOptions[0].outcome.criticalSuccess, "Wide lane");
+  assert.equal("mechanicalEffect" in option.actions[0].riskBidOptions[0], false);
+  option.actions[0].displayName = "forged";
+  const repeat = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "slice-c-options-repeat" }), { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "actor-captain", uuid: "Actor.captain" }] });
+  assert.equal(repeat.projection.ownedPlanningOptions[0].actions[0].displayName, "Command");
+  assert.equal(fixture.tracker.updates, 0);
+});
+
+test("M12 Slice C reuses station-selection for an owned operator and rejects foreign stations", async () => {
+  const fixture = makeContext({ update: persistSession });
+  fixture.context.users = [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }];
+  const actor = (id, type = "character") => ({ id, uuid: `Actor.${id}`, name: id, type, getFlag: (_module, key) => key === "enabled" ? true : "arcflightShip" });
+  fixture.context.actors = [actor("ship-1", "vehicle"), actor("captain"), actor("navigator")];
+  fixture.context.resolveEventDefinitionSnapshot = async () => getM12EventDefinition();
+  const launch = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "slice-c-launch", sessionId: "slice-c-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", navigator: "navigator" } }, fixture.context);
+  assert.equal(launch.ok, true, JSON.stringify(launch.errors));
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "captain", uuid: "Actor.captain" }] };
+  const action = fixture.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.availableStations.find((entry) => entry.stationId === "captain").actions[0];
+  const selection = { kind: "voyage.m11-command", requestId: "slice-c-select", sessionId: "slice-c-session", expectedRevision: 5, authorityEpoch: 0, commandKind: "station-selection", payload: { stationId: "captain", actionId: action.actionId, approachId: action.approaches[0].approachId, riskBidId: null } };
+  const applied = await dispatchVoyageEventSessionCommand(selection, playerContext);
+  assert.equal(applied.ok, true, JSON.stringify(applied.errors));
+  assert.equal(applied.revision, 6);
+  const replay = await dispatchVoyageEventSessionCommand(selection, playerContext);
+  assert.deepEqual(replay, applied);
+  assert.equal(fixture.tracker.updates, 2);
+  const cleared = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-c-clear", sessionId: "slice-c-session", expectedRevision: 6, authorityEpoch: 0, commandKind: "station-selection-clear", payload: { stationId: "captain" } }, playerContext);
+  assert.equal(cleared.ok, true, JSON.stringify(cleared.errors));
+  assert.equal(cleared.revision, 7);
+  assert.equal(reloadVoyageEventSession("slice-c-session", fixture.context).ok, true);
+  const stale = await dispatchVoyageEventSessionCommand({ ...selection, requestId: "slice-c-stale", expectedRevision: 6 }, playerContext);
+  assert.equal(stale.ok, false); assert.equal(stale.errors[0].code, "m11-stale-session-revision");
+  const crew = await dispatchVoyageEventSessionCommand({ ...selection, requestId: "slice-c-crew", expectedRevision: 7 }, { ...playerContext, resolveVoyageOperatorForPrincipal: () => [] });
+  assert.equal(crew.ok, false); assert.equal(crew.errors[0].code, "m11-projection-not-authorized");
+  const foreignAction = fixture.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.availableStations.find((entry) => entry.stationId === "navigator").actions[0];
+  const foreign = await dispatchVoyageEventSessionCommand({ ...selection, requestId: "slice-c-foreign", expectedRevision: 7, payload: { stationId: "navigator", actionId: foreignAction.actionId, approachId: foreignAction.approaches[0].approachId, riskBidId: null } }, playerContext);
+  assert.equal(foreign.ok, false);
+  assert.equal(foreign.errors[0].code, "m11-projection-not-authorized");
+  assert.equal(fixture.tracker.updates, 3);
+});
+
+test("M12 Slice D lets an assigned operator mutate the one shared order while preserving GM-only Plan Lock", async () => {
+  const fixture = makeContext({ update: persistSession });
+  fixture.context.users = [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }, { id: "player-2", isGM: false, active: true }];
+  const actor = (id, type = "character") => ({ id, uuid: `Actor.${id}`, name: id, type, getFlag: (_module, key) => key === "enabled" ? true : "arcflightShip" });
+  fixture.context.actors = [actor("ship-1", "vehicle"), actor("captain"), actor("navigator")];
+  fixture.context.resolveEventDefinitionSnapshot = async () => getM12EventDefinition();
+  const launch = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "slice-d-launch", sessionId: "slice-d-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", navigator: "navigator" } }, fixture.context);
+  assert.equal(launch.ok, true, JSON.stringify(launch.errors));
+  const playerContext = { ...fixture.context, authenticatedUserId: "player-1", authenticatedConnectionId: "connection-player-1", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "captain", uuid: "Actor.captain" }] };
+  const ordered = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-order", sessionId: "slice-d-session", expectedRevision: 5, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["navigator", "captain"] } }, playerContext);
+  assert.equal(ordered.ok, true, JSON.stringify(ordered.errors));
+  assert.deepEqual(fixture.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.proposedStationOrder.slice(0, 2), ["navigator", "captain"]);
+  const projection = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ sessionId: "slice-d-session", requestId: "slice-d-projection", expectedRevision: 6 }), playerContext);
+  assert.equal(projection.ok, true, JSON.stringify(projection.errors));
+  assert.deepEqual(projection.projection.sharedStationOrder.slice(0, 2), ["navigator", "captain"]);
+  const secondOperator = { ...playerContext, authenticatedUserId: "player-2", authenticatedConnectionId: "connection-player-2", resolveVoyageOperatorForPrincipal: () => [{ kind: "actor", id: "navigator", uuid: "Actor.navigator" }] };
+  const secondOrder = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-order-2", sessionId: "slice-d-session", expectedRevision: 6, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["captain", "navigator"] } }, secondOperator);
+  assert.equal(secondOrder.ok, true, JSON.stringify(secondOrder.errors));
+  const crew = { ...secondOperator, resolveVoyageOperatorForPrincipal: () => [] };
+  const unauthorized = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-crew", sessionId: "slice-d-session", expectedRevision: 7, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["captain", "navigator"] } }, crew);
+  assert.equal(unauthorized.ok, false); assert.equal(unauthorized.errors[0].code, "m11-projection-not-authorized");
+  const malformed = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-malformed", sessionId: "slice-d-session", expectedRevision: 7, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["captain", "captain"] } }, playerContext);
+  assert.equal(malformed.ok, false); assert.equal(malformed.errors[0].code, "m11-command-payload-invalid");
+  const playerLock = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-lock", sessionId: "slice-d-session", expectedRevision: 7, authorityEpoch: 0, commandKind: "plan-lock", payload: { phaseStartSnapshotId: "snapshot-forged" } }, playerContext);
+  assert.equal(playerLock.ok, false); assert.equal(playerLock.errors[0].code, "m11-active-gm-required");
+  const stale = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-d-stale", sessionId: "slice-d-session", expectedRevision: 6, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: ["navigator", "captain"] } }, playerContext);
+  assert.equal(stale.ok, false); assert.equal(stale.errors[0].code, "m11-stale-session-revision");
+  assert.equal(fixture.tracker.deletes, 0);
+});
+
+test("M12 Slice D runtime projection does not treat paused or recovery phase evidence as Plan Lock", async () => {
+  const paused = makeContext({ update: persistSession });
+  await createVoyageEventSession(request(), paused.context);
+  const stored = task6ActiveSession(paused);
+  stored.sessionState = "paused";
+  stored.encounterState.lifecycleState = "paused";
+  stored.encounterState.phase = "cleanup-advance";
+  stored.checkpoints[0] = { checkpointId: `arcflight-voyage-checkpoint:${JSON.stringify([stored.sessionId, "before-action-segment", 1])}`, kind: "before-action-segment", sessionId: stored.sessionId, revision: 1, encounterRevision: stored.encounterState.revision, eventCount: 1, sessionState: "paused", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout), authorityEpoch: 0, invalidated: false };
+  paused.context.trustedReplayDependencies = true;
+  paused.context.replayVoyageEventSessionEvidence = ({ startIndex, endIndex, previousRevision }) => ({ startIndex, endIndex, previousRevision, nextRevision: 1, sessionState: "paused", encounterState: structuredClone(stored.encounterState), closeout: structuredClone(stored.closeout) });
+  const pausedProjection = readVoyageEventSessionMultiplayerProjection(multiplayerProjectionRequest({ requestId: "slice-d-paused-projection", expectedRevision: stored.revision }), paused.context);
+  assert.equal(pausedProjection.ok, true, JSON.stringify(pausedProjection.errors));
+  assert.equal(pausedProjection.projection.planLocked, false);
+  assert.equal(paused.tracker.updates, 0);
+});
+
+async function task5ReadyFixture({ degreeByStation = {}, initialMomentum = null, stopAfterResolutionStart = false, unassignedStationIds = [], riskBidByStation = {}, focusAbilities = null, focusPoolCurrent = null } = {}) {
+  const fixture = makeContext({ update: persistSession });
+  fixture.context.users = [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }];
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+  const occupiedStationIds = stationIds.filter((stationId) => !unassignedStationIds.includes(stationId));
+  fixture.context.actors = stationIds.map((id) => ({ id, uuid: "Actor." + id, name: id, type: "character", getFlag: () => true }))
+    .concat([{ id: "ship-1", uuid: "Actor.ship-1", name: "Ship", type: "vehicle", getFlag: (_module, key) => key === "enabled" ? true : "arcflightShip" }]);
+  fixture.context.resolveEventDefinitionSnapshot = async () => getM12EventDefinition();
+  fixture.context.executeVoyagePf2ePendingCheck = async (pending) => {
+    const degree = degreeByStation[pending.stationId] ?? 2;
+    const slugs = ["critical-failure", "failure", "success", "critical-success"];
+    return { ok: true, status: "rolled", pendingCheckId: pending.pendingCheckId, sequence: pending.sequence, sourceKind: "character", sourceUuid: pending.source.uuid, statisticSlug: pending.statisticSlugOrAbilityId, dc: pending.finalDc, rollMode: "public", result: { total: pending.finalDc, degreeOfSuccess: degree, degreeOfSuccessSlug: slugs[degree] }, errors: [], warnings: [] };
+  };
+  const launch = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "task5-launch", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: Object.fromEntries(occupiedStationIds.map((id) => [id, id])) }, fixture.context);
+  assert.equal(launch.ok, true, JSON.stringify(launch.errors));
+  let revision = launch.revision;
+  const roundNumber = fixtureSession(fixture).encounterState.roundNumber;
+  for (const stationId of occupiedStationIds) {
+    const actionId = stationId + "-round-" + roundNumber + "-action-1";
+    const selected = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-select-" + roundNumber + "-" + stationId, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "station-selection", payload: { stationId, actionId, approachId: actionId + "-approach", riskBidId: riskBidByStation[stationId] ?? null } }, fixture.context);
+    assert.equal(selected.ok, true, JSON.stringify(selected.errors)); revision = selected.revision;
+  }
+  const order = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-order-" + roundNumber, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: occupiedStationIds } }, fixture.context);
+  assert.equal(order.ok, true, JSON.stringify(order.errors)); revision = order.revision;
+  const locked = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-lock-" + roundNumber, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "plan-lock", payload: { phaseStartSnapshotId: "task5-plan-lock-" + roundNumber } }, fixture.context);
+  assert.equal(locked.ok, true, JSON.stringify(locked.errors));
+  if (initialMomentum !== null) fixtureSession(fixture).encounterState.momentum = initialMomentum;
+  if (focusAbilities) fixture.context.focusAbilities = structuredClone(focusAbilities);
+  if (focusPoolCurrent !== null) fixtureSession(fixture).encounterState.metadata.focusPools = fixtureSession(fixture).encounterState.stationAssignments.map((assignment) => ({ operatorId: assignment.operator.uuid, stationId: assignment.stationId, current: focusPoolCurrent, capacity: focusPoolCurrent }));
+  const started = await runtime.beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "task5-resolution-start-" + roundNumber, sessionId: "session-1", expectedRevision: locked.revision, authorityEpoch: 0 }, fixture.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors)); revision = started.revision;
+  if (stopAfterResolutionStart) return { fixture, stationIds, occupiedStationIds, revision };
+  for (const stationId of occupiedStationIds) {
+    const resolved = await runtime.resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "task5-resolve-" + roundNumber + "-" + stationId, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0 }, fixture.context);
+    assert.equal(resolved.ok, true, JSON.stringify(resolved.errors)); revision = resolved.revision;
+  }
+  return { fixture, stationIds, occupiedStationIds, revision };
+}
+
+test("M12 Focus pass terminalizes a durably committed but unexecuted reaction", async () => {
+  const { fixture, occupiedStationIds } = await task5ReadyFixture({ stopAfterResolutionStart: true, focusAbilities: M12_FOCUS_ABILITIES });
+  assert.deepEqual(occupiedStationIds, ["captain", "engineer", "navigator", "watchmaster", "veilwarden"]);
+  const startedRevision = fixtureSession(fixture).revision;
+  const before = readVoyageEventSessionResolution("session-1", fixture.context);
+  assert.equal(before.ok, true, JSON.stringify(before.errors));
+  const reactionId = before.projection.reactionWindow?.opportunities?.[0]?.reactionId;
+  assert.equal(typeof reactionId, "string");
+  fixture.context.executeVoyagePf2eFocusCheck = async () => { throw new Error("focus execution unavailable"); };
+  const committed = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-focus-commit", sessionId: "session-1", expectedRevision: startedRevision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, fixture.context);
+  assert.equal(committed.ok, false);
+  assert.equal(committed.errors[0].code, "m11-command-payload-invalid");
+  const pending = fixtureSession(fixture).encounterState.metadata.focusPendingCheck;
+  assert.equal(pending.executionStatus, "executing");
+  assert.equal(fixtureSession(fixture).encounterState.metadata.focusPools.find((pool) => pool.stationId === "captain").current, 0);
+  const passRevision = fixtureSession(fixture).revision;
+  const passed = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-focus-pass", sessionId: "session-1", expectedRevision: passRevision, authorityEpoch: 0, commandKind: "focus-reaction-pass", payload: { reactionId } }, fixture.context);
+  assert.equal(passed.ok, true, JSON.stringify(passed.errors));
+  assert.equal(fixtureSession(fixture).encounterState.metadata.focusPendingCheck, null);
+  assert.equal(fixtureSession(fixture).encounterState.metadata.reactionWindow.status, "closed");
+  assert.equal(fixtureSession(fixture).encounterState.metadata.focusPools.find((pool) => pool.stationId === "captain").current, 0);
+  let revision = passed.revision;
+  for (const stationId of occupiedStationIds) {
+    const resolved = await runtime.resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "task5-focus-resolve-" + stationId, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0 }, fixture.context);
+    assert.equal(resolved.ok, true, JSON.stringify(resolved.errors));
+    revision = resolved.revision;
+  }
+  const resolution = readVoyageEventSessionResolution("session-1", fixture.context);
+  assert.equal(resolution.ok, true, JSON.stringify(resolution.errors));
+  assert.equal(resolution.projection.roundCloseoutReady, true);
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+});
+
+test("M12 Focus remains point-based across two distinct uses", async () => {
+  const secondAbility = { ...M12_FOCUS_ABILITIES[0], focusAbilityId: "m12-focus-captain-second", name: "Captain's Second Assist", description: "A second authored captain Focus opportunity.", narration: "The captain spends another point." };
+  const abilities = [M12_FOCUS_ABILITIES[0], secondAbility];
+  const { fixture } = await task5ReadyFixture({ stopAfterResolutionStart: true, focusAbilities: abilities, focusPoolCurrent: 2 });
+  const before = readVoyageEventSessionResolution("session-1", fixture.context);
+  assert.equal(before.ok, true, JSON.stringify(before.errors));
+  const opportunities = before.projection.reactionWindow.opportunities;
+  assert.equal(opportunities.length, 2);
+  let revision = fixtureSession(fixture).revision;
+  const use = (requestId, reactionId) => dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, fixture.context);
+  const first = await use("task5-focus-use-1", opportunities[0].reactionId);
+  assert.equal(first.ok, true, JSON.stringify(first.errors)); revision = first.revision;
+  const middle = readVoyageEventSessionResolution("session-1", fixture.context);
+  assert.equal(middle.projection.reactionWindow.status, "open");
+  const second = await use("task5-focus-use-2", opportunities[1].reactionId);
+  assert.equal(second.ok, true, JSON.stringify(second.errors));
+  const stored = fixtureSession(fixture);
+  assert.equal(stored.encounterState.metadata.focusPools.find((pool) => pool.stationId === "captain").current, 0);
+  assert.equal(stored.events.filter((event) => event.type === "voyage.m12-focus-reaction-use").length, 2);
+  assert.equal(stored.encounterState.metadata.focusPendingCheck, null);
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+});
+test("M12 Task 5 accepts mixed assigned and unassigned source bindings", async () => {
+  const { fixture, occupiedStationIds } = await task5ReadyFixture({ stopAfterResolutionStart: true, unassignedStationIds: ["veilwarden"] });
+  fixture.context.resolveEventDefinitionSnapshot = () => getM12EventDefinition();
+  const planning = readVoyageEventSessionPlanning("session-1", fixture.context);
+  assert.equal(planning.ok, true, JSON.stringify(planning.errors));
+  const stored = fixtureSession(fixture);
+  assert.deepEqual(stored.encounterState.stationAssignments.map((entry) => entry.stationId), occupiedStationIds);
+  assert.equal(stored.encounterState.pendingChecks.filter((entry) => entry.status === "pending").length, 4);
+  const veilwarden = stored.encounterState.availableStations.find((entry) => entry.stationId === "veilwarden");
+  assert.deepEqual(veilwarden.actions[0].check.source, { kind: "character" });
+  for (const stationId of occupiedStationIds) {
+    const assignment = stored.encounterState.stationAssignments.find((entry) => entry.stationId === stationId);
+    const station = stored.encounterState.availableStations.find((entry) => entry.stationId === stationId);
+    assert.deepEqual(station.actions[0].check.source, { kind: "character", uuid: assignment.operator.uuid });
+  }
+});
+
+test("M12 Task 5 resolution read exposes the canonical closeout readiness gate", async () => {
+  const readyFixture = await task5ReadyFixture();
+  readyFixture.fixture.context.resolveEventDefinitionSnapshot = () => getM12EventDefinition();
+  const ready = readVoyageEventSessionResolution("session-1", readyFixture.fixture.context);
+  assert.equal(ready.ok, true, JSON.stringify(ready.errors));
+  assert.equal(ready.projection.completed, true);
+  assert.equal(ready.projection.roundNumber, 1);
+  assert.equal(ready.projection.roundId, "m12-round-1");
+  assert.equal(ready.projection.roundCloseoutReady, true);
+  fixtureSession(readyFixture.fixture).encounterState.pendingThresholdQueue = [{ thresholdId: "task5-pending-threshold" }];
+  const blocked = readVoyageEventSessionResolution("session-1", readyFixture.fixture.context);
+  assert.equal(blocked.ok, true, JSON.stringify(blocked.errors));
+  assert.equal(blocked.projection.roundCloseoutReady, false);
+});
+test("M12 Task 5 source-bound planning reload remains readable and executable", async () => {
+  const { fixture, stationIds, revision } = await task5ReadyFixture({ stopAfterResolutionStart: true });
+  fixture.context.resolveEventDefinitionSnapshot = () => getM12EventDefinition();
+  const planning = readVoyageEventSessionPlanning("session-1", fixture.context);
+  assert.equal(planning.ok, true, JSON.stringify(planning.errors));
+  assert.equal(planning.projection.sessionState, "station-resolution");
+  assert.equal(planning.projection.phase, "resolution");
+  const stored = fixtureSession(fixture);
+  const firstAssignment = stored.encounterState.stationAssignments.find((entry) => entry.stationId === stationIds[0]);
+  const firstSource = stored.encounterState.availableStations.find((entry) => entry.stationId === stationIds[0]).actions[0].check.source;
+  assert.deepEqual(firstSource, { kind: "character", uuid: firstAssignment.operator.uuid });
+  const resolved = await runtime.resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "task5-source-bound-first-station", sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0 }, fixture.context);
+  assert.equal(resolved.ok, true, JSON.stringify(resolved.errors));
+});
+
+for (const [label, mutate] of [
+  ["forged UUID", (source) => { source.uuid = "Actor.forged"; }],
+  ["other station UUID", (source) => { source.uuid = "Actor.engineer"; }],
+  ["extra source key", (source) => { source.foo = "bar"; }],
+  ["wrong source kind", (source) => { source.kind = "item"; }]
+]) {
+  test("M12 Task 5 source-bound planning reload rejects " + label, async () => {
+    const { fixture } = await task5ReadyFixture({ stopAfterResolutionStart: true });
+    fixture.context.resolveEventDefinitionSnapshot = () => getM12EventDefinition();
+    const stored = fixtureSession(fixture);
+    const source = stored.encounterState.availableStations[0].actions[0].check.source;
+    mutate(source);
+    const updates = fixture.tracker.updates;
+    const planning = readVoyageEventSessionPlanning("session-1", fixture.context);
+    assertFailure(planning, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+    assert.equal(fixture.tracker.updates, updates);
+  });
+}
+
+async function task5AdvanceRound(fixture, stationIds, expectedRevision, roundNumber, riskBidByStation = {}, actionNumberByStation = {}) {
+  let revision = expectedRevision;
+  for (const stationId of stationIds) {
+    const actionId = stationId + "-round-" + roundNumber + "-action-" + (actionNumberByStation[stationId] ?? 1);
+    const selected = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-select-" + roundNumber + "-" + stationId, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "station-selection", payload: { stationId, actionId, approachId: actionId + "-approach", riskBidId: riskBidByStation[stationId] ?? null } }, fixture.context);
+    assert.equal(selected.ok, true, JSON.stringify(selected.errors)); revision = selected.revision;
+  }
+  const order = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-order-" + roundNumber, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: stationIds } }, fixture.context);
+  assert.equal(order.ok, true, JSON.stringify(order.errors)); revision = order.revision;
+  const locked = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-lock-" + roundNumber, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "plan-lock", payload: { phaseStartSnapshotId: "task5-plan-lock-" + roundNumber } }, fixture.context);
+  assert.equal(locked.ok, true, JSON.stringify(locked.errors));
+  const started = await runtime.beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "task5-resolution-start-" + roundNumber, sessionId: "session-1", expectedRevision: locked.revision, authorityEpoch: 0 }, fixture.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors)); revision = started.revision;
+  for (const stationId of stationIds) {
+    const resolved = await runtime.resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "task5-resolve-" + roundNumber + "-" + stationId, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0 }, fixture.context);
+    assert.equal(resolved.ok, true, JSON.stringify(resolved.errors)); revision = resolved.revision;
+  }
+  return revision;
+}
+test("M12 Task 5 round closeout derives a canonical continuing transition", async () => {
+  const fixture = makeContext({ update: persistSession });
+  fixture.context.users = [{ id: "gm-1", isGM: true, active: true }, { id: "player-1", isGM: false, active: true }];
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+  fixture.context.actors = stationIds.map((id) => ({ id, uuid: `Actor.${id}`, name: id, type: "character", getFlag: () => true }))
+    .concat([{ id: "ship-1", uuid: "Actor.ship-1", name: "Ship", type: "vehicle", getFlag: (_module, key) => key === "enabled" ? true : "arcflightShip" }]);
+  fixture.context.resolveEventDefinitionSnapshot = async () => getM12EventDefinition();
+  fixture.context.executeVoyagePf2ePendingCheck = async (pending) => ({ ok: true, status: "rolled", pendingCheckId: pending.pendingCheckId, sequence: pending.sequence, sourceKind: "character", sourceUuid: pending.source.uuid, statisticSlug: pending.statisticSlugOrAbilityId, dc: pending.finalDc, rollMode: "public", result: { total: pending.finalDc, degreeOfSuccess: 2, degreeOfSuccessSlug: "success" }, errors: [], warnings: [] });
+  const launch = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "task5-launch", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: Object.fromEntries(stationIds.map((id) => [id, id])) }, fixture.context);
+  assert.equal(launch.ok, true, JSON.stringify(launch.errors));
+  let revision = launch.revision;
+  for (const stationId of stationIds) {
+    const actionId = `${stationId}-round-1-action-1`;
+    const selected = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: `task5-select-${stationId}`, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "station-selection", payload: { stationId, actionId, approachId: `${actionId}-approach`, riskBidId: null } }, fixture.context);
+    assert.equal(selected.ok, true, JSON.stringify(selected.errors)); revision = selected.revision;
+  }
+  const order = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-order", sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "station-order", payload: { stationOrder: stationIds } }, fixture.context);
+  assert.equal(order.ok, true, JSON.stringify(order.errors)); revision = order.revision;
+  const locked = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-lock", sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0, commandKind: "plan-lock", payload: { phaseStartSnapshotId: "task5-plan-lock" } }, fixture.context);
+  assert.equal(locked.ok, true, JSON.stringify(locked.errors));
+  const started = await runtime.beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "task5-resolution-start", sessionId: "session-1", expectedRevision: locked.revision, authorityEpoch: 0 }, fixture.context);
+  assert.equal(started.ok, true, JSON.stringify(started.errors)); revision = started.revision;
+  for (const stationId of stationIds) {
+    const resolved = await runtime.resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: `task5-resolve-${stationId}`, sessionId: "session-1", expectedRevision: revision, authorityEpoch: 0 }, fixture.context);
+    assert.equal(resolved.ok, true, JSON.stringify(resolved.errors)); revision = resolved.revision;
+  }
+  assert.equal(fixtureSession(fixture).sessionState, "station-resolution");
+  assert.equal(fixtureSession(fixture).encounterState.phase, "resolution");
+  const stageBefore = structuredClone(fixtureSession(fixture).encounterState.currentStage)
+  const tracksBefore = structuredClone(fixtureSession(fixture).encounterState.tracks)
+  const closeExpectedRevision = revision;
+  fixtureSession(fixture).encounterState.pendingThresholdQueue = [{ thresholdId: "task5-pending-threshold" }];
+  const gateUpdates = fixture.tracker.updates;
+  const blocked = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-gate", sessionId: "session-1", expectedRevision: closeExpectedRevision, authorityEpoch: 0, commandKind: "round-closeout", payload: { roundId: "m12-round-1" } }, fixture.context);
+  assertFailure(blocked, "m11-command-not-allowed", "request.commandKind", "Command is not allowed in the current session state.");
+  assert.equal(fixture.tracker.updates, gateUpdates);
+  fixtureSession(fixture).encounterState.pendingThresholdQueue = [];
+  const close = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-close", sessionId: "session-1", expectedRevision: closeExpectedRevision, authorityEpoch: 0, commandKind: "round-closeout", payload: { roundId: "m12-round-1" } }, fixture.context);
+  assert.equal(close.ok, true, JSON.stringify(close.errors));
+  assert.equal(close.status, "crew-planning");
+  assert.equal(close.events.length, 1);
+  assert.equal(close.events[0].roundResult, "critical-round-success");
+  assert.equal(fixtureSession(fixture).sessionState, "crew-planning");
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+  assert.deepEqual(fixtureSession(fixture).encounterState.currentStage, stageBefore)
+  assert.deepEqual(fixtureSession(fixture).encounterState.tracks, tracksBefore)
+  assert.deepEqual(fixtureSession(fixture).encounterState.metadata.focusEffects, [])
+  assert.deepEqual(fixtureSession(fixture).encounterState.metadata.reactionWindow, null)
+  const updatesAfterClose = fixture.tracker.updates
+  const replay = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task5-close", sessionId: "session-1", expectedRevision: closeExpectedRevision, authorityEpoch: 0, commandKind: "round-closeout", payload: { roundId: "m12-round-1" } }, fixture.context)
+  assert.deepEqual(replay, close)
+  assert.equal(fixture.tracker.updates, updatesAfterClose)
+  assert.equal(fixtureSession(fixture).events.filter((entry) => entry.type === "voyage.m12-round-closeout").length, 1)
+  assert.equal(fixtureSession(fixture).auditHistory.filter((entry) => entry.kind === "round-closeout").length, 1)
+  const closeoutEvent = fixtureSession(fixture).events.find((entry) => entry.type === "voyage.m12-round-closeout");
+  closeoutEvent.momentumBefore += 1;
+  const tampered = reloadVoyageEventSession("session-1", fixture.context);
+  assertFailure(tampered, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+  assert.equal(fixture.tracker.updates, updatesAfterClose);
+  assert.equal(fixture.tracker.updates > 0, true);
+});
+
+test("M12 Task 5 normalizes authored benefit transition evidence for closeout", async () => {
+  const { fixture, revision } = await task5ReadyFixture({ riskBidByStation: { captain: "captain-round-1-action-1-risk-2" } });
+  const stored = fixtureSession(fixture);
+  const sourceEffect = stored.encounterState.metadata.riskBidEffects[0];
+  assert.equal(sourceEffect.status, "consumed");
+  const close = await task5CloseRound(fixture, "task5-benefit-transition", "m12-round-1", revision);
+  assert.equal(close.ok, true, JSON.stringify(close.errors));
+  const benefit = close.events[0].benefitTransition[0];
+  assert.deepEqual(Object.keys(benefit), ["effectId", "sourceStationId", "sourceActionId", "riskBidId", "sourceRevision", "sourceEncounterRevision", "sourceResult", "targetStationId", "targetPendingCheckId", "effectKind", "effectValue", "activationTiming", "consumptionTiming", "roundNumber", "requiresSourceBeforeTarget", "previousStatus", "persistence", "status", "consumedAtRevision"]);
+  assert.equal(benefit.previousStatus, "consumed");
+  assert.equal(benefit.persistence, "round-local");
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+  const updates = fixture.tracker.updates;
+  const persistedEvent = fixtureSession(fixture).events.find((entry) => entry.type === "voyage.m12-round-closeout");
+  persistedEvent.benefitTransition[0].persistence = "forged";
+  assertFailure(reloadVoyageEventSession("session-1", fixture.context), "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+  assert.equal(fixture.tracker.updates, updates);
+});function task5EvidenceCounts(fixture) {
+  const stored = fixtureSession(fixture);
+  return {
+    updates: fixture.tracker.updates,
+    events: stored.events.length,
+    audits: stored.auditHistory.length,
+    checkpoints: stored.checkpoints.length,
+    records: stored.processedRequests.length
+  };
+}
+
+async function task5CloseRound(fixture, requestId, roundId, expectedRevision) {
+  return dispatchVoyageEventSessionCommand({
+    kind: "voyage.m11-command", requestId, sessionId: "session-1", expectedRevision,
+    authorityEpoch: 0, commandKind: "round-closeout", payload: { roundId }
+  }, fixture.context);
+}
+
+test("M12 Task 5 rejects a new old-round request and changed replay without writes", async () => {
+  const { fixture, revision } = await task5ReadyFixture();
+  const close = await task5CloseRound(fixture, "task5-old-round-close", "m12-round-1", revision);
+  assert.equal(close.ok, true, JSON.stringify(close.errors));
+  const before = task5EvidenceCounts(fixture);
+  const oldRound = await task5CloseRound(fixture, "task5-old-round-new-request", "m12-round-1", close.revision);
+  assert.equal(oldRound.ok, false);
+  assert.deepEqual(task5EvidenceCounts(fixture), before);
+  const conflict = await task5CloseRound(fixture, "task5-old-round-close", "m12-round-2", close.revision);
+  assertFailure(conflict, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data.");
+  assert.deepEqual(task5EvidenceCounts(fixture), before);
+});
+
+test("M12 Task 5 entry gates reject required reaction, retry, recovery, and threshold state write-free", async () => {
+  const cases = [
+    ["open-required-reaction", (state) => { state.metadata.reactionWindow = { status: "open", stationId: "captain", targetPendingCheckId: null, opportunities: [{ reactionId: "required-reaction" }], resolved: [], committed: [], result: null }; }],
+    ["pending-retry", (state) => { state.metadata.sliceIRecovery = [{ kind: "retry-roll-integration", replacementPendingCheckId: null, integrationStatus: "pending", originalPendingCheckId: "original" }]; }],
+    ["unresolved-retry-integration", (state) => { state.metadata.sliceIRecovery = [{ kind: "retry-roll-integration", replacementPendingCheckId: "replacement", integrationStatus: "uncertain", originalPendingCheckId: "original" }]; }],
+    ["recovery-required", (state) => { state.metadata.recoveryControl = { status: "required" }; }],
+    ["nonempty-threshold-queue", (state) => { state.pendingThresholdQueue = [{ thresholdId: "threshold-1" }]; }]
+  ];
+  for (const [label, mutate] of cases) {
+    const { fixture, revision } = await task5ReadyFixture();
+    const stored = fixtureSession(fixture);
+    mutate(stored.encounterState);
+    const before = task5EvidenceCounts(fixture);
+    const result = await task5CloseRound(fixture, `task5-gate-${label}`, "m12-round-1", revision);
+    assert.equal(result.ok, false, label);
+    assert.deepEqual(task5EvidenceCounts(fixture), before, label);
+    assert.equal(stored.events.filter((event) => event.type === "voyage.m12-round-closeout").length, 0, label);
+  }
+});
+
+test("M12 Task 5 failed rounds clamp Momentum at zero and preserve transition evidence", async () => {
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+  const { fixture, revision } = await task5ReadyFixture({ degreeByStation: Object.fromEntries(stationIds.map((id) => [id, 1])), initialMomentum: 0 });
+  const close = await task5CloseRound(fixture, "task5-momentum-lower", "m12-round-1", revision);
+  assert.equal(close.ok, true, JSON.stringify(close.errors));
+  assert.equal(close.events[0].roundResult, "critical-round-failure");
+  assert.equal(close.events[0].momentumBefore, 0);
+  assert.equal(close.events[0].momentumAfter, 0);
+  assert.ok(close.events[0].pressureEffects.length > 0);
+  const updatesAfterClose = fixture.tracker.updates;
+  const replay = await task5CloseRound(fixture, "task5-momentum-lower", "m12-round-1", revision);
+  assert.deepEqual(replay, close);
+  assert.equal(fixture.tracker.updates, updatesAfterClose);
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+});
+
+test("M12 Task 5 successful rounds clamp Momentum at three", async () => {
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+  const { fixture, revision } = await task5ReadyFixture({ initialMomentum: 2 });
+  const closeA = await task5CloseRound(fixture, "task5-momentum-upper-a", "m12-round-1", revision);
+  assert.equal(closeA.ok, true, JSON.stringify(closeA.errors));
+  assert.equal(closeA.events[0].momentumBefore, 2);
+  assert.equal(closeA.events[0].momentumAfter, 3);
+  const roundBRevision = await task5AdvanceRound(fixture, stationIds, closeA.revision, 2);
+  const closeB = await task5CloseRound(fixture, "task5-momentum-upper-b", "m12-round-2", roundBRevision);
+  assert.equal(closeB.ok, true, JSON.stringify(closeB.errors));
+  assert.equal(closeB.events[0].momentumBefore, 3);
+  assert.equal(closeB.events[0].momentumAfter, 3);
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+});
+test("M12 Task 5 rejects tampered historical Pressure provenance without repair writes", async () => {
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+  const { fixture, revision } = await task5ReadyFixture({ degreeByStation: Object.fromEntries(stationIds.map((id) => [id, 1])) });
+  const close = await task5CloseRound(fixture, "task5-pressure-tamper", "m12-round-1", revision);
+  assert.equal(close.ok, true, JSON.stringify(close.errors));
+  const updates = fixture.tracker.updates;
+  const event = fixtureSession(fixture).events.find((entry) => entry.type === "voyage.m12-round-closeout");
+  assert.ok(event.pressureEffects.length > 0);
+  event.pressureEffects[0].sourceKind = "forged-source";
+  const invalid = reloadVoyageEventSession("session-1", fixture.context);
+  assertFailure(invalid, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.");
+  assert.equal(fixture.tracker.updates, updates);
+});
+
+test("M12 Task 5 final authored round hands off to closeout review without starting Task 6", async () => {
+  const { fixture, stationIds, revision } = await task5ReadyFixture();
+  const finalDefinition = getM12EventDefinition();
+  finalDefinition.rounds = finalDefinition.rounds.slice(0, 1);
+  fixture.context.resolveEventDefinitionSnapshot = async () => structuredClone(finalDefinition);
+  const stored = fixtureSession(fixture);
+  const stageBefore = structuredClone(stored.encounterState.currentStage);
+  const tracksBefore = structuredClone(stored.encounterState.tracks);
+  const close = await task5CloseRound(fixture, "task5-final-round", "m12-round-1", revision);
+  assert.equal(close.ok, true, JSON.stringify(close.errors));
+  assert.equal(close.status, "event-closeout-review");
+  assert.equal(fixtureSession(fixture).sessionState, "event-closeout-review");
+  assert.equal(fixtureSession(fixture).encounterState.roundNumber, 1);
+  assert.deepEqual(fixtureSession(fixture).encounterState.currentStage, stageBefore);
+  assert.deepEqual(fixtureSession(fixture).encounterState.tracks, tracksBefore);
+  assert.equal(fixtureSession(fixture).closeout.status, "none");
+  assert.equal(fixtureSession(fixture).events.filter((event) => event.type === "voyage.m12-round-closeout").length, 1);
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+});
+test("M12 Task 5 historical rounds replay and preserve their own evidence", async () => {
+  const { fixture, occupiedStationIds, revision: readyRevision } = await task5ReadyFixture({ unassignedStationIds: ["watchmaster"] });
+  const stored = fixtureSession(fixture);
+  const stageBefore = structuredClone(stored.encounterState.currentStage);
+  const tracksBefore = structuredClone(stored.encounterState.tracks);
+  const closeARequest = { kind: "voyage.m11-command", requestId: "task5-round-a", sessionId: "session-1", expectedRevision: readyRevision, authorityEpoch: 0, commandKind: "round-closeout", payload: { roundId: "m12-round-1" } };
+  const closeA = await dispatchVoyageEventSessionCommand(closeARequest, fixture.context);
+  assert.equal(closeA.ok, true, JSON.stringify(closeA.errors));
+  assert.equal(closeA.events[0].momentumBefore, 0);
+  assert.equal(closeA.events[0].momentumAfter, 1);
+  const updatesAfterA = fixture.tracker.updates;
+  const eventsAfterA = stored.events.length;
+  const auditsAfterA = stored.auditHistory.length;
+  const checkpointsAfterA = stored.checkpoints.length;
+  const replayA = await dispatchVoyageEventSessionCommand(closeARequest, fixture.context);
+  assert.deepEqual(replayA, closeA);
+  assert.equal(fixture.tracker.updates, updatesAfterA);
+  assert.equal(stored.events.length, eventsAfterA);
+  assert.equal(stored.auditHistory.length, auditsAfterA);
+  assert.equal(stored.checkpoints.length, checkpointsAfterA);
+  const changed = await dispatchVoyageEventSessionCommand({ ...closeARequest, payload: { roundId: "m12-round-2" } }, fixture.context);
+  assertFailure(changed, "m11-request-id-conflict", "request.requestId", "Request ID was previously used with different data.");
+  assert.equal(fixture.tracker.updates, updatesAfterA);
+  const revisionAfterBSetup = await task5AdvanceRound(fixture, occupiedStationIds, closeA.revision, 2, {
+    captain: "captain-round-2-action-1-risk-2",
+    engineer: "engineer-round-2-action-3-risk-2",
+    navigator: "navigator-round-2-action-1-risk-2",
+    veilwarden: "veilwarden-round-2-action-1-risk-2"
+  }, { engineer: 3 });  const closeB = await task5CloseRound(fixture, "task5-round-b", "m12-round-2", revisionAfterBSetup);
+  assert.equal(closeB.ok, true, JSON.stringify(closeB.errors));
+  assert.equal(closeB.events[0].momentumBefore, 1);
+  assert.equal(closeB.events[0].momentumAfter, 2);
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+  const oldRound = await task5CloseRound(fixture, "task5-old-round", "m12-round-1", closeB.revision);
+  assertFailure(oldRound, "m11-command-not-allowed", "request.commandKind", "Command is not allowed in the current session state.");
+  assert.equal(fixture.tracker.updates, updatesAfterA + 1 + (revisionAfterBSetup - closeA.revision));
+  assert.deepEqual(stored.encounterState.currentStage, stageBefore);
+  assert.deepEqual(stored.encounterState.tracks, tracksBefore);
+  assert.deepEqual(stored.encounterState.riskBids, {});
+  assert.equal(stored.encounterState.metadata.recoveryControl ?? null, null);
+});
+test("M12 Task 5 representative persisted history tampering fails closed without repair", async () => {
+  const mutations = [
+    ["momentum-before", (event) => { event.momentumBefore += 1; }],
+    ["round-number", (event) => { event.roundNumber += 1; }],
+    ["benefit-transition", (event) => { event.benefitTransition = [{ forged: true }]; }],
+    ["audit-binding", (event, stored) => { const audit = stored.auditHistory.find((entry) => entry.kind === "round-closeout"); audit.details.roundResult = "round-failure"; }],
+    ["response-binding", (event, stored) => { const record = stored.processedRequests.find((entry) => entry.commandKind === "round-closeout"); record.response.events[0].roundResult = "round-failure"; }]
+  ];
+  for (const [label, mutate] of mutations) {
+    const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+    const { fixture, revision } = await task5ReadyFixture({ degreeByStation: Object.fromEntries(stationIds.map((id) => [id, 1])) });
+    const close = await task5CloseRound(fixture, `task5-tamper-${label}`, "m12-round-1", revision);
+    assert.equal(close.ok, true, JSON.stringify(close.errors));
+    const stored = fixtureSession(fixture);
+    const event = stored.events.find((entry) => entry.type === "voyage.m12-round-closeout");
+    mutate(event, stored);
+    const updates = fixture.tracker.updates;
+    const invalid = reloadVoyageEventSession("session-1", fixture.context);
+    assertFailure(invalid, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.", undefined);
+    assert.equal(fixture.tracker.updates, updates, label);
+  }
 });

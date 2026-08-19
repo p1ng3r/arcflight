@@ -31,7 +31,7 @@ const RISK_PLANNING_ORDER = [
   "watchmaster"
 ];
 
-function riskPlanningEncounter(selectedRiskBidCount) {
+function riskPlanningEncounter(selectedRiskBidCount, occupiedStationIds = RISK_PLANNING_ORDER) {
   const source = encounter();
   source.availableStations = RISK_PLANNING_ORDER.map((stationId, index) => ({
     stationId,
@@ -43,11 +43,11 @@ function riskPlanningEncounter(selectedRiskBidCount) {
       ]
     }]
   }));
-  source.stationAssignments = RISK_PLANNING_ORDER.map((stationId) => ({
+  source.stationAssignments = occupiedStationIds.map((stationId) => ({
     stationId,
     operator: { kind: "actor", uuid: `Actor.${stationId}` }
   }));
-  source.selections = Object.fromEntries(RISK_PLANNING_ORDER.map(
+  source.selections = Object.fromEntries(occupiedStationIds.map(
     (stationId) => [stationId, {
       stationId,
       actionId: `action-${stationId}`,
@@ -55,9 +55,9 @@ function riskPlanningEncounter(selectedRiskBidCount) {
       statisticSlugOrAbilityId: `approach-${stationId}`
     }]
   ));
-  source.proposedStationOrder = [...RISK_PLANNING_ORDER];
+  source.proposedStationOrder = [...occupiedStationIds];
   source.riskBids = Object.fromEntries(
-    RISK_PLANNING_ORDER.slice(0, selectedRiskBidCount).map((stationId) => {
+    occupiedStationIds.slice(0, selectedRiskBidCount).map((stationId) => {
       const index = RISK_PLANNING_ORDER.indexOf(stationId);
       return [stationId, {
         stationId,
@@ -151,8 +151,8 @@ test("locks a one-station proposal without generating or sorting order", () => {
   assert.deepEqual(source, before);
 });
 
-test("locks plans with zero through three Risk Bids without rewriting them", () => {
-  for (let count = 0; count <= 3; count += 1) {
+test("locks plans with zero through five Risk Bids without rewriting them", () => {
+  for (let count = 0; count <= 5; count += 1) {
     const source = riskPlanningEncounter(count);
     if (count === 3) {
       source.riskBids = Object.fromEntries(
@@ -236,27 +236,32 @@ test("locks plans with zero through three Risk Bids without rewriting them", () 
   }
 });
 
-test("a fourth valid Risk Bid blocks lock without any partial state change", () => {
-  const source = riskPlanningEncounter(4);
-  const request = { phaseStartSnapshotId: "over-risk-limit" };
+test("occupied-station capacity locks four bids and rejects an unoccupied bid", () => {
+  const occupied = RISK_PLANNING_ORDER.slice(0, 4);
+  const source = riskPlanningEncounter(4, occupied);
   const before = clonePlainData(source);
-  const requestBefore = clonePlainData(request);
-  const result = applyVoyageEncounterCrewPlanningLock(source, request);
+  const result = applyVoyageEncounterCrewPlanningLock(source, {
+    phaseStartSnapshotId: "four-occupied-bids"
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.nextState.committedStationOrder.length, 4);
+  assert.equal(Object.keys(result.nextState.riskBids).length, 4);
 
-  failure(result);
-  assert.equal(result.errors.filter(
-    (entry) => entry.code === "risk-bid-round-limit-exceeded"
-      && entry.path === "riskBids"
-  ).length, 1);
-  assert.equal(source.revision, before.revision);
-  assert.equal(source.phase, before.phase);
-  assert.deepEqual(source.proposedStationOrder, before.proposedStationOrder);
-  assert.deepEqual(source.committedStationOrder, before.committedStationOrder);
-  assert.deepEqual(source.selections, before.selections);
-  assert.deepEqual(source.riskBids, before.riskBids);
-  assert.deepEqual(source.snapshots, before.snapshots);
+  const invalid = riskPlanningEncounter(4, occupied);
+  invalid.riskBids.watchmaster = {
+    stationId: "watchmaster",
+    actionId: "action-watchmaster",
+    riskBidId: "bid-watchmaster",
+    dcAdjustment: 2
+  };
+  const invalidBefore = clonePlainData(invalid);
+  const rejected = applyVoyageEncounterCrewPlanningLock(invalid, {
+    phaseStartSnapshotId: "unoccupied-fifth-bid"
+  });
+  failure(rejected);
+  assert.ok(rejected.errors.some((entry) => entry.code === "risk-bid-selection-missing" && entry.path === "riskBids.watchmaster"));
+  assert.deepEqual(invalid, invalidBefore);
   assert.deepEqual(source, before);
-  assert.deepEqual(request, requestBefore);
 });
 
 test("malformed Risk Bid state blocks lock atomically", () => {

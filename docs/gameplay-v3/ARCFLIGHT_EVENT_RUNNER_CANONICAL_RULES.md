@@ -1,6 +1,6 @@
 # Arcflight Event Runner — Canonical Gameplay Rules
 
-**Status:** Canonical design contract, Version 1
+**Status:** Canonical design contract, Version 2
 **Scope:** Arcflight Core event runner
 **Purpose:** Authoritative gameplay reference for implementation, testing, event authoring, UI, and future milestones.
 **Implementation authority:** [`ARCFLIGHT_GAMEPLAY_V3_CANONICAL_AUDIT_AND_MILESTONE_MAP.md`](ARCFLIGHT_GAMEPLAY_V3_CANONICAL_AUDIT_AND_MILESTONE_MAP.md)
@@ -257,8 +257,10 @@ Only tiers authored for that action are available. An action may offer no bids, 
 
 ### 7.2 Limits
 
+- Authoring may expose Risk Bids on at most four action choices across an entire round.
+- No station may author Risk Bids on more than two of its three actions; every station retains at least one normal no-bid action.
 - Maximum one selected Risk Bid per station per round.
-- Maximum three selected Risk Bids across the entire round.
+- Maximum one selected Risk Bid per occupied station; total selected Risk Bids may not exceed the number of occupied stations in the round.
 - A station using the base action without a bid does not count toward the round limit.
 
 ### 7.3 Single-roll resolution
@@ -282,14 +284,19 @@ There is never a separate Risk Bid roll.
 |---|---|---|---|
 | Critical Success | Critical Success benefit | Critical Success bid benefit | 2 success |
 | Success | Success benefit | Success bid benefit | 1 success |
-| Failure | No normal benefit; no extra normal-action punishment | Failure bid consequence | 1 failure |
-| Critical Failure | No normal benefit; no extra normal-action punishment | Critical Failure bid consequence | 2 failure |
+| Failure | No normal benefit; no extra normal-action punishment | No Risk Bid payoff; no additional Risk-Bid-specific penalty | 1 failure |
+| Critical Failure | No normal benefit; no extra normal-action punishment | No Risk Bid payoff; no additional Risk-Bid-specific penalty | 2 failure |
 
-A failed action already harms the round and normally adds Pressure. Additional authored punishment comes from the voluntarily selected Risk Bid, not from a second generic normal-action failure branch.
+A failed action already harms the round and normally adds Pressure. For the current playtest rules, the increased DC is the Risk: Risk Bid Failure and Critical Failure provide no bid payoff and no additional Risk-Bid-specific penalty. Normal action Failure/Critical Failure behavior, round units, and ordinary Pressure remain unchanged.
 
 ### 7.5 Authored bid effects
 
 Risk Bid effects are not universal by tier. They are written for the specific action and story.
+
+Each earned cross-station effect is durable Event Session evidence bound to its
+source station/action/bid/result, target station and pending check, round,
+activation timing, consumption timing, and source-before-target order. It may
+apply only to an unresolved eligible target and is consumed once.
 
 Valid examples include:
 
@@ -308,6 +315,125 @@ Valid examples include:
 - change station-order restrictions.
 
 Risk Bid rewards are inherent in the bid. They do not automatically add end-of-event treasure.
+
+### 7.7 Station icon visual language
+
+Event content stores only the canonical station ID. The Event Manager resolves
+that ID through the trusted UI registry at `scripts/voyage/apps/station-icons.js`.
+The current registry is:
+
+| Station ID | Asset |
+|---|---|
+| `captain` | `assets/ui/stations/captain_icon.webp` |
+| `navigator` | `assets/ui/stations/navigator_icon.webp` |
+| `watchmaster` | `assets/ui/stations/watchmaster_icon.webp` |
+| `veilwarden` | `assets/ui/stations/veilwarden_icon.webp` |
+| `engineer` | `assets/ui/stations/engineer_icon.webp` |
+
+Station icon assets use the `<canonical_station_id>_icon.webp` convention,
+128×128 square WebP source art, transparent backgrounds where artwork permits,
+centered emblems, a shared dark Arcflight material family, and silhouettes
+readable at the 48Ã—48 default Event Manager target. Normal station icons render
+at 48Ã—48; prominent or current station headers may render at up to 56Ã—56
+without changing the 128Ã—128 source asset. The icon and readable station name
+remain paired, with a station title/tooltip and accessible label where
+practical; the UI falls back to name/abbreviation when an icon is unavailable.
+
+The Event Manager groups station identity, chosen action, and current
+mechanical state into compact reusable station cells. Risk Bid source identity
+stays beside its action/tier/DC, while each target icon, name, and authored
+effect remain together. Active benefits are shown inside the target station
+cell and retain source station, source action, effect, and consumption timing.
+Resolution Order presents source-to-target station-cell relationships with an
+explicit ORDER VALID or SOURCE MUST RESOLVE BEFORE TARGET state. Text labels
+remain visible beside icons; compact state chips are permitted until dedicated
+state art exists. The layout remains responsive and compact.
+
+Future icon creation guide: create exactly one standalone Arcflight fantasy RPG
+station UI icon on a 128×128 transparent square canvas, with no sheet, variants,
+text, letters, numbers, screenshot, or surrounding scene. Use blackened iron or
+dark naval materials, aged brass/bronze trim, restrained blue-white aetheric
+light, medieval/Renaissance fantasy ship technology, a centered unmistakable
+station emblem, strong silhouette, and moderate edge padding readable at 24px.
+Use `<STATION NAME>`, `<PRIMARY SYMBOL>`, and `<WHAT THIS STATION CONTROLS>` as
+the authored prompt slots. Preserve the construction standard without copying
+another station's exact symbol.
+
+Reserved future UI graphics (not required by the current Task 4):
+`assets/ui/risk-bid/{risk_bid_icon,active_benefit_icon,order_link_icon,order_valid_icon,order_blocked_icon}.webp`,
+`assets/ui/status/{focus_icon,momentum_icon,pressure_icon,hazard_icon,void_scar_icon}.webp`,
+and `assets/ui/results/{roll_bonus_icon,dc_reduction_icon,degree_improvement_icon}.webp`.
+
+Resolution Order is the deliberate large-card exception: station icons render
+at 128Ã—128 with the station title above the icon. A selected Risk Bid renders
+its tier icon at 64Ã—64 on the left of station identity, while Operator,
+Action, and Approach remain grouped on the right. Reorder controls use a
+full-height left rail and preserve the existing drag/order mutation behavior;
+source-to-target dependency status remains visible. Other Event Manager
+contexts retain the 48Ã—48 default and up-to-56Ã—56 prominent station sizes.
+
+Resource UI icons are resolved through the central registry at
+`scripts/voyage/apps/resource-icons.js`, never authored into event content:
+
+| Registry key | Asset | Meaning |
+|---|---|---|
+| `focus` | `assets/ui/resources/focus_icon.webp` | Focus resource |
+| `riskBid` | `assets/ui/resources/risk_bid_icon.webp` | Risk Bid available |
+| `riskBid2` | `assets/ui/resources/risk_bid_icon_+2.webp` | Selected +2 wager |
+| `riskBid5` | `assets/ui/resources/risk_bid_icon_+5.webp` | Selected +5 wager |
+| `riskBid8` | `assets/ui/resources/risk_bid_icon_+8.webp` | Selected +8 wager |
+
+Resource icons supplement readable labels and provide title/accessible-label
+text. A selected tier uses its specific icon; a no-bid station never receives
+a selected-tier icon.
+
+### Event Manager visual language
+
+Resolution Order establishes the large-card visual authority: station identity
+is centered around readable name plus icon, selected Risk Bid art stays on the
+mechanic side, and Operator/Action/Approach remain grouped in a predictable
+detail region. All Event Manager tabs use the same station-cell grammar.
+Overview uses compact station summary cells; Crew Plan is the editable form;
+Plan Review mirrors it read-only; Resolution mirrors it as the live/current
+station card. Active benefits remain inside their target station card and
+retain source, action, effect, and consumption timing.
+
+Risk Bid art is reserved for actual availability or selection. `NO BID` is a
+subdued far-right status rather than a left-side mechanic block. Consistent
+status chips, responsive grid/flex stacking, readable station labels, and
+tooltips/accessibility labels are required; icons never replace station text.
+
+Crew Plan action selectors display authored action names only. When the
+selected action offers Risk Bid tiers, the nearby generic Risk Bid icon marks
+availability; non-Risk-Bid actions omit the Risk Bid selector entirely. A
+selected +2, +5, or +8 tier uses its specific resource art and keeps the
+structured payoff adjacent to its target. Thematic serif stacks are reserved
+for headings and station names, while controls and mechanical/body text use a
+readable sans-serif stack; no remote font dependency is required.
+
+The Crew Plan action picker may use an accessible Arcflight listbox rather than
+rich markup inside native `option` elements. Its rows show the generic
+`risk_bid_icon.webp` only when the authored action exposes one or more Risk Bid
+tiers; action names remain unchanged. The closed picker repeats that generic
+availability mark for a selected bid-capable action, while tier-specific art
+communicates the actual selected tier. Keyboard focus, Enter/Space selection,
+Arrow navigation, Escape dismissal, locked-plan read-only state, and the
+existing station-selection command path are preserved.
+
+Crew Plan uses a compact station-card hierarchy: the header groups icon, station
+name, operator, and one canonical status chip; Action, Approach, and relevant
+Risk Bid controls share a responsive planning row; the selected action
+description follows beneath. Completed ready stations may collapse to an
+isolated summary with an explicit Edit control, while incomplete or actively
+edited stations remain expanded. Locked plans remain read-only.
+
+The Action picker gives keyboard-active rows a strong brass/blue whole-row
+highlight and keeps the selected row visibly distinct with a marker. When no
+Risk Bid tier is selected, the card shows only a compact availability/tier
+summary. Once a tier is selected, only that tier's detailed payoff is shown by
+default; an optional comparison disclosure may expose all authored tiers.
+Actions without Risk Bids omit the selector and irrelevant detail area. Icons
+supplement, rather than replace, readable labels.
 
 ### 7.6 Example tiers
 

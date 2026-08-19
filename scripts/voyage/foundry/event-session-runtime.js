@@ -22,15 +22,25 @@ import {
   applyVoyageEncounterStationOrderProposalClear
 } from "../domain/station-order-proposal.js";
 import { applyVoyageEncounterCrewPlanningLock } from "../domain/crew-planning-lock.js";
-import { validateVoyageHazardRecord } from "../domain/hazard-schema.js";
+import { prepareVoyageEncounterCrewPlanningReadiness } from "../domain/crew-planning-readiness.js";
+import { validateVoyageHazardRecord, VOYAGE_HAZARD_RECORD_FIELDS } from "../domain/hazard-schema.js";
 import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../domain/constants.js";
 import { analyzeVoyagePressureBreachCloseoutTransaction } from "../domain/pressure-breach.js";
-import { validateVoyageEncounterCloseoutSnapshot } from "../domain/closeout.js";
+import { analyzeVoyageEncounterPressurePlan } from "../domain/pressure.js";
+import { analyzeVoyageEncounterHazardCloseout, validateVoyageEncounterCloseoutSnapshot } from "../domain/closeout.js";
 import { analyzeVoyageEncounterCloseoutReview } from "../domain/closeout-review.js";
 import { applyVoyageEncounterResolutionTransition } from "../domain/resolution-transition.js";
+import { applyVoyageEncounterConsequencesTransition } from "../domain/consequences-transition.js";
+import { applyVoyageEncounterCrewPlanningTransition } from "../domain/crew-planning-transition.js";
+import { analyzeVoyageEncounterRoundUnitAggregation } from "../domain/round-unit-aggregation.js";
+import { analyzeVoyageEncounterRoundResult } from "../domain/round-result-classification.js";
+import { analyzeVoyageEncounterActionOutcomes } from "../domain/action-outcome-interpretation.js";
+import { analyzeVoyageEncounterActionOutcomeDefinitions } from "../domain/consequence-rules.js";
 import { prepareVoyageEncounterActionExecutionRequests } from "../domain/resolution-execution-requests.js";
 import { applyVoyageEncounterPendingCheckPreparation } from "../domain/pending-checks.js";
 import { applyVoyageEncounterPendingCheckResult } from "../domain/resolution-results.js";
+import { validateVoyageEncounterStationOrder } from "../domain/station-order.js";
+import { analyzeVoyageEncounterResolutionOrder } from "../domain/resolution-order.js";
 import {
   persistVoyageEncounterApprovedCloseout,
   continueVoyageEncounterCloseoutReservation,
@@ -66,6 +76,12 @@ const RECOVERY_ABORT_EVENT_FIELDS = Object.freeze(["type", "sessionId", "eventId
 const TASK7_ABORT_AUDIT_DETAILS = Object.freeze(["abortScope", "previousSessionState", "nextSessionState", "previousLifecycleState", "nextLifecycleState", "reason"]);
 const TASK7_ACTIVE_ABORT_AUDIT_DETAILS = Object.freeze(["abortScope", "previousSessionState", "nextSessionState", "previousLifecycleState", "nextLifecycleState", "reason", "persistentConsequence"]);
 const TASK7_CORRECTION_AUDIT_DETAILS = Object.freeze(["correctionKind", "targetRequestId", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision", "reason"]);
+// Slice I is intentionally expressed through the existing M11 correction
+// envelope.  These are the only post-resolution corrections; the old Task 7
+// planning corrections remain separate and are never enabled here.
+const SLICE_I_CORRECTION_KINDS = Object.freeze(["remaining-order", "target", "operator-takeover", "void-roll", "retry-roll-integration", "recorded-result"]);
+const SLICE_I_EXECUTABLE_CORRECTION_KINDS = new Set(["remaining-order", "operator-takeover", "void-roll", "retry-roll-integration"]);
+const SLICE_I_CORRECTION_AUDIT_DETAILS = Object.freeze(["correctionKind", "targetRequestId", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision", "reason", "stationId", "pendingCheckId", "before", "after"]);
 const TASK7_RECOVERY_ABORT_AUDIT_DETAILS = Object.freeze(["recoveryAction", "sourceCheckpointId", "sourceCheckpointRevision", "recoveryAuthorityUserId", "replayedEventCount", "failedRequestId", "failedRevision", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision"]);
 const RECOVERY_AUDIT_DETAILS_FIELDS = Object.freeze(["recoveryAction", "sourceCheckpointId", "sourceCheckpointRevision", "recoveryAuthorityUserId", "replayedEventCount", "failedRequestId", "failedRevision"]);
 const PROCESSED_REQUEST_FIELDS = Object.freeze(["requestId", "principalUserId", "projectionKind", "fingerprint", "commandKind", "resultKind", "resultRevision", "response"]);
@@ -77,6 +93,7 @@ const RECOVERY_RESULT_KIND = "recovered";
 const RECOVERY_ACTIONS = new Set(["rebuild-latest", "reconcile-closeout", "abort"]);
 const CHECKPOINT_KINDS = new Set(["before-plan-lock", "before-action-segment", "before-reaction", "before-round-closeout", "before-emergency-response", "before-persistent-application", "after-recovery"]);
 const SESSION_STATES = new Set(["setup", "round-introduction", "crew-planning", "plan-locked", "station-resolution", "round-closeout", "next-round", "event-closeout-review", "persistent-application", "completed", "paused", "emergency-response", "aborted", "recovery-required"]);
+const PLAN_LOCKED_SESSION_STATES = new Set(["plan-locked", "station-resolution", "round-closeout", "next-round", "event-closeout-review", "persistent-application", "completed"]);
 const TRANSFER_REQUEST_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision", "authorityEpoch", "targetUserId", "reason"]);
 const READ_PROJECTION_FIELDS = Object.freeze(["kind", "requestId", "sessionId", "expectedRevision"]);
 const PROJECTION_FIELDS = Object.freeze([
@@ -84,16 +101,43 @@ const PROJECTION_FIELDS = Object.freeze([
   "stationAssignments", "committedStationOrder", "currentActingStationId", "momentum", "pressureSystems", "activeHazards",
   "visibleEvents", "closeoutStatus", "recoveryStatus"
 ]);
+const MULTIPLAYER_PROJECTION_FIELDS = Object.freeze([
+  ...PROJECTION_FIELDS,
+  "projectionRole", "ownedOperators", "readOnlyStationIds", "ownedPlanningOptions",
+  "sharedStationOrder", "planReady", "planLocked", "canMutateSharedOrder",
+  "resolutionStarted", "resolutionOrder", "resolutionCurrentStationId", "resolutionCurrentOperator",
+  "resolutionOrderPosition", "resolutionTotalStations", "resolutionStations", "resolutionComplete",
+  "canExecuteCurrentStation", "currentStationOwnedByViewer", "currentExecutionState", "currentExecution",
+  "hasPendingPlayerDecision", "decisionPhase", "decisionRequired", "decisionStationId", "decisionStationName",
+  "decisionTargetStationId", "decisionTargetStationName", "decisionTitle", "decisionDescription", "decisionNarration",
+  "decisionSourceOperatorName", "decisionCost", "decisionStatisticLabel", "decisionDc", "decisionVisibility",
+  "decisionOutcomes", "decisionOptions", "canUseFocus", "canPassReaction", "rollBlockedByDecision"
+]);
+const MULTIPLAYER_AUTHORIZATION_FIELDS = Object.freeze(["kind", "sessionId", "stationId"]);
 const TRANSFER_COORDINATOR_FIELDS = Object.freeze(["sessionId", "sessionDocumentId", "expectedRevision", "expectedAuthorityEpoch", "authenticatedUserId", "connectionId", "activeGmUserId"]);
 const TRANSPORT_WITNESS_FIELDS = Object.freeze(["connectionId", "occurredAt"]);
 const AUDIT_FIELDS = Object.freeze(["auditId", "kind", "sessionId", "requestId", "actorUserId", "authorityEpoch", "previousRevision", "revision", "occurredAt", "details"]);
 const AUDIT_DETAILS_FIELDS = Object.freeze(["previousActiveGmUserId", "nextActiveGmUserId", "bootstrap", "reason"]);
 const M12_AUDIT_DETAILS_FIELDS = Object.freeze(["transitionKind", "previousSessionState", "nextSessionState", "previousEncounterRevision", "encounterRevision", "eventCount"]);
+const ROUND_CLOSEOUT_EVENT_FIELDS = Object.freeze(["type", "sessionId", "eventId", "definitionSnapshotId", "shipId", "roundId", "roundNumber", "previousRevision", "revision", "previousAuthorityEpoch", "authorityEpoch", "previousSessionState", "nextSessionState", "previousPhase", "nextPhase", "stationResultIds", "successUnits", "failureUnits", "roundResult", "momentumBefore", "momentumAfter", "pressureBefore", "pressureAfter", "pressureEffects", "breaches", "hazardEffects", "consequenceEffects", "benefitTransition", "focusTransition", "riskBidTransition", "recoveryControlTransition", "nextRoundId"]);
+const ROUND_CLOSEOUT_AUDIT_DETAILS_FIELDS = Object.freeze(["roundId", "roundNumber", "runtimeEventType", "checkpointId", "stationResultIds", "successUnits", "failureUnits", "roundResult", "momentumBefore", "momentumAfter", "pressureEffectIds", "breachIds", "hazardEffectIds", "consequenceEffectIds", "benefitTransition", "focusTransition", "riskBidTransition", "recoveryControlTransition", "previousSessionState", "nextSessionState", "nextRoundId"]);
+const ROUND_CLOSEOUT_PRESSURE_EFFECT_FIELDS = Object.freeze(["pressureEffectId", "encounterId", "stageId", "roundNumber", "sequence", "stationId", "actionId", "pressureSystemId", "delta", "timing", "sourceKind", "sourceIntentId", "activationSource", "branch", "visibility"]);
+const ROUND_CLOSEOUT_BREACH_FIELDS = Object.freeze(["pressureBreachId", "encounterId", "stageId", "roundNumber", "effectIndex", "sequence", "stationId", "actionId", "pressureSystemId", "pressureEffectId", "sourceKind", "sourceIntentId", "activationSource", "branch", "timing", "visibility", "previousValue", "capacity", "remainingCapacity", "attemptedDelta", "overflowDelta"]);
+const ROUND_CLOSEOUT_BENEFIT_FIELDS = Object.freeze(["effectId", "sourceStationId", "sourceActionId", "riskBidId", "sourceRevision", "sourceEncounterRevision", "sourceResult", "targetStationId", "targetPendingCheckId", "effectKind", "effectValue", "activationTiming", "consumptionTiming", "roundNumber", "requiresSourceBeforeTarget", "previousStatus", "persistence", "status", "consumedAtRevision"]);
+const TASK5_BENEFIT_PERSISTENCE = new Set(["round-local", "next-round", "event"]);
 const TASK2_COMMANDS = new Set(["station-selection", "station-selection-clear", "station-order", "plan-lock"]);
 const TASK3_COMMANDS = new Set(["resolution-start", "action-segment"]);
 const TASK3_RECORD_COMMANDS = new Set(["resolution-start", "action-segment", "pending-checks-prepared"]);
 const TASK3_RESULT_KINDS = Object.freeze({ "resolution-start": "resolution-started", "action-segment": "action-segment-applied", "pending-checks-prepared": "pending-checks-prepared" });
 const TASK3_AUDIT_KINDS = Object.freeze({ "resolution-start": "m12-resolution-start", "action-segment": "m12-action-segment", "pending-checks-prepared": "m12-pending-checks-prepared" });
+const FOCUS_COMMANDS = new Set(["focus-reaction-use", "focus-reaction-pass"]);
+const FOCUS_RESULT_KINDS = Object.freeze({ "focus-reaction-use": "focus-reaction-used", "focus-reaction-pass": "focus-reaction-passed" });
+const FOCUS_AUDIT_KINDS = Object.freeze({ "focus-reaction-use": "m12-focus-reaction-used", "focus-reaction-pass": "m12-focus-reaction-passed" });
+const FOCUS_PENDING_COMMAND_KIND = "focus-reaction-commit";
+const FOCUS_PENDING_RESULT_KIND = "focus-reaction-committed";
+const FOCUS_PENDING_AUDIT_KIND = "m12-focus-reaction-committed";
+// Keep an uncertain result isolated to the trusted runtime context that
+// executed it; a fresh world/context must never reuse another context's roll.
 const TASK2_RESULT_KINDS = Object.freeze({
   "station-selection": "station-selection-applied",
   "station-selection-clear": "station-selection-cleared",
@@ -130,7 +174,7 @@ const M10_EVENT_FIELDS = Object.freeze({
 });
 const RESPONSE_FIELDS = Object.freeze(["ok", "requestId", "sessionId", "status", "revision", "authorityEpoch", "projection", "events", "errors", "warnings"]);
 const transferLocks = new Map();
-const COMMAND_KINDS = new Set(["pause", "resume", "station-selection", "station-selection-clear", "station-order", "plan-lock", "resolution-start", "action-segment", "reaction", "round-closeout", "emergency-response", "closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"]);
+const COMMAND_KINDS = new Set(["pause", "resume", "station-selection", "station-selection-clear", "station-order", "plan-lock", "resolution-start", "action-segment", "focus-reaction-use", "focus-reaction-pass", "reaction", "round-closeout", "emergency-response", "closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"]);
 const CLOSEOUT_COMMANDS = new Set(["closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"]);
 const FORBIDDEN_PAYLOAD_KEYS = new Set(["principalUserId", "projectionKind", "fingerprint", "result", "resultKind", "resultRevision", "candidate", "event", "response", "receipt", "nextState", "revision", "authorityEpoch", "authenticatedUserId", "connectionId", "clientId", "gmUserId", "isGM", "role", "authority", "approval", "lease", "coordinator", "exclusive", "runExclusiveSessionMutation", "analysis", "outcome"]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -280,6 +324,244 @@ function primaryShipMatches(primaryShip, shipId) { return isPlainObject(primaryS
 function validEncounterState(encounter, identity) {
   return exactKeys(encounter, ENCOUNTER_FIELDS) && validateVoyageEncounterState(encounter).valid && encounter.schemaVersion === 1
     && encounter.encounterId === identity.eventId && encounter.definitionId === identity.eventId && safeInteger(encounter.revision) && primaryShipMatches(encounter.primaryShip, identity.shipId);
+}
+function focusMetadata(state, context = {}) {
+  try {
+    const metadata = isPlainObject(state?.metadata) ? capture(state.metadata).value : {};
+    const assignments = Array.isArray(state?.stationAssignments) ? state.stationAssignments : [];
+    const pools = Array.isArray(metadata.focusPools) ? metadata.focusPools : assignments.map((assignment) => ({ operatorId: assignment.operator?.uuid ?? assignment.operator?.id ?? null, stationId: assignment.stationId, current: 1, capacity: 1 }));
+    const assignmentIdentity = new Map(assignments.map((assignment) => [assignment.stationId, assignment.operator?.uuid ?? assignment.operator?.id ?? null]));
+    const poolStations = new Set();
+    if (pools.length !== assignmentIdentity.size || !pools.every((pool) => isPlainObject(pool) && nonBlank(pool.operatorId) && nonBlank(pool.stationId) && !poolStations.has(pool.stationId) && poolStations.add(pool.stationId) && safeInteger(pool.current) && safeInteger(pool.capacity) && pool.capacity > 0 && pool.current <= pool.capacity && assignmentIdentity.get(pool.stationId) === pool.operatorId)) return null;
+    const hasTrustedAuthoring = ownData(context, "focusAbilities").ok;
+    const authored = hasTrustedAuthoring ? capture(context.focusAbilities) : { ok: false, value: null };
+    let abilities = hasTrustedAuthoring ? (authored.ok ? authored.value : null) : (Array.isArray(metadata.focusAbilities) ? metadata.focusAbilities : []);
+    if (!Array.isArray(abilities) || !abilities.every(validFocusAbility)) return null;
+    if (hasTrustedAuthoring && (!authored.ok || (Array.isArray(metadata.focusAbilities) && !equal(metadata.focusAbilities, authored.value)))) return null;
+    return { metadata, pools, abilities };
+  } catch { return null; }
+}
+function focusWindowForState(state, stationId, context = {}, targetPendingCheckId = null) {
+  const source = focusMetadata(state, context); if (!source) return null;
+  const opportunities = source.abilities.filter((ability) => (ability.targetStationId ?? ability.stationId) === stationId).map((ability) => {
+    const pool = source.pools.find((entry) => entry.stationId === ability.stationId && entry.current > 0);
+    return pool ? { reactionId: `arcflight-focus-reaction:${JSON.stringify([state.encounterId, state.revision, targetPendingCheckId, stationId, ability.focusAbilityId])}`, focusAbilityId: ability.focusAbilityId, stationId: ability.stationId, targetStationId: stationId, targetPendingCheckId, operatorId: pool.operatorId } : null;
+  }).filter(Boolean);
+  return opportunities.length ? { status: "open", stationId, opportunities, resolved: [] } : null;
+}
+function validFocusAbility(ability) {
+  try {
+    const authoredFields = ["focusAbilityId", "name", "description", "trigger", "timing", "cost", "stationId", "targetStationId", "eligibleSource", "targetRule", "check", "dcSource", "statisticSlugOrAbilityId", "dc", "secrecy", "outcomes", "outcomeNarration", "visibility", "narration"];
+    if (!isPlainObject(ability) || !exactKeys(ability, authoredFields)) return false;
+    const authoredValid = (
+      exactKeys(ability.eligibleSource, ["kind", "stationId"]) && ability.eligibleSource.kind === "station" && ability.eligibleSource.stationId === ability.stationId
+      && exactKeys(ability.targetRule, ["kind", "stationId"]) && ability.targetRule.kind === "current-station" && ability.targetRule.stationId === ability.targetStationId
+      && exactKeys(ability.check, ["kind", "statisticSlugOrAbilityId"]) && ability.check.kind === "pf2e-check" && ability.check.statisticSlugOrAbilityId === ability.statisticSlugOrAbilityId
+      && exactKeys(ability.dcSource, ["kind", "value"]) && ability.dcSource.kind === "fixed" && ability.dcSource.value === ability.dc
+      && exactKeys(ability.outcomeNarration, ["criticalSuccess", "success", "failure", "criticalFailure"])
+      && Object.values(ability.outcomeNarration).every(nonBlank)
+      && nonBlank(ability.name) && nonBlank(ability.description)
+      && ability.visibility === ability.secrecy && nonBlank(ability.narration)
+    );
+    return authoredValid
+      && nonBlank(ability.focusAbilityId) && nonBlank(ability.trigger) && nonBlank(ability.timing) && safeInteger(ability.cost) && ability.cost === 1
+      && nonBlank(ability.stationId) && nonBlank(ability.targetStationId) && nonBlank(ability.statisticSlugOrAbilityId) && safeInteger(ability.dc) && ability.dc >= 0
+      && ["public", "secret"].includes(ability.secrecy) && exactKeys(ability.outcomes, ["criticalSuccess", "success", "failure", "criticalFailure"])
+      && Object.values(ability.outcomes).every((value) => Number.isSafeInteger(value) && value >= -5 && value <= 5);
+  } catch { return false; }
+}
+function focusOutcomeModifier(ability, degree) {
+  if (!validFocusAbility(ability)) return null;
+  return ability.outcomes[degree] ?? null;
+}
+function normalizeFocusDegree(value) {
+  if (Number.isSafeInteger(value)) return ["criticalFailure", "failure", "success", "criticalSuccess"][value] ?? null;
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
+  return ["criticalFailure", "failure", "success", "criticalSuccess"].includes(normalized) ? normalized : null;
+}
+function focusModifierForCheck(state, pendingCheckId, stationId) {
+  try {
+    const effects = Array.isArray(state?.metadata?.focusEffects) ? state.metadata.focusEffects : [];
+    const applicable = effects.filter((effect) => effect?.targetPendingCheckId === pendingCheckId && effect?.targetStationId === stationId && Number.isSafeInteger(effect.modifier));
+    const total = applicable.reduce((sum, effect) => sum + effect.modifier, 0);
+    return Math.max(-5, Math.min(5, total));
+  } catch { return 0; }
+}
+const RISK_BID_EFFECT_FIELDS = Object.freeze([
+  "effectId", "sourceStationId", "sourceActionId", "riskBidId", "sourceRevision",
+  "sourceEncounterRevision", "sourceResult", "targetStationId", "targetPendingCheckId",
+  "effectKind", "effectValue", "activationTiming", "consumptionTiming",
+  "roundNumber", "requiresSourceBeforeTarget", "status", "consumedAtRevision"
+]);
+function validStoredRiskBidEffects(state, session = null) {
+  try {
+    const effects = state?.metadata?.riskBidEffects;
+    if (effects === undefined) return true;
+    if (!Array.isArray(effects)) return false;
+    const ids = new Set();
+    const order = Array.isArray(state.committedStationOrder) ? state.committedStationOrder : [];
+    const indexByStation = new Map(order.map((stationId, index) => [stationId, index]));
+    return effects.every((effect) => {
+      const historical = Number.isSafeInteger(effect?.roundNumber) && effect.roundNumber < state.roundNumber;
+      const historicalOwners = historical
+        ? (session?.events?.filter((event) => event?.type === "voyage.m12-round-closeout"
+          && Array.isArray(event.benefitTransition)
+          && event.benefitTransition.some((candidate) => candidate?.effectId === effect.effectId
+            && RISK_BID_EFFECT_FIELDS.every((field) => candidate[field] === effect[field]))) ?? [])
+        : [];
+      const historicalPersistence = historical && historicalOwners.length === 1
+        ? historicalOwners[0].benefitTransition.find((candidate) => candidate?.effectId === effect.effectId)?.persistence
+        : null;
+      const authoredPersistence = !historical ? task5AuthoredBenefitPersistence(state, effect) : historicalPersistence;
+      if (historical && (historicalOwners.length !== 1 || !TASK5_BENEFIT_PERSISTENCE.has(historicalPersistence)
+        || (historicalPersistence === "next-round" && state.roundNumber !== effect.roundNumber + 1)
+        || historicalPersistence === "round-local")) return false;
+      if (!isPlainObject(effect) || !exactKeys(effect, RISK_BID_EFFECT_FIELDS)
+        || !nonBlank(effect.effectId) || ids.has(effect.effectId) || !ids.add(effect.effectId)
+        || !nonBlank(effect.sourceStationId) || !nonBlank(effect.sourceActionId) || !nonBlank(effect.riskBidId)
+        || !safeInteger(effect.sourceRevision) || effect.sourceRevision < 1 || effect.sourceRevision > state.revision
+        || !safeInteger(effect.sourceEncounterRevision) || effect.sourceEncounterRevision < 1 || effect.sourceEncounterRevision > state.revision
+        || !["success", "critical-success"].includes(effect.sourceResult)
+        || !nonBlank(effect.targetStationId) || !nonBlank(effect.targetPendingCheckId)
+        || !["roll-bonus", "degree-shift"].includes(effect.effectKind)
+        || !safeInteger(effect.effectValue) || effect.effectValue <= 0
+        || effect.activationTiming !== "next-unresolved-check" || effect.consumptionTiming !== "on-target-resolution"
+        || !safeInteger(effect.roundNumber) || effect.roundNumber > state.roundNumber || effect.requiresSourceBeforeTarget !== true
+        || !["active", "consumed", "blocked"].includes(effect.status)
+        || (effect.consumedAtRevision !== null && (!safeInteger(effect.consumedAtRevision) || effect.consumedAtRevision < effect.sourceRevision || effect.consumedAtRevision > state.revision))
+        || (effect.status === "blocked" && effect.consumedAtRevision !== null)
+        || (effect.status === "consumed" && effect.consumedAtRevision === null)
+        || !indexByStation.has(effect.sourceStationId) || !indexByStation.has(effect.targetStationId)) return false;
+      const sourceCheck = historical ? null : state.pendingChecks.find((check) => check.stationId === effect.sourceStationId && check.status === "resolved");
+      const targetCheck = historical ? null : state.pendingChecks.find((check) => check.pendingCheckId === effect.targetPendingCheckId && check.stationId === effect.targetStationId);
+      const selection = state.selections?.[effect.sourceStationId];
+      const bid = state.riskBids?.[effect.sourceStationId];
+      const station = state.availableStations?.find((entry) => entry.stationId === effect.sourceStationId);
+      const action = station?.actions?.find((entry) => entry.actionId === effect.sourceActionId);
+      const presentation = action?.riskBidPresentation?.[String(bid?.dcAdjustment)];
+      const authored = presentation?.mechanicalEffect?.effects?.find((entry) => entry.targetStationIds?.includes(effect.targetStationId)
+        && entry.effectKind === effect.effectKind && entry.value === effect.effectValue);
+      const sourceIndex = indexByStation.get(effect.sourceStationId);
+      const targetIndex = indexByStation.get(effect.targetStationId);
+      return historical || (authoredPersistence && sourceCheck && targetCheck && selection?.actionId === effect.sourceActionId && bid?.riskBidId === effect.riskBidId
+        && sourceCheck.result?.degreeOfSuccessSlug === effect.sourceResult && authored
+        && effect.sourceEncounterRevision >= sourceCheck.preparedRevision
+        && (effect.status === "blocked" ? sourceIndex >= targetIndex : sourceIndex < targetIndex));
+    });
+  } catch { return false; }
+}
+function activeRiskBidEffectsForCheck(state, pendingCheckId, stationId) {
+  try {
+    return (state?.metadata?.riskBidEffects ?? []).filter((effect) => effect.status === "active"
+      && effect.targetPendingCheckId === pendingCheckId
+      && effect.targetStationId === stationId);
+  } catch { return []; }
+}
+function riskBidModifierForCheck(state, pendingCheckId, stationId) {
+  return activeRiskBidEffectsForCheck(state, pendingCheckId, stationId)
+    .filter((effect) => effect.effectKind === "roll-bonus")
+    .reduce((sum, effect) => sum + effect.effectValue, 0);
+}
+function applyRiskBidDegreeShift(result, effects) {
+  try {
+    const shift = effects.filter((effect) => effect.effectKind === "degree-shift").reduce((sum, effect) => sum + effect.effectValue, 0);
+    if (!shift || !isPlainObject(result?.result)) return result;
+    const slugs = ["critical-failure", "failure", "success", "critical-success"];
+    const current = slugs.indexOf(result.result.degreeOfSuccessSlug);
+    if (current < 0) return result;
+    const next = Math.min(slugs.length - 1, current + shift);
+      return { ...result, result: { ...result.result, degreeOfSuccess: next, degreeOfSuccessSlug: slugs[next] } };
+  } catch { return result; }
+}
+function prepareFocusWindowForNextPending(state, context = {}) {
+  try {
+    const focus = focusMetadata(state, context); if (!focus) return;
+    state.metadata.focusPools = focus.pools;
+    state.metadata.focusAbilities = focus.abilities;
+    state.metadata.focusEffects = Array.isArray(state.metadata.focusEffects) ? state.metadata.focusEffects : [];
+    const order = Array.isArray(state.committedStationOrder) ? state.committedStationOrder : [];
+    const pending = order.map((stationId) => state.pendingChecks?.find((check) => check.stationId === stationId && check.status === "pending")).find(Boolean);
+    if (!pending) { state.metadata.reactionWindow = null; return; }
+    const existing = state.metadata.reactionWindow;
+    const existingTarget = existing?.opportunities?.[0]?.targetPendingCheckId ?? null;
+    if (!existing || existing.status !== "open" || existing.stationId !== pending.stationId || existingTarget !== pending.pendingCheckId) state.metadata.reactionWindow = focusWindowForState(state, pending.stationId, context, pending.pendingCheckId);
+  } catch { state.metadata.reactionWindow = null; }
+}
+function validStoredFocusResult(result, binding, focusAbility) {
+  try {
+    if (!isPlainObject(result) || !exactKeys(result, ["ok", "status", "pendingCheckId", "sequence", "sourceKind", "sourceUuid", "statisticSlug", "dc", "rollMode", "result", "errors", "warnings", "normalizedDegree"])) return false;
+    if (!isPlainObject(binding) || !nonBlank(binding.pendingCheckId) || !nonBlank(binding.targetPendingCheckId) || !nonBlank(binding.sourceOperatorId) || !nonBlank(binding.sourceStationId) || !nonBlank(binding.targetStationId) || !nonBlank(binding.reactionId) || !nonBlank(binding.focusAbilityId)) return false;
+    if (result.ok !== true || result.status !== "rolled" || result.pendingCheckId !== binding.pendingCheckId || !safeInteger(result.sequence) || result.sourceKind !== "character" || result.sourceUuid !== binding.sourceOperatorId || !nonBlank(result.statisticSlug) || !safeInteger(result.dc) || !["public", "blind"].includes(result.rollMode) || !Array.isArray(result.errors) || result.errors.length !== 0 || !Array.isArray(result.warnings) || !["criticalFailure", "failure", "success", "criticalSuccess"].includes(result.normalizedDegree)) return false;
+    if (!isPlainObject(result.result) || !exactKeys(result.result, ["total", "degreeOfSuccess", "degreeOfSuccessSlug"]) || !Number.isFinite(result.result.total) || !safeInteger(result.result.degreeOfSuccess) || !["critical-failure", "failure", "success", "critical-success"].includes(result.result.degreeOfSuccessSlug)) return false;
+    return !focusAbility || result.statisticSlug === focusAbility.statisticSlugOrAbilityId && result.dc === focusAbility.dc && result.rollMode === (focusAbility.secrecy === "secret" ? "blind" : "public") && result.normalizedDegree in focusAbility.outcomes;
+  } catch { return false; }
+}
+function focusEvidenceBinding(entry, state) {
+  try {
+    const pending = state?.pendingChecks?.find((check) => check.pendingCheckId === entry.targetPendingCheckId);
+    const ability = state?.metadata?.focusAbilities?.find((candidate) => candidate.focusAbilityId === entry.focusAbilityId);
+    const assignment = state?.stationAssignments?.find((candidate) => candidate.stationId === entry.sourceStationId);
+    const assignedOperatorId = assignment?.operator?.uuid ?? assignment?.operator?.id;
+    return pending && ability && assignment && entry.pendingCheckId && entry.reactionId && entry.sourceStationId && entry.sourceOperatorId && entry.targetStationId
+      && pending.stationId === entry.targetStationId && ability.focusAbilityId === entry.focusAbilityId && ability.stationId === entry.sourceStationId && assignedOperatorId === entry.sourceOperatorId
+      ? { pendingCheckId: entry.pendingCheckId, targetPendingCheckId: entry.targetPendingCheckId, reactionId: entry.reactionId, focusAbilityId: entry.focusAbilityId, sourceStationId: entry.sourceStationId, sourceOperatorId: entry.sourceOperatorId, targetStationId: entry.targetStationId, ability }
+      : null;
+  } catch { return null; }
+}
+function validStoredFocusMetadata(state, session = null) {
+  try {
+    const metadata = state?.metadata; if (!isPlainObject(metadata)) return true;
+    if (!validStoredRiskBidEffects(state, session)) return false;
+    if (metadata.focusPendingCheck !== null && metadata.focusPendingCheck !== undefined && !validPendingFocusCheck(metadata.focusPendingCheck, { encounterState: state })) return false;
+    if (metadata.focusResults !== undefined) {
+      if (!Array.isArray(metadata.focusResults)) return false;
+      for (const entry of metadata.focusResults) {
+        if (!isPlainObject(entry) || !exactKeys(entry, ["reactionId", "pendingCheckId", "targetPendingCheckId", "focusAbilityId", "sourceStationId", "sourceOperatorId", "targetStationId", "modifier", "result"])) return false;
+        if (!Number.isSafeInteger(entry.modifier) || entry.modifier < -5 || entry.modifier > 5) return false;
+        const binding = focusEvidenceBinding(entry, state); if (!binding || !validFocusAbility(binding.ability) || entry.modifier !== focusOutcomeModifier(binding.ability, entry.result?.normalizedDegree)) return false;
+        const result = entry.result;
+        if (!validStoredFocusResult(result, binding, binding.ability)) return false;
+      }
+    }
+    if (metadata.focusEffects !== undefined) {
+      if (!Array.isArray(metadata.focusEffects)) return false;
+      for (const entry of metadata.focusEffects) {
+        if (!isPlainObject(entry) || !exactKeys(entry, ["reactionId", "pendingCheckId", "focusAbilityId", "sourceStationId", "sourceOperatorId", "targetStationId", "targetPendingCheckId", "modifier", "result"])) return false;
+        if (!Number.isSafeInteger(entry.modifier) || entry.modifier < -5 || entry.modifier > 5) return false;
+        const binding = focusEvidenceBinding(entry, state); if (!binding || !validFocusAbility(binding.ability) || entry.modifier !== focusOutcomeModifier(binding.ability, entry.result?.normalizedDegree) || !validStoredFocusResult(entry.result, binding, binding.ability)) return false;
+      }
+    }
+    return true;
+  } catch { return false; }
+}
+function validFocusResult(result, pending) {
+  try {
+    const captured = capture(result); if (!captured.ok || !isPlainObject(captured.value)) return false;
+    const value = captured.value, normalized = value.result;
+    return value.ok === true && value.status === "rolled" && value.pendingCheckId === pending.pendingCheckId && value.sequence === pending.sequence
+      && value.sourceKind === "character" && value.sourceUuid === pending.source.uuid && value.statisticSlug === pending.statisticSlugOrAbilityId && value.dc === pending.finalDc
+      && ["public", "blind"].includes(value.rollMode) && isPlainObject(normalized) && Number.isSafeInteger(normalized.total)
+      && (typeof normalized.degreeOfSuccessSlug === "string" || typeof normalized.degreeOfSuccess === "string" || Number.isSafeInteger(normalized.degreeOfSuccess));
+  } catch { return false; }
+}
+function validDurableFocusReceipt(result, pending) {
+  try {
+    const binding = {
+      pendingCheckId: pending.pendingCheckId,
+      targetPendingCheckId: pending.targetPendingCheckId,
+      reactionId: pending.reactionId,
+      focusAbilityId: pending.focusAbilityId,
+      sourceStationId: pending.sourceStationId,
+      sourceOperatorId: pending.source.uuid,
+      targetStationId: pending.targetStationId
+    };
+    return validStoredFocusResult(result, binding, null)
+      && result.statisticSlug === pending.statisticSlugOrAbilityId
+      && result.dc === pending.finalDc
+      && result.rollMode === (pending.secrecy === "secret" ? "blind" : "public")
+      && ["criticalFailure", "failure", "success", "criticalSuccess"].includes(result.normalizedDegree);
+  } catch { return false; }
 }
 function containsForbiddenPayloadAuthority(value, ancestors = new Set()) {
   if (value === null || typeof value !== "object" || ancestors.has(value)) return false;
@@ -551,6 +833,22 @@ function exactCommitReceipt(receipt, closeout = null, session = null) {
 }
 function closeoutLifecycleAllowed(session, commandKind) {
   if (!session) return false;
+  if (commandKind === "round-closeout") {
+    const state = session.encounterState;
+    const metadata = state?.metadata;
+    const unresolvedReaction = metadata?.reactionWindow?.status === "open" && Array.isArray(metadata.reactionWindow.opportunities) && metadata.reactionWindow.opportunities.some((entry) => !(metadata.reactionWindow.resolved ?? []).includes(entry?.reactionId));
+    const pendingFocus = metadata?.focusPendingCheck !== null && metadata?.focusPendingCheck !== undefined;
+    const unresolvedRecovery = session.recovery?.status !== "none" || metadata?.recoveryControl?.status === "required";
+    const unresolvedRetryStatuses = new Set(["pending", "executing", "failed", "uncertain", "recovery-required", "invalid", "erroneous", "voidable"]);
+    const pendingRetry = Array.isArray(metadata?.sliceIRecovery) && metadata.sliceIRecovery.some((entry) => entry?.kind === "retry-roll-integration" && (
+      !nonBlank(entry.replacementPendingCheckId)
+      || state.pendingChecks?.some((check) => check?.pendingCheckId === entry.replacementPendingCheckId && check.status !== "resolved")
+      || unresolvedRetryStatuses.has(entry.integrationStatus ?? entry.evidence?.integrationStatus ?? "")
+    ));
+    return session.sessionState === "station-resolution" && state?.lifecycleState === "active" && state?.phase === "resolution"
+      && session.closeout.status === "none" && Array.isArray(state.pendingThresholdQueue) && state.pendingThresholdQueue.length === 0
+      && !unresolvedReaction && !pendingFocus && !unresolvedRecovery && !pendingRetry;
+  }
   if (commandKind === "closeout-review") return session.sessionState === "event-closeout-review" && session.closeout.status === "review-required";
   if (session.sessionState !== "persistent-application") return false;
   return commandKind === "closeout-prepare" ? session.closeout.status === "accepted-for-application"
@@ -584,16 +882,373 @@ function validM12RuntimeEvent(event, session) {
     && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1
     && safeInteger(event.previousRevision) && safeInteger(event.revision) && event.revision === event.previousRevision + 1 && event.revision <= session.revision;
 }
+function task5DefinitionRound(definition, roundNumber) {
+  try {
+    const rounds = Array.isArray(definition?.rounds) ? definition.rounds : null;
+    return rounds?.find((round) => round?.roundNumber === roundNumber) ?? rounds?.[roundNumber - 1] ?? null;
+  } catch { return null; }
+}
+function task5AuthoredBenefitPersistence(state, effect) {
+  try {
+    const station = state?.availableStations?.find((entry) => entry?.stationId === effect?.sourceStationId);
+    const action = station?.actions?.find((entry) => entry?.actionId === effect?.sourceActionId);
+    const bid = state?.riskBids?.[effect?.sourceStationId];
+    const presentation = action?.riskBidPresentation?.[String(bid?.dcAdjustment)];
+    const authoredEffects = presentation?.mechanicalEffect?.effects;
+    if (!Array.isArray(authoredEffects)) return null;
+    const matches = authoredEffects.filter((candidate) => Array.isArray(candidate?.targetStationIds)
+      && candidate.targetStationIds.includes(effect.targetStationId)
+      && candidate.effectKind === effect.effectKind
+      && candidate.value === effect.effectValue
+      && candidate.activationTiming === effect.activationTiming
+      && candidate.consumptionTiming === effect.consumptionTiming
+      && candidate.requiresSourceBeforeTarget === effect.requiresSourceBeforeTarget);
+    if (matches.length !== 1) return null;
+    const persistence = Object.prototype.hasOwnProperty.call(matches[0], "persistence") ? matches[0].persistence : "round-local";
+    return TASK5_BENEFIT_PERSISTENCE.has(persistence) ? persistence : null;
+  } catch { return null; }
+}
+function task5BenefitTransitionEvidence(state, effect) {
+  try {
+    if (!isPlainObject(effect) || !exactKeys(effect, RISK_BID_EFFECT_FIELDS)
+      || !["active", "consumed", "blocked"].includes(effect.status)) return null;
+    const persistence = task5AuthoredBenefitPersistence(state, effect);
+    if (!persistence) return null;
+    const evidence = {};
+    for (const field of ROUND_CLOSEOUT_BENEFIT_FIELDS) evidence[field] = field === "previousStatus" ? effect.status : field === "persistence" ? persistence : effect[field];
+    const captured = capture(evidence);
+    return captured.ok && exactKeys(captured.value, ROUND_CLOSEOUT_BENEFIT_FIELDS) ? captured.value : null;
+  } catch { return null; }
+}
+function task5BenefitTransitionEvidenceList(state, effects) {
+  try {
+    if (!Array.isArray(effects)) return null;
+    const result = [];
+    for (const effect of effects) {
+      const evidence = task5BenefitTransitionEvidence(state, effect);
+      if (!evidence) return null;
+      result.push(evidence);
+    }
+    return result;
+  } catch { return null; }
+}
+function task5CarryoverRiskBidEffects(state, effects) {
+  try {
+    if (!Array.isArray(effects)) return null;
+    const result = [];
+    for (const effect of effects) {
+      const evidence = task5BenefitTransitionEvidence(state, effect);
+      if (!evidence) return null;
+      if (evidence.persistence === "next-round" || evidence.persistence === "event") result.push(capture(effect).value);
+    }
+    return result;
+  } catch { return null; }
+}function task5StationResultEvidence(state, events, roundNumber, roundId) {
+  try {
+    if (!isPlainObject(state) || !Array.isArray(events) || !Array.isArray(state.committedStationOrder)) return null;
+    const startIndex = events.findIndex((entry) => entry?.type === "voyage.resolution-started" && entry.encounterId === state.encounterId && entry.roundNumber === roundNumber);
+    const preparedIndex = events.findIndex((entry, index) => index > startIndex && entry?.type === "voyage.pending-checks-prepared" && entry.encounterId === state.encounterId && entry.roundNumber === roundNumber);
+    if (startIndex < 0 || preparedIndex < 0) return null;
+    const nextRoundStart = events.findIndex((entry, index) => index > preparedIndex && entry?.type === "voyage.resolution-started" && entry.roundNumber !== roundNumber);
+    const endIndex = nextRoundStart < 0 ? events.length : nextRoundStart;
+    const results = events.slice(preparedIndex + 1, endIndex).filter((entry) => entry?.type === "voyage.pending-check-resolved" && entry.roundNumber === roundNumber);
+    if (results.length === 0 || results.some((entry) => !isPlainObject(entry) || entry.encounterId !== state.encounterId || entry.lifecycleState !== "active" || entry.phase !== "resolution" || !nonBlank(entry.pendingCheckId) || !nonBlank(entry.stationId) || !nonBlank(entry.actionId) || !safeInteger(entry.sequence) || !safeInteger(entry.previousRevision) || !safeInteger(entry.revision) || entry.revision !== entry.previousRevision + 1 || typeof entry.allChecksResolved !== "boolean" || !safeInteger(entry.remainingCheckCount) || entry.remainingCheckCount < 0 || !safeInteger(entry.resolvedCheckCount) || entry.resolvedCheckCount < 1)) return null;
+    const expected = new Map();
+    for (const stationId of state.committedStationOrder) {
+      const selection = state.selections?.[stationId];
+      const pending = (state.pendingChecks ?? []).find((entry) => entry?.stationId === stationId && entry?.status === "resolved");
+      if (!selection?.actionId || !pending) continue;
+      if (expected.has(stationId)) return null;
+      expected.set(stationId, { pendingCheckId: pending.pendingCheckId, actionId: selection.actionId, sequence: pending.sequence });
+    }
+    if (expected.size !== state.committedStationOrder.length || expected.size !== results.length) return null;
+    const ids = [];
+    for (const result of results) {
+      if (expected.has(result.stationId) === false || ids.includes(result.pendingCheckId)) return null;
+      const binding = expected.get(result.stationId);
+      if (binding.pendingCheckId !== result.pendingCheckId || binding.actionId !== result.actionId || binding.sequence !== result.sequence) return null;
+      ids.push(result.pendingCheckId);
+    }
+    if (new Set(ids).size !== ids.length) return null;
+    const finalResult = results[results.length - 1];
+    if (finalResult.allChecksResolved !== true || finalResult.remainingCheckCount !== 0 || finalResult.resolvedCheckCount !== state.committedStationOrder.length) return null;
+    return { ids, results };
+  } catch { return null; }
+}function task5RoundAnalysis(state, roundId, sourceEvents = []) {
+  try {
+    const aggregate = analyzeVoyageEncounterRoundUnitAggregation(state);
+    const classification = analyzeVoyageEncounterRoundResult(state);
+    if (!aggregate?.readyForAggregation || !classification?.readyForRoundResult) return null;
+    const evidence = task5StationResultEvidence(state, sourceEvents, state.roundNumber, roundId);
+    if (!evidence) return null;
+    return { stationResultIds: evidence.ids, successUnits: classification.successUnits, failureUnits: classification.failureUnits, roundResult: classification.roundResult, results: evidence.results };
+  } catch { return null; }
+}
+function task5PressureEffectFromIntent(intent, state) {
+  try {
+    if (intent?.intentType !== "pressure-change" || !isPlainObject(intent.payload)) return null;
+    const pressureSystemId = intent.target?.kind === "pressure-system" ? intent.target.targetId : intent.payload.pressureSystemId;
+    if (!VOYAGE_PRESSURE_SYSTEM_IDS.includes(pressureSystemId) || !safeInteger(intent.payload.delta) || intent.payload.delta === 0) return null;
+    return {
+      pressureEffectId: `arcflight-pressure-effect:${JSON.stringify([state.encounterId, intent.stageId, state.roundNumber, intent.sequence, "outcome-intent", intent.intentId])}`,
+      encounterId: state.encounterId, stageId: intent.stageId, roundNumber: state.roundNumber, sequence: intent.sequence,
+      stationId: intent.stationId, actionId: intent.actionId, pressureSystemId, delta: intent.payload.delta,
+      timing: intent.timing, sourceKind: "outcome-intent", sourceIntentId: intent.intentId,
+      activationSource: intent.activationSource, branch: intent.branch, visibility: intent.visibility
+    };
+  } catch { return null; }
+}
+function task5StandardPressureEffect(action, state) {
+  const delta = action?.branch === "failure" ? 1 : action?.branch === "critical-failure" ? 2 : 0;
+  if (!delta) return null;
+  const pressureSystemId = { captain: "crew-morale", engineer: "arkengine", navigator: "navigation", watchmaster: "hull-integrity", veilwarden: "veil-stability" }[action.stationId];
+  if (!pressureSystemId) return null;
+  return {
+    pressureEffectId: `arcflight-pressure-effect:${JSON.stringify([state.encounterId, state.currentStage?.stageId, state.roundNumber, action.sequence, "standard-result"])}`,
+    encounterId: state.encounterId, stageId: state.currentStage?.stageId, roundNumber: state.roundNumber, sequence: action.sequence,
+    stationId: action.stationId, actionId: action.actionId, pressureSystemId, delta, timing: "consequences", sourceKind: "standard-result",
+    sourceIntentId: null, activationSource: null, branch: action.branch, visibility: "public"
+  };
+}
+function task5RoundEffects(state, sourceEvents = [], session = null, roundId = null, roundAnalysis = null) {
+  try {
+    const definitions = analyzeVoyageEncounterActionOutcomeDefinitions(state);
+    if (!definitions?.definitionsValid) return null;
+    const pressurePlan = analyzeVoyageEncounterPressurePlan(state);
+    if (!pressurePlan?.readyForPressurePlanning || !Array.isArray(pressurePlan.effects)) return null;
+    const priorPressureIds = new Set((Array.isArray(sourceEvents) ? sourceEvents : []).flatMap((entry) => [
+      ...(Array.isArray(entry?.pressureEffects) ? entry.pressureEffects : []),
+      ...(Array.isArray(entry?.effects) ? entry.effects : [])
+    ]).map((entry) => entry?.pressureEffectId).filter(nonBlank));
+    const pressureEffects = capture(pressurePlan.effects.filter((effect) => !priorPressureIds.has(effect?.pressureEffectId)));
+    if (!pressureEffects.ok) return null;
+    const consequenceEffects = [];
+    for (const stationId of state.committedStationOrder ?? []) {
+      const selection = state.selections?.[stationId]; if (!selection?.actionId) continue;
+      const station = (state.availableStations ?? []).find((entry) => entry?.stationId === stationId);
+      const action = station?.actions?.find((entry) => entry?.actionId === selection.actionId);
+      const definition = definitions.actions?.find((entry) => entry?.stationId === stationId && entry?.actionId === selection.actionId);
+      if (!action || !definition) return null;
+      const pending = (state.pendingChecks ?? []).find((entry) => entry.stationId === stationId && entry.status === "resolved");
+      const branch = pending ? pending.result?.degreeOfSuccessSlug : "no-roll";
+      const refs = [...(definition.branches?.[branch] ?? [])];
+      const bid = state.riskBids?.[stationId];
+      const bidOption = bid?.riskBidId ? definition.riskBidOptions?.find((entry) => entry?.riskBidId === bid.riskBidId) : null;
+      if (bidOption) refs.push(...(bidOption.outcomes?.[branch === "critical-success" ? "criticalSuccess" : branch] ?? []));
+      for (const effectId of refs) {
+        const rule = definition.effectRules?.find((entry) => entry?.effectId === effectId); if (!rule) return null;
+        const capturedRule = capture(rule); if (!capturedRule.ok) return null;
+        if (rule.intentType !== "pressure-change") consequenceEffects.push(capturedRule.value);
+      }
+    }
+    pressureEffects.value.sort((a, b) => a.sequence - b.sequence || a.pressureEffectId.localeCompare(b.pressureEffectId));
+    const sourceSystems = Array.isArray(state.pressureSystems) ? state.pressureSystems : Object.values(state.pressureSystems ?? {});
+    const nextSystems = Object.fromEntries(sourceSystems.map((entry) => [entry.pressureSystemId, { ...entry }]));
+    const initialActiveHazards = capture(state.activeHazards ?? []).value;
+    let nextActiveHazards = capture(initialActiveHazards).value;
+    const generatedHazards = [];
+    let encounterRevision = state.revision;
+    const breaches = [], hazardEffects = [];
+    for (const effect of pressureEffects.value) {
+      const system = nextSystems[effect.pressureSystemId]; if (!system) return null;
+      const proposed = system.value + effect.delta;
+      if (effect.delta > 0 && proposed > system.capacity) {
+        const transaction = analyzeVoyagePressureBreachCloseoutTransaction({
+          expectedEncounterRevision: encounterRevision,
+          closeoutContext: { eventId: state.encounterId, sessionId: session?.sessionId ?? state.encounterId, stageId: state.currentStage?.stageId ?? state.currentStage, roundNumber: state.roundNumber, phase: "cleanup-advance" },
+          pressureSystems: Object.values(nextSystems), activeHazards: nextActiveHazards, pressureEffect: { ...effect, sourceKind: "hazard-closeout", timing: "gm-confirmed", activationSource: "event-closeout", branch: "no-roll", stationId: null, actionId: null, sourceIntentId: effect.sourceIntentId ?? effect.pressureEffectId }
+        });
+        if (!transaction?.ok || !transaction.breachRequired) return null;
+        Object.assign(nextSystems, Object.fromEntries(transaction.nextPressureSystems.map((entry) => [entry.pressureSystemId, entry])));
+        nextActiveHazards = capture(transaction.nextActiveHazards).value;
+        if (transaction.hazard) generatedHazards.push(transaction.hazard);
+        breaches.push(transaction.breach); if (transaction.hazard) hazardEffects.push(transaction.hazard); encounterRevision = transaction.encounterRevision;
+      } else system.value = Math.max(0, proposed);
+    }
+
+    if (nextActiveHazards.length > 0) {
+      const eventId = session?.eventId ?? state.encounterId;
+      const sessionId = session?.sessionId ?? state.encounterId;
+      const definitionSnapshotId = session?.definitionSnapshotId;
+      const shipId = session?.shipId;
+      const stageId = state.currentStage?.stageId ?? state.currentStage;
+      if (![eventId, sessionId, definitionSnapshotId, shipId, stageId].every(nonBlank)) return null;
+      const rounds = new Map();
+      for (const source of Array.isArray(sourceEvents) ? sourceEvents : []) {
+        if (source?.type === "voyage.m12-round-closeout" && safeInteger(source.roundNumber) && nonBlank(source.roundId) && ["critical-round-success", "round-success", "round-failure", "round-neutral", "critical-round-failure"].includes(source.roundResult)) {
+          rounds.set(source.roundNumber, { roundId: source.roundId, roundNumber: source.roundNumber, roundResult: source.roundResult });
+        }
+      }
+      if (!nonBlank(roundId) || !roundAnalysis?.roundResult) return null;
+      rounds.set(state.roundNumber, { roundId, roundNumber: state.roundNumber, roundResult: roundAnalysis.roundResult });
+      const completedRounds = [];
+      for (let number = 1; number <= state.roundNumber; number += 1) {
+        const round = rounds.get(number); if (!round) return null;
+        completedRounds.push(round);
+      }
+      const snapshot = {
+        schemaVersion: 1, eventId, sessionId, definitionSnapshotId, shipId,
+        encounterRevision, shipRevision: state.metadata?.shipRevision ?? 0, lifecycleState: "active", stageId,
+        roundNumber: state.roundNumber, phase: "cleanup-advance",
+        completedRoundHistory: { schemaVersion: 1, eventId, sessionId, definitionSnapshotId, roundCount: completedRounds.length, rounds: completedRounds },
+        momentum: state.momentum,
+        focusPools: capture(state.metadata?.focusPools ?? []).value,
+        pressureSystems: Object.values(nextSystems),
+        activeHazards: initialActiveHazards,
+        pendingStationBenefitIds: [], unconsumedRiskBidBenefitIds: [], temporaryFocusPenaltyIds: [],
+        roundOrderRestrictions: [], hazardSuppressions: [], temporaryConsequenceIds: []
+      };
+      const hazardCloseout = analyzeVoyageEncounterHazardCloseout({
+        kind: "m10-hazard-closeout", sessionId, expectedEncounterRevision: encounterRevision, closeoutSnapshot: snapshot
+      });
+      if (!hazardCloseout?.ok) return null;
+      const hazardPressureEffects = [];
+      for (const result of hazardCloseout.hazardCloseoutResults ?? []) {
+        if (result.pressureEffect && !priorPressureIds.has(result.pressureEffect.pressureEffectId) && !pressureEffects.value.some((entry) => entry.pressureEffectId === result.pressureEffect.pressureEffectId)) hazardPressureEffects.push(result.pressureEffect);
+      }
+      pressureEffects.value.push(...hazardPressureEffects);
+      for (const result of hazardCloseout.pressureBreachResults ?? []) {
+        if (result.breachRequired && result.breach) breaches.push(result.breach);
+        if (result.breachRequired && result.hazard) hazardEffects.push(result.hazard);
+      }
+      const finalSystems = capture(hazardCloseout.postHazardPressureSystems);
+      if (!finalSystems.ok) return null;
+      Object.assign(nextSystems, Object.fromEntries(finalSystems.value.map((entry) => [entry.pressureSystemId, entry])));
+      nextActiveHazards = [...generatedHazards];
+      for (const result of hazardCloseout.pressureBreachResults ?? []) if (result.breachRequired && result.hazard) nextActiveHazards.push(result.hazard);
+      encounterRevision += (hazardCloseout.hazardCloseoutResults?.length ?? 0) + (hazardCloseout.pressureBreachResults ?? []).filter((entry) => entry.breachRequired).length;
+    }
+    pressureEffects.value.sort((a, b) => a.sequence - b.sequence || a.pressureEffectId.localeCompare(b.pressureEffectId));
+    return { pressureEffects: pressureEffects.value, breaches, hazardEffects, consequenceEffects, pressureAfter: nextSystems, activeHazardsAfter: nextActiveHazards, encounterRevision };
+  } catch { return null; }
+}function validRoundCloseoutNestedEvidence(event) {
+  try {
+    if (![event.pressureEffects, event.breaches, event.hazardEffects, event.consequenceEffects, event.benefitTransition].every(Array.isArray)) return false;
+    const pressureIds = new Set();
+    for (let index = 0; index < event.pressureEffects.length; index += 1) {
+      const effect = event.pressureEffects[index];
+      if (!isPlainObject(effect) || !exactKeys(effect, ROUND_CLOSEOUT_PRESSURE_EFFECT_FIELDS) || !nonBlank(effect.pressureEffectId) || pressureIds.has(effect.pressureEffectId)
+        || effect.encounterId !== event.eventId || effect.roundNumber !== event.roundNumber || effect.sequence < 0 || !safeInteger(effect.sequence) || !safeInteger(effect.delta)
+        || !nonBlank(effect.stageId) || (effect.stationId !== null && !nonBlank(effect.stationId)) || (effect.actionId !== null && !nonBlank(effect.actionId)) || !VOYAGE_PRESSURE_SYSTEM_IDS.includes(effect.pressureSystemId)
+        || !["standard-result", "outcome-intent", "hazard-closeout"].includes(effect.sourceKind) || !["consequences", "gm-confirmed"].includes(effect.timing)
+        || (effect.sourceKind === "hazard-closeout" ? effect.activationSource !== "event-closeout" || effect.branch !== "no-roll" || !nonBlank(effect.sourceIntentId) || effect.stationId !== null || effect.actionId !== null
+          : effect.sourceKind === "standard-result" ? effect.sourceIntentId !== null || effect.activationSource !== null || !["failure", "critical-failure"].includes(effect.branch)
+            : !nonBlank(effect.sourceIntentId) || !nonBlank(effect.activationSource))
+        || !["public", "gm", "secret"].includes(effect.visibility)) return false;
+      pressureIds.add(effect.pressureEffectId);
+    }
+    const breachIds = new Set();
+    for (const breach of event.breaches) {
+      if (!isPlainObject(breach) || !exactKeys(breach, ROUND_CLOSEOUT_BREACH_FIELDS) || !nonBlank(breach.pressureBreachId) || breachIds.has(breach.pressureBreachId)
+        || breach.encounterId !== event.eventId || breach.roundNumber !== event.roundNumber || !safeInteger(breach.effectIndex) || !safeInteger(breach.sequence)
+        || !nonBlank(breach.stageId) || (breach.stationId !== null && !nonBlank(breach.stationId)) || (breach.actionId !== null && !nonBlank(breach.actionId)) || !VOYAGE_PRESSURE_SYSTEM_IDS.includes(breach.pressureSystemId)
+        || breach.sourceKind !== "hazard-closeout" || !nonBlank(breach.sourceIntentId) || breach.activationSource !== "event-closeout" || breach.branch !== "no-roll" || breach.timing !== "gm-confirmed"
+        || !["public", "gm", "secret"].includes(breach.visibility) || !pressureIds.has(breach.pressureEffectId) || !safeInteger(breach.previousValue) || !safeInteger(breach.capacity) || !safeInteger(breach.remainingCapacity)
+        || !safeInteger(breach.attemptedDelta) || !safeInteger(breach.overflowDelta)) return false;
+      breachIds.add(breach.pressureBreachId);
+    }
+    for (const hazard of event.hazardEffects) if (!isPlainObject(hazard) || !exactKeys(hazard, VOYAGE_HAZARD_RECORD_FIELDS) || !validateVoyageHazardRecord(hazard, { mode: "snapshot", expectedEncounterId: event.eventId }).valid) return false;
+    const consequenceIds = new Set();
+    for (const effect of event.consequenceEffects) if (!isPlainObject(effect) || !exactKeys(effect, ["effectId", "intentType", "timing", "visibility", "target", "payload"]) || !nonBlank(effect.effectId) || consequenceIds.has(effect.effectId) || !capture(effect.target).ok || !capture(effect.payload).ok) return false; else consequenceIds.add(effect.effectId);
+    for (const benefit of event.benefitTransition) if (!isPlainObject(benefit) || !exactKeys(benefit, ["effectId", "sourceStationId", "sourceActionId", "riskBidId", "sourceRevision", "sourceEncounterRevision", "sourceResult", "targetStationId", "targetPendingCheckId", "effectKind", "effectValue", "activationTiming", "consumptionTiming", "roundNumber", "requiresSourceBeforeTarget", "previousStatus", "persistence", "status", "consumedAtRevision"]) || !nonBlank(benefit.effectId) || !nonBlank(benefit.sourceStationId) || !nonBlank(benefit.sourceActionId) || !nonBlank(benefit.riskBidId) || !safeInteger(benefit.sourceRevision) || !safeInteger(benefit.sourceEncounterRevision) || !["success", "critical-success"].includes(benefit.sourceResult) || !nonBlank(benefit.targetStationId) || !nonBlank(benefit.targetPendingCheckId) || !["roll-bonus", "degree-shift"].includes(benefit.effectKind) || !safeInteger(benefit.effectValue) || benefit.effectValue <= 0 || benefit.activationTiming !== "next-unresolved-check" || benefit.consumptionTiming !== "on-target-resolution" || benefit.roundNumber !== event.roundNumber || benefit.requiresSourceBeforeTarget !== true || !["active", "consumed", "blocked"].includes(benefit.status) || !["round-local", "next-round", "event"].includes(benefit.persistence) || ![null, "active", "consumed", "blocked"].includes(benefit.previousStatus) || (benefit.status === "consumed" ? !safeInteger(benefit.consumedAtRevision) : benefit.consumedAtRevision !== null)) return false;
+    const validTransition = (value) => value === null || (isPlainObject(value) && exactKeys(value, ["previous", "next"]) && capture(value.previous).ok && capture(value.next).ok);
+    return validTransition(event.focusTransition) && validTransition(event.riskBidTransition) && validTransition(event.recoveryControlTransition);
+  } catch { return false; }
+}
+function validRoundCloseoutDerivedEvidence(event, checkpoint, session = null) {
+  try {
+    const transition = applyVoyageEncounterConsequencesTransition(checkpoint.encounterState, { phaseStartSnapshotId: `arcflight-voyage-task5-validation:${JSON.stringify([checkpoint.sessionId, checkpoint.revision])}` });
+    if (!transition?.ok) return false;
+    const sourceEvents = session?.events?.slice(0, checkpoint.eventCount) ?? [];
+    const analysis = task5RoundAnalysis(transition.nextState, event.roundId, sourceEvents);
+    const effects = task5RoundEffects(transition.nextState, sourceEvents, session, event.roundId, analysis);
+    const historicalNext = effects ? effects.pressureAfter : null;
+    const checkpointRiskEffects = Array.isArray(checkpoint.encounterState?.metadata?.riskBidEffects)
+      ? checkpoint.encounterState.metadata.riskBidEffects.filter((effect) => effect?.roundNumber === event.roundNumber)
+      : [];
+    const expectedBenefits = task5BenefitTransitionEvidenceList(checkpoint.encounterState, checkpointRiskEffects);
+    if (!expectedBenefits) return false;
+    const continuing = event.nextSessionState === "crew-planning";
+    const expectedFocusTransition = continuing ? { previous: capture(checkpoint.encounterState.metadata?.focusEffects ?? []).value, next: [] } : null;
+    const expectedRiskBidNext = continuing && Array.isArray(checkpoint.encounterState.metadata?.riskBidEffects)
+      ? task5CarryoverRiskBidEffects(checkpoint.encounterState, checkpoint.encounterState.metadata.riskBidEffects)
+      : null;
+    if (continuing && !expectedRiskBidNext) return false;
+    const expectedRiskBidTransition = continuing ? { previous: capture(checkpoint.encounterState.metadata?.riskBidEffects ?? []).value, next: capture(expectedRiskBidNext ?? []).value } : null;
+    const expectedRecoveryControlTransition = continuing ? { previous: capture(checkpoint.encounterState.metadata?.recoveryControl ?? null).value, next: null } : null;
+
+    const latestOnly = !session || event.revision === session.revision;
+    return Boolean(analysis && effects) && event.roundNumber === checkpoint.encounterState.roundNumber && analysis.successUnits === event.successUnits && analysis.failureUnits === event.failureUnits && analysis.roundResult === event.roundResult
+      && equal(analysis.stationResultIds, event.stationResultIds) && equal(event.pressureBefore, checkpoint.encounterState.pressureSystems) && event.momentumBefore === checkpoint.encounterState.momentum
+      && equal(event.pressureEffects, effects.pressureEffects) && equal(event.breaches, effects.breaches) && equal(event.hazardEffects, effects.hazardEffects)
+      && equal(event.consequenceEffects, effects.consequenceEffects) && equal(event.benefitTransition, expectedBenefits) && equal(event.focusTransition, expectedFocusTransition)
+      && equal(event.riskBidTransition, expectedRiskBidTransition) && equal(event.recoveryControlTransition, expectedRecoveryControlTransition) && equal(event.pressureAfter, historicalNext)
+      && (!session || (!latestOnly || (event.momentumAfter === session.encounterState.momentum && equal(event.pressureAfter, session.encounterState.pressureSystems) && equal(checkpoint.encounterState.currentStage, session.encounterState.currentStage) && equal(checkpoint.encounterState.tracks, session.encounterState.tracks))));
+  } catch { return false; }
+}
+function validRoundCloseoutEvent(event, session) {
+  try {
+    const checks = {
+      keys: exactKeys(event, ROUND_CLOSEOUT_EVENT_FIELDS),
+      type: event.type === "voyage.m12-round-closeout",
+      id: event.sessionId === session.sessionId && event.eventId === session.eventId && event.definitionSnapshotId === session.definitionSnapshotId && event.shipId === session.shipId,
+      round: nonBlank(event.roundId) && safeInteger(event.roundNumber) && event.roundNumber > 0,
+      rev: safeInteger(event.previousRevision) && safeInteger(event.revision) && event.revision === event.previousRevision + 1 && event.revision <= session.revision,
+      epoch: safeInteger(event.previousAuthorityEpoch) && safeInteger(event.authorityEpoch) && event.previousAuthorityEpoch === event.authorityEpoch && event.authorityEpoch <= session.authorityEpoch,
+      state: event.previousSessionState === "station-resolution" && ["crew-planning", "event-closeout-review"].includes(event.nextSessionState) && event.previousPhase === "resolution",
+      phase: (event.nextSessionState === "crew-planning" ? event.nextPhase === "crew-planning" && nonBlank(event.nextRoundId) : event.nextPhase === "cleanup-advance" && event.nextRoundId === null),
+      ids: Array.isArray(event.stationResultIds) && event.stationResultIds.length > 0 && event.stationResultIds.every(nonBlank) && new Set(event.stationResultIds).size === event.stationResultIds.length,
+      units: safeInteger(event.successUnits) && event.successUnits >= 0 && safeInteger(event.failureUnits) && event.failureUnits >= 0,
+      result: ["critical-round-success", "round-success", "round-failure", "critical-round-failure", "round-neutral"].includes(event.roundResult),
+      momentum: safeInteger(event.momentumBefore) && event.momentumBefore >= 0 && event.momentumBefore <= 3 && safeInteger(event.momentumAfter) && event.momentumAfter >= 0 && event.momentumAfter <= 3,
+      momentumTransition: event.roundResult === "round-neutral" ? event.momentumAfter === event.momentumBefore : event.momentumAfter === (event.roundResult.includes("success") ? Math.min(3, event.momentumBefore + 1) : Math.max(0, event.momentumBefore - 1)),
+      pressure: validPressureSystemsMap(event.pressureBefore) && validPressureSystemsMap(event.pressureAfter),
+      nested: validRoundCloseoutNestedEvidence(event)
+    };
+
+    return Object.values(checks).every(Boolean);
+  } catch { return false; }
+}function validRoundCloseoutRecord(record, session, audit, event) {
+  try {
+    const tuple = parseStoredFingerprint(record?.fingerprint);
+    const response = record?.response;
+    const details = audit?.details;
+    const expectedPressureEffectIds = Array.isArray(event?.pressureEffects) ? event.pressureEffects.map((entry) => entry.pressureEffectId) : null;
+    const expectedBreachIds = Array.isArray(event?.breaches) ? event.breaches.map((entry) => entry.pressureBreachId) : null;
+    const expectedHazardEffectIds = Array.isArray(event?.hazardEffects) ? event.hazardEffects.map((entry) => entry.hazardId) : null;
+    const expectedConsequenceEffectIds = Array.isArray(event?.consequenceEffects) ? event.consequenceEffects.map((entry) => entry.effectId) : null;
+    return exactKeys(record, PROCESSED_REQUEST_FIELDS) && record.commandKind === "round-closeout" && record.resultKind === "round-closeout-completed" && record.projectionKind === "gm"
+      && safeInteger(record.resultRevision) && record.resultRevision > 0 && tuple.ok && tuple.value[0] === session.sessionId && tuple.value[1] === record.principalUserId && tuple.value[2] === "gm"
+      && safeInteger(tuple.value[3]) && tuple.value[3] === event.authorityEpoch && safeInteger(tuple.value[4]) && tuple.value[4] === event.previousRevision
+      && tuple.value[5] === "round-closeout" && exactKeys(tuple.value[6], ["roundId"]) && tuple.value[6].roundId === event.roundId
+      && validStoredResponse(response, record, session.sessionId, event.authorityEpoch) && response.status === event.nextSessionState && response.revision === event.revision && response.authorityEpoch === event.authorityEpoch
+      && response.events.length === 1 && equal(response.events[0], event)
+      && validRoundCloseoutEvent(event, session) && event.revision === record.resultRevision
+      && exactKeys(audit, AUDIT_FIELDS) && audit.kind === "round-closeout" && audit.sessionId === session.sessionId && audit.requestId === record.requestId
+      && audit.actorUserId === record.principalUserId && safeInteger(audit.authorityEpoch) && audit.authorityEpoch === event.authorityEpoch
+      && audit.previousRevision === event.previousRevision && audit.revision === event.revision && validIsoTimestamp(audit.occurredAt)
+      && exactKeys(details, ROUND_CLOSEOUT_AUDIT_DETAILS_FIELDS) && details.roundId === event.roundId && details.roundNumber === event.roundNumber
+      && details.runtimeEventType === event.type && details.checkpointId === `arcflight-voyage-checkpoint:${JSON.stringify([session.sessionId, "before-round-closeout", event.previousRevision])}`
+      && equal(details.stationResultIds, event.stationResultIds) && details.successUnits === event.successUnits && details.failureUnits === event.failureUnits && details.roundResult === event.roundResult
+      && details.momentumBefore === event.momentumBefore && details.momentumAfter === event.momentumAfter
+      && equal(details.pressureEffectIds, expectedPressureEffectIds) && equal(details.breachIds, expectedBreachIds)
+      && equal(details.hazardEffectIds, expectedHazardEffectIds) && equal(details.consequenceEffectIds, expectedConsequenceEffectIds)
+      && equal(details.benefitTransition, event.benefitTransition) && equal(details.focusTransition, event.focusTransition)
+      && equal(details.riskBidTransition, event.riskBidTransition) && equal(details.recoveryControlTransition, event.recoveryControlTransition)
+      && details.previousSessionState === event.previousSessionState && details.nextSessionState === event.nextSessionState && details.nextRoundId === event.nextRoundId;
+  } catch { return false; }
+}
 function validRuntimeEvent(event, session, index) {
   if (!isPlainObject(event) || !nonBlank(event.sessionId) || event.sessionId !== session.sessionId || event.eventId !== session.eventId
     || event.definitionSnapshotId !== session.definitionSnapshotId || event.shipId !== session.shipId || !safeInteger(event.previousRevision) || !safeInteger(event.revision)
     || event.revision !== event.previousRevision + 1 || event.revision > session.revision) return false;
+  if (event?.type === "voyage.m12-round-closeout") return validRoundCloseoutEvent(event, session);
   if (isM12RuntimeEvent(event)) return validM12RuntimeEvent(event, session);
   if (["voyage.m11-recovery-rebuilt", "voyage.m11-closeout-review-accepted", "voyage.m11-closeout-session-reserved", "voyage.m11-closeout-session-commit-pending", "voyage.m11-closeout-session-committed"].includes(event.type) && !exactKeys(event, M11_EVENT_FIELDS)) return false;
   if (event.type === "voyage.m11-recovery-rebuilt") return nonBlank(event.sourceCheckpointId) && safeInteger(event.sourceCheckpointRevision) && nonBlank(event.recoveryAuthorityUserId);
   if (event.type === "voyage.m11-recovery-aborted") return exactKeys(event, RECOVERY_ABORT_EVENT_FIELDS) && nonBlank(event.sourceCheckpointId) && safeInteger(event.sourceCheckpointRevision) && nonBlank(event.recoveryAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
   if (event.type === "voyage.m11-session-aborted") return exactKeys(event, ABORT_EVENT_FIELDS) && ["setup-cancellation", "active-event"].includes(event.abortScope) && nonBlank(event.abortAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
-  if (event.type === "voyage.m11-session-corrected") return exactKeys(event, CORRECTION_EVENT_FIELDS) && ["station-selection", "station-order"].includes(event.correctionKind) && event.targetRequestId === null && nonBlank(event.correctionAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
+  if (event.type === "voyage.m11-session-corrected") return exactKeys(event, CORRECTION_EVENT_FIELDS) && ["station-selection", "station-order", "plan-unlock", ...SLICE_I_CORRECTION_KINDS].includes(event.correctionKind) && event.targetRequestId === null && nonBlank(event.correctionAuthorityUserId) && safeInteger(event.previousEncounterRevision) && safeInteger(event.encounterRevision) && event.encounterRevision === event.previousEncounterRevision + 1;
   if (event.type === "voyage.m11-closeout-review-accepted") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
   if (event.type === "voyage.m11-closeout-session-reserved") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
   if (event.type === "voyage.m11-closeout-session-commit-pending") return event.sourceCheckpointId === null && event.sourceCheckpointRevision === null && event.recoveryAuthorityUserId === null;
@@ -807,7 +1462,7 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
     if (!exactKeys(session, SESSION_FIELDS) || session.schemaVersion !== 1 || session.sessionDocumentId !== documentIdValue
       || ![session.sessionId, session.eventId, session.definitionSnapshotId, session.shipId].every(nonBlank) || !safeInteger(session.revision) || !SESSION_STATES.has(session.sessionState)
       || (!nonBlank(session.activeGmUserId) && !(allowBootstrapNull && session.activeGmUserId === null)) || !safeInteger(session.authorityEpoch)
-      || !validEncounterState(session.encounterState, session) || !lifecycleMappingValid(session) || !Array.isArray(session.events) || !Array.isArray(session.checkpoints)
+       || !validEncounterState(session.encounterState, session) || !validStoredFocusMetadata(session.encounterState, session) || !lifecycleMappingValid(session) || !Array.isArray(session.events) || !Array.isArray(session.checkpoints)
        || !Array.isArray(session.processedRequests) || !Array.isArray(session.auditHistory) || !validCloseout(session.closeout, session) || !validStoredCloseoutPlan(session.closeout, session) || !exactKeys(session.recovery, RECOVERY_FIELDS)
       || !new Set(["none", "required", "resolved"]).has(session.recovery.status)) return false;
     const immutableEnvelope = recoveryEnvelope(session, documentIdValue);
@@ -828,7 +1483,8 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
     let owner = session.processedRequests[0].principalUserId, expectedAuthorityEpoch = 0, transferCount = 0, recoveryCount = 0, bootstrapRecoveryCount = 0, lastRecoveryRevision = 0, latestRecoveryEvidence = null;
     for (let index = 1; index < session.processedRequests.length; index += 1) {
       const record = session.processedRequests[index]; if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || requestIds.has(record.requestId)) return false;
-      const audit = session.auditHistory.find((entry) => entry?.requestId === record.requestId && (record.commandKind === TRANSFER_COMMAND_KIND ? entry.kind.startsWith("control-transfer") : record.commandKind === RECOVERY_COMMAND_KIND ? ["recovery-rebuilt", "recovery-aborted"].includes(entry.kind) : record.commandKind === "m12-launch" ? entry.kind === "m12-launch" : TASK2_COMMANDS.has(record.commandKind) ? entry.kind === TASK2_AUDIT_KINDS[record.commandKind] : TASK3_RECORD_COMMANDS.has(record.commandKind) ? entry.kind === TASK3_AUDIT_KINDS[record.commandKind] : record.commandKind === "closeout-review" ? entry.kind === "closeout-review-accepted" : record.commandKind === "closeout-reserve" ? entry.kind === "closeout-session-reserved" : record.commandKind === "closeout-session-commit" ? ["closeout-session-commit-pending", "closeout-session-committed"].includes(entry.kind) : record.commandKind === "abort-session" ? ["setup-cancelled", "event-aborted"].includes(entry.kind) : record.commandKind === "correct-session" ? entry.kind === "correction-applied" : false));
+
+      const audit = session.auditHistory.find((entry) => entry?.requestId === record.requestId && (record.commandKind === TRANSFER_COMMAND_KIND ? entry.kind.startsWith("control-transfer") : record.commandKind === RECOVERY_COMMAND_KIND ? ["recovery-rebuilt", "recovery-aborted"].includes(entry.kind) : record.commandKind === "m12-launch" ? entry.kind === "m12-launch" : TASK2_COMMANDS.has(record.commandKind) ? entry.kind === TASK2_AUDIT_KINDS[record.commandKind] : TASK3_RECORD_COMMANDS.has(record.commandKind) ? entry.kind === TASK3_AUDIT_KINDS[record.commandKind] : record.commandKind === FOCUS_PENDING_COMMAND_KIND ? entry.kind === FOCUS_PENDING_AUDIT_KIND : FOCUS_COMMANDS.has(record.commandKind) ? entry.kind === FOCUS_AUDIT_KINDS[record.commandKind] : record.commandKind === "round-closeout" ? entry.kind === "round-closeout" : record.commandKind === "closeout-review" ? entry.kind === "closeout-review-accepted" : record.commandKind === "closeout-reserve" ? entry.kind === "closeout-session-reserved" : record.commandKind === "closeout-session-commit" ? ["closeout-session-commit-pending", "closeout-session-committed"].includes(entry.kind) : record.commandKind === "abort-session" ? ["setup-cancelled", "event-aborted"].includes(entry.kind) : record.commandKind === "correct-session" ? entry.kind === "correction-applied" : false));
       if (record.commandKind === TRANSFER_COMMAND_KIND) {
         const tuple = parseStoredFingerprint(record.fingerprint); if (!audit || !tuple.ok || tuple.value[3] !== expectedAuthorityEpoch || !validTransferRecord(record, session, expectedAuthorityEpoch, audit, owner)) return false;
         owner = tuple.value[6].targetUserId; expectedAuthorityEpoch += 1; transferCount += 1;
@@ -855,10 +1511,21 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
         lastRecoveryRevision = record.resultRevision;
         recoveryCount += 1;
         latestRecoveryEvidence = { record, event, audit, sourceCheckpoint, recoveryCheckpoint, replayedState };
+      } else if (record.commandKind === "round-closeout") {
+        const event = session.events.find((entry) => entry?.type === "voyage.m12-round-closeout" && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        const audit = session.auditHistory.find((entry) => entry?.requestId === record.requestId && entry.kind === "round-closeout");
+        const checkpoint = event && session.checkpoints.find((entry) => entry?.kind === "before-round-closeout" && entry.revision === event.previousRevision && entry.eventCount === session.events.indexOf(event));
+        if (!event || !audit || !checkpoint || !validCheckpoint(checkpoint, session, session.events, session.checkpoints.indexOf(checkpoint)) || !validRoundCloseoutDerivedEvidence(event, checkpoint, session) || !validRoundCloseoutRecord(record, session, audit, event)) return false;
       } else if (record.commandKind === "closeout-prepare") {
         if (!validCloseoutRecord(record, session, null, null)) return false;
       } else if (record.commandKind === "closeout-ship-apply") {
         if (!validCloseoutRecord(record, session, null, null)) return false;
+      } else if (record.commandKind === FOCUS_PENDING_COMMAND_KIND) {
+        const event = session.events.find((entry) => entry?.type === "voyage.m12-focus-reaction-committed" && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        if (!audit || !event || !validFocusPendingRecord(record, session, audit, event)) return false;
+      } else if (FOCUS_COMMANDS.has(record.commandKind)) {
+        const event = session.events.find((entry) => entry?.type === `voyage.m12-${record.commandKind}` && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        if (!audit || !event || !validFocusRecord(record, session, audit, event)) return false;
       } else if (record.commandKind === "closeout-review" || record.commandKind === "closeout-reserve" || record.commandKind === "closeout-session-commit") {
         const eventType = record.commandKind === "closeout-review" ? "voyage.m11-closeout-review-accepted" : record.commandKind === "closeout-reserve" ? "voyage.m11-closeout-session-reserved" : record.resultKind === "closeout-session-commit-pending" ? "voyage.m11-closeout-session-commit-pending" : "voyage.m11-closeout-session-committed";
         const event = session.events.find((entry) => entry?.type === eventType && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
@@ -881,7 +1548,7 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
         const domainEvent = eventIndex > 0 ? session.events[eventIndex - 1] : null;
         const tuple = parseStoredFingerprint(record.fingerprint);
         const task3Valid = validM12Task3Record(record, session, audit, domainEvent, runtimeEvent);
-        if (!audit || !runtimeEvent || !domainEvent || record.principalUserId !== owner || !tuple.ok || tuple.value[3] !== expectedAuthorityEpoch || record.resultRevision <= 0 || !task3Valid) return false;
+        if (!audit || !runtimeEvent || !domainEvent || (record.commandKind !== "action-segment" && !FOCUS_COMMANDS.has(record.commandKind) && record.commandKind !== FOCUS_PENDING_COMMAND_KIND && record.principalUserId !== owner) || !tuple.ok || tuple.value[3] !== expectedAuthorityEpoch || record.resultRevision <= 0 || !task3Valid) return false;
       } else return false;
       requestIds.add(record.requestId);
     }
@@ -892,7 +1559,7 @@ function validSessionEvidence(session, documentIdValue, { allowBootstrapNull = f
     const storedTransferCount = session.auditHistory.filter((entry) => entry?.kind === "control-transfer" || entry?.kind === "control-transfer-bootstrap").length;
     const closeoutAuditCount = session.auditHistory.filter((entry) => Object.hasOwn(CLOSEOUT_AUDIT_TRANSITIONS, entry?.kind)).length;
     const task7AuditCount = session.auditHistory.filter((entry) => ["setup-cancelled", "event-aborted", "correction-applied"].includes(entry?.kind)).length;
-    const m12AuditCount = session.auditHistory.filter((entry) => entry?.kind === "m12-launch" || Object.values(TASK2_AUDIT_KINDS).includes(entry?.kind) || Object.values(TASK3_AUDIT_KINDS).includes(entry?.kind)).length;
+    const m12AuditCount = session.auditHistory.filter((entry) => entry?.kind === "m12-launch" || Object.values(TASK2_AUDIT_KINDS).includes(entry?.kind) || Object.values(TASK3_AUDIT_KINDS).includes(entry?.kind) || Object.values(FOCUS_AUDIT_KINDS).includes(entry?.kind) || entry?.kind === FOCUS_PENDING_AUDIT_KIND || entry?.kind === "round-closeout").length;
     if (session.authorityEpoch !== expectedAuthorityEpoch || session.auditHistory.length !== transferCount + recoveryCount + bootstrapRecoveryCount + closeoutAuditCount + task7AuditCount + m12AuditCount || storedBootstrapRecoveryCount !== bootstrapRecoveryCount || storedTransferCount !== transferCount || (!allowBootstrapNull && session.activeGmUserId === null)) return false;
     if (recoveryCount === 0) {
       if (session.recovery.status !== "none" || !Object.keys(session.recovery).slice(1).every((key) => session.recovery[key] === null)) return false;
@@ -1048,13 +1715,16 @@ function transferCoordinator(context) {
   } catch { return { error: diagnostic("m11-cross-client-coordinator-required", "transport.coordinator") };
   }
 }
-function coordinatorDescriptor(value, documentIdValue, authorityContext) {
+function coordinatorDescriptor(value, documentIdValue, authorityContext, context = {}) {
+  const executingUserId = context?.__trustedRemotePlayerIntent === true
+    ? (nonBlank(context.executingGmUserId) ? context.executingGmUserId : authorityContext.activeGmUserId)
+    : authorityContext.authenticatedUserId;
   const descriptor = {
     sessionId: value.sessionId,
     sessionDocumentId: documentIdValue,
     expectedRevision: value.expectedRevision,
     expectedAuthorityEpoch: value.authorityEpoch,
-    authenticatedUserId: authorityContext.authenticatedUserId,
+    authenticatedUserId: executingUserId,
     connectionId: authorityContext.authenticatedConnectionId,
     activeGmUserId: authorityContext.activeGmUserId
   };
@@ -1067,23 +1737,82 @@ function canonicalOperator(value) {
   const report = analyzeVoyageStationAssignments([{ stationId: "captain", operator: captured.value }]);
   return report.valid && report.assignments.length === 1 ? report.assignments[0].operator : null;
 }
-function deriveProjectionKind(authenticated, session, context) {
-  if (authenticated.user?.isGM === true) return "gm";
+function coordinatorIdentityMatches(auth, descriptor, context = {}) {
+  const expectedUserId = context?.__trustedRemotePlayerIntent === true ? auth.activeGmUserId : auth.authenticatedUserId;
+  return descriptor.authenticatedUserId === expectedUserId
+    && auth.authenticatedConnectionId === descriptor.connectionId
+    && auth.activeGmUserId === descriptor.activeGmUserId;
+}
+function canonicalOperators(value) {
+  const captured = capture(value);
+  if (!captured.ok || captured.value === null) return null;
+  const source = Array.isArray(captured.value) ? captured.value : [captured.value];
+  if (source.length === 0) return [];
+  const operators = [];
+  const seen = new Set();
+  for (const entry of source) {
+    const operator = canonicalOperator(entry);
+    if (!operator) return null;
+    const key = `${operator.kind}\0${operator.uuid ?? operator.id}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    operators.push(operator);
+  }
+  return operators;
+}
+function operatorIdentityMatches(left, right) {
+  if (!left || !right || left.kind !== right.kind) return false;
+  if (Object.hasOwn(left, "uuid") && Object.hasOwn(right, "uuid")) return left.uuid === right.uuid;
+  return Object.hasOwn(left, "id") && Object.hasOwn(right, "id") && left.id === right.id;
+}
+function deriveProjectionAuthority(authenticated, session, context) {
   const assignments = session?.encounterState?.stationAssignments;
-  let resolvedOperator = null;
+  const report = analyzeVoyageStationAssignments(assignments);
+  if (!report.valid) return { role: "observer", ownedOperators: [], readOnlyStationIds: [] };
+  if (authenticated.user?.isGM === true) {
+    const currentSessionGm = authenticated.authenticatedUserId === session?.activeGmUserId;
+    return {
+      role: "gm",
+      ownedOperators: report.assignments.map((entry) => ({
+        stationId: entry.stationId,
+        operatorId: entry.operator?.id ?? null,
+        operatorUuid: entry.operator?.uuid ?? null,
+        canAct: currentSessionGm,
+        gmTakeover: currentSessionGm
+      })),
+      readOnlyStationIds: []
+    };
+  }
+  let resolvedOperators = null;
   try {
-    if (typeof context?.resolveVoyageOperatorForPrincipal === "function") resolvedOperator = canonicalOperator(context.resolveVoyageOperatorForPrincipal(authenticated.authenticatedUserId));
-  } catch { resolvedOperator = null; }
-  if (resolvedOperator && Array.isArray(assignments)) {
-    const report = analyzeVoyageStationAssignments(assignments);
-    if (report.valid) {
-      const field = Object.hasOwn(resolvedOperator, "uuid") ? "uuid" : "id";
-      const matches = report.assignments.filter((entry) => entry.operator.kind === resolvedOperator.kind && entry.operator[field] === resolvedOperator[field]);
-      if (matches.length === 1) return "operator";
-      if (matches.length === 0) return "crew";
+    if (typeof context?.resolveVoyageOperatorForPrincipal === "function") {
+      resolvedOperators = canonicalOperators(context.resolveVoyageOperatorForPrincipal(authenticated.authenticatedUserId));
+    }
+  } catch {
+    resolvedOperators = null;
+  }
+  const ownedOperators = [];
+  if (Array.isArray(resolvedOperators)) {
+    for (const entry of report.assignments) {
+      if (resolvedOperators.some((operator) => operatorIdentityMatches(operator, entry.operator))) {
+        ownedOperators.push({
+          stationId: entry.stationId,
+          operatorId: entry.operator?.id ?? null,
+          operatorUuid: entry.operator?.uuid ?? null,
+          canAct: true,
+          gmTakeover: false
+        });
+      }
     }
   }
-  return "observer";
+  return {
+    role: ownedOperators.length > 0 ? "operator" : (Array.isArray(resolvedOperators) && resolvedOperators.length > 0 ? "crew" : "observer"),
+    ownedOperators,
+    readOnlyStationIds: report.assignments.filter((entry) => !ownedOperators.some((owned) => owned.stationId === entry.stationId)).map((entry) => entry.stationId)
+  };
+}
+function deriveProjectionKind(authenticated, session, context) {
+  return deriveProjectionAuthority(authenticated, session, context).role;
 }
 function buildSessionProjection(session, projectionKind) {
   try {
@@ -1211,7 +1940,31 @@ function closeoutBoundary(value, auth, match, context, identities) {
   if (resolved.match.documentId !== match.documentId || resolved.match.session.revision !== value.expectedRevision || resolved.match.session.authorityEpoch !== value.authorityEpoch || resolved.match.session.activeGmUserId !== current.activeGmUserId || !pristineSession(resolved.match.session, resolved.match.documentId, { replayContext: context })) return { error: diagnostic("m11-recovery-required", "recovery") };
   return { match: resolved.match, auth: current };
 }
-async function dispatchCloseoutCommand(value, identities, auth, match, context, coordinated = false, trustedWitness = null) {
+async function dispatchRoundCloseoutCommand(value, identities, initialAuth, initialMatch, context) {
+  const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth, context);
+  if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  return runExclusiveSessionMutation(context, descriptor, async (trustedWitness) => withTransferLock(value.sessionId, async () => {
+    const auth = authority(context, { requireConnection: true });
+    if (auth.error || !coordinatorIdentityMatches(auth, descriptor, context)) return failure([auth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
+    const resolved = resolveSessionDocument(value.sessionId, context);
+    if (resolved.error) return failure([resolved.error], identities);
+    if (resolved.match.documentId !== descriptor.sessionDocumentId || !pristineSession(resolved.match.session, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+    const prior = resolved.match.session;
+    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
+    const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, "gm", fp, identities);
+    if (replay) return replay;
+    if (prior.activeGmUserId !== auth.activeGmUserId || value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+    if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+    if (!closeoutLifecycleAllowed(prior, "round-closeout")) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+    const built = await buildTask5Candidate(prior, value, auth, trustedWitness, context);
+    if (!built?.candidate || !built.response) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+    const candidate = built.candidate, response = built.response;
+    if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+    try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); }
+    catch { return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response }); }
+    return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response });
+  }), identities, { nonWinnerCode: "m11-control-transfer-required", nonWinnerPath: "authorityEpoch" });
+}async function dispatchCloseoutCommand(value, identities, auth, match, context, coordinated = false, trustedWitness = null) {
   const commandKind = value.commandKind;
   if (!["closeout-review", "closeout-prepare", "closeout-reserve", "closeout-ship-apply", "closeout-session-commit"].includes(commandKind)) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
   if (!coordinated) {
@@ -1466,7 +2219,27 @@ function canonicalTask2Stations(session, context) {
   }
 }
 
-function bareTask2Stations(stations) {
+function canonicalTask3SourceBoundStations(session, canonicalStations) {
+  try {
+    if (!isPlainObject(session) || !Array.isArray(canonicalStations)) return null;
+    const assignments = Array.isArray(session.encounterState?.stationAssignments) ? session.encounterState.stationAssignments : [];
+    const captured = capture(canonicalStations); if (!captured.ok) return null;
+    const result = captured.value.map((station) => {
+      const assignment = assignments.find((entry) => entry?.stationId === station?.stationId);
+      const operatorUuid = assignment?.operator?.uuid;
+      const actions = Array.isArray(station?.actions) ? station.actions.map((action) => {
+        const copy = capture(action); if (!copy.ok) return null;
+        if (isPlainObject(copy.value?.check) && isPlainObject(copy.value.check.source)) {
+          copy.value.check.source = operatorUuid ? { kind: "character", uuid: operatorUuid } : { kind: "character" };
+        }
+        return copy.value;
+      }) : null;
+      if (!actions || actions.some((action) => action === null)) return null;
+      return { ...station, actions };
+    });
+    return result.every((station) => station !== null) ? result : null;
+  } catch { return null; }
+}function bareTask2Stations(stations) {
   return Array.isArray(stations) && stations.every((station) => isPlainObject(station) && Object.keys(station).length === 1 && nonBlank(station.stationId));
 }
 
@@ -1581,7 +2354,7 @@ async function dispatchTask2Command(value, identities, initialAuth, initialMatch
   const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth);
   if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
   return runExclusiveSessionMutation(context, descriptor, async (trustedWitness) => withTransferLock(value.sessionId, async () => {
-    const auth = authority(context, { requireConnection: true });
+    const auth = trustedAuthorityContext(context);
     if (auth.error || auth.authenticatedUserId !== descriptor.authenticatedUserId || auth.authenticatedConnectionId !== descriptor.connectionId || auth.activeGmUserId !== descriptor.activeGmUserId) {
       return failure([auth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
     }
@@ -1591,7 +2364,16 @@ async function dispatchTask2Command(value, identities, initialAuth, initialMatch
       return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
     }
     const prior = resolved.match.session;
-    const projectionKind = "gm";
+    const authorityDecision = deriveProjectionAuthority(auth, prior, context);
+    const projectionKind = auth.user?.isGM === true ? "gm" : authorityDecision.role;
+    if (auth.user?.isGM !== true) {
+      const authorizedOrder = value.commandKind === "station-order"
+        ? authorityDecision.ownedOperators.length > 0
+        : authorityDecision.ownedOperators.some((entry) => entry.stationId === value.payload.stationId);
+      if (!operatorAllowedCommand(value.commandKind) || projectionKind !== "operator" || !authorizedOrder) {
+        return failure([diagnostic("m11-projection-not-authorized", value.commandKind === "station-order" ? "request.payload.stationOrder" : "request.payload.stationId")], identities);
+      }
+    }
     const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
     const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, projectionKind, requestFingerprint, identities);
     if (replay) return replay;
@@ -1838,8 +2620,7 @@ function recoveryCheckpointValid(checkpoint, envelope) {
       || checkpoint.authorityEpoch > envelope.authorityEpoch || !validEncounterState(checkpoint.encounterState, envelope) || !lifecycleMappingValid({ ...envelope, sessionState: checkpoint.sessionState, encounterState: checkpoint.encounterState })) return false;
     return checkpoint.encounterRevision === checkpoint.encounterState.revision;
   } catch { return false; }
-}
-function recoveryInvalidationValid(checkpoint, envelope) {
+}function recoveryInvalidationValid(checkpoint, envelope) {
   if (checkpoint.invalidated === false) return true;
   return envelope.auditHistory.some((audit) => {
     if (!exactKeys(audit, AUDIT_FIELDS) || audit.kind !== "recovery-rebuilt" || !nonBlank(audit.requestId) || !nonBlank(audit.actorUserId)
@@ -1856,22 +2637,22 @@ function recoveryInvalidationValid(checkpoint, envelope) {
 function recoveryCheckpointJournalValid(envelope) {
   try {
     const ids = new Set(); let previousRevision = -1, previousAuthorityEpoch = -1, previousEventCount = -1;
-    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
+    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision, authorityEpoch: envelope.authorityEpoch };
     let previousChainRevision = 0; const runtimeRevisions = new Set();
-    for (const event of envelope.events) {
-      if (event?.type?.startsWith("voyage.m11-") || isM12RuntimeEvent(event)) {
+    for (let eventIndex = 0; eventIndex < envelope.events.length; eventIndex += 1) {
+      const event = envelope.events[eventIndex];
+      if (event?.type?.startsWith('voyage.m11-') || isM12RuntimeEvent(event)) {
         if (runtimeRevisions.has(event.revision)) return false;
-        if (!validRuntimeEvent(event, identity, 0) || (event.previousRevision !== previousChainRevision && !(event.previousRevision + 1 === previousChainRevision && event.revision === previousChainRevision))) return false;
+        if (!validRuntimeEvent(event, identity, eventIndex) || (event.previousRevision !== previousChainRevision && !(event.previousRevision + 1 === previousChainRevision && event.revision === previousChainRevision))) return false;
         runtimeRevisions.add(event.revision);
         previousChainRevision = Math.max(previousChainRevision, event.revision);
       } else {
         const pair = storedEventRevisionPair(event);
-        const nextType = envelope.events[envelope.events.indexOf(event) + 1]?.type;
+        const nextType = envelope.events[eventIndex + 1]?.type;
         const task7Domain = isTask7RuntimeType(nextType);
-        const task3Domain = isTask3DomainEvent(event) && isM12RuntimeEvent(envelope.events[envelope.events.indexOf(event) + 1]);
-        if (!isPlainObject(event) || !safeInteger(pair[1]) || !safeInteger(pair[0]) || (!task7Domain && pair[0] !== previousChainRevision) || pair[1] !== pair[0] + 1
-          || (task3Domain && !validTask3DomainEvent(event, identity))) return false;
-        if (!task7Domain) previousChainRevision = pair[1];
+        const task3Domain = isTask3DomainEvent(event) && isM12RuntimeEvent(envelope.events[eventIndex + 1]);
+        if (!isPlainObject(event) || !safeInteger(pair[1]) || !safeInteger(pair[0]) || (!task7Domain && !task3Domain && pair[0] !== previousChainRevision) || pair[1] !== pair[0] + 1
+          || (task3Domain && (!validTask3DomainEvent(event, identity) || event.revision !== envelope.events[eventIndex + 1]?.previousEncounterRevision + 1 || envelope.events[eventIndex + 1]?.previousRevision !== previousChainRevision || envelope.events[eventIndex + 1]?.revision !== previousChainRevision + 1))) return false;        if (!task7Domain && !task3Domain) previousChainRevision = pair[1];
       }
     }
     for (const checkpoint of envelope.checkpoints) {
@@ -1879,28 +2660,83 @@ function recoveryCheckpointJournalValid(envelope) {
       if (ids.has(checkpoint.checkpointId) || checkpoint.revision <= previousRevision || checkpoint.authorityEpoch < previousAuthorityEpoch || checkpoint.eventCount < previousEventCount
         || (previousRevision >= 0 && checkpoint.revision !== previousRevision + 1
           && !Array.from({ length: checkpoint.revision - previousRevision - 1 }, (_, offset) => previousRevision + offset + 1)
-            .every((revision) => envelope.events.some((event) => !event?.type?.startsWith("voyage.m11-") && !isM12RuntimeEvent(event) && storedEventRevisionPair(event)[1] === revision)))
+            .every((revision) => envelope.events.some((event) => {
+              const pair = isM12RuntimeEvent(event) ? [event.previousRevision, event.revision] : storedEventRevisionPair(event);
+              return safeInteger(pair[1]) && pair[1] === revision;
+            })))
         || !recoveryInvalidationValid(checkpoint, envelope)) return false;
       for (let index = 0; index < checkpoint.eventCount; index += 1) {
         const event = envelope.events[index];
         const pair = isM12RuntimeEvent(event) ? [event.previousRevision, event.revision] : storedEventRevisionPair(event);
-        if (!event || !capture(event).ok || !safeInteger(pair?.[0]) || !safeInteger(pair?.[1]) || pair[1] > checkpoint.revision) return false;
+        const prefixRevision = isTask3DomainEvent(event) && isM12RuntimeEvent(envelope.events[index + 1]) ? envelope.events[index + 1].revision : pair[1];
+        if (!event || !capture(event).ok || !safeInteger(pair?.[0]) || !safeInteger(pair?.[1]) || !safeInteger(prefixRevision) || prefixRevision > checkpoint.revision) return false;
       }
       ids.add(checkpoint.checkpointId); previousRevision = checkpoint.revision; previousAuthorityEpoch = checkpoint.authorityEpoch; previousEventCount = checkpoint.eventCount;
     }
     return previousChainRevision === envelope.revision;
   } catch { return false; }
-}
+}async function buildTask5Candidate(prior, value, auth, trustedWitness, context) {
+  try {
+    if (prior.sessionState !== "station-resolution" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "resolution" || !Array.isArray(prior.encounterState.pendingThresholdQueue) || prior.encounterState.pendingThresholdQueue.length !== 0) return null;
+    const consequences = applyVoyageEncounterConsequencesTransition(prior.encounterState, { phaseStartSnapshotId: `arcflight-voyage-task5:${JSON.stringify([prior.sessionId, prior.encounterState.revision + 1])}` });
+    if (!consequences?.ok) return null;
+    const definitionResult = typeof context?.resolveEventDefinitionSnapshot === "function" ? await context.resolveEventDefinitionSnapshot(prior.eventId, prior.definitionSnapshotId) : null;
+    const definition = capture(definitionResult); if (!definition.ok) return null;
+    const round = task5DefinitionRound(definition.value, prior.encounterState.roundNumber);
+    if (!round || round.roundId !== value.payload.roundId) return null;
+    const analysis = task5RoundAnalysis(consequences.nextState, round.roundId, prior.events);
+    if (!analysis) return null;
+    const effects = task5RoundEffects(consequences.nextState, prior.events, prior, round.roundId, analysis); if (!effects) return null;
+    let nextState = capture(consequences.nextState).value;
+    nextState.pressureSystems = capture(effects.pressureAfter).value;
+    nextState.activeHazards = capture(effects.activeHazardsAfter ?? nextState.activeHazards ?? []).value;
+    nextState.revision = effects.encounterRevision;
+    const nextRound = task5DefinitionRound(definition.value, prior.encounterState.roundNumber + 1);
+    let nextSessionState = "event-closeout-review", nextPhase = "cleanup-advance", nextRoundId = null;
+    if (nextRound) {
+      nextRoundId = nextRound.roundId;
+      nextState.title = nextRound.title;
+      nextState.description = nextRound.vignette ?? nextRound.description ?? nextRound.situation;
+      nextState.currentSituation = nextRound.situation;
+      nextState.objective = nextRound.objective;
+      nextState.availableStations = capture(nextRound.availableStations).value;
+      nextState.roundNumber = nextRound.roundNumber;
+      nextState.phase = "situation";
+      nextState.selections = {}; nextState.targets = {}; nextState.riskBids = {}; nextState.assistance = []; nextState.reservations = []; nextState.pendingChecks = [];
+      nextState.pendingConsequences = []; nextState.temporaryConsequences = []; nextState.proposedStationOrder = []; nextState.committedStationOrder = [];
+      nextState.metadata.reactionWindow = null; nextState.metadata.focusEffects = []; nextState.metadata.riskBidEffects = Array.isArray(prior.encounterState.metadata?.riskBidEffects) ? task5CarryoverRiskBidEffects(prior.encounterState, prior.encounterState.metadata.riskBidEffects) : []; if (!nextState.metadata.riskBidEffects) return null; nextState.metadata.recoveryControl = null;
+      const planning = applyVoyageEncounterCrewPlanningTransition(nextState, { phaseStartSnapshotId: `arcflight-voyage-task5-planning:${JSON.stringify([prior.sessionId, prior.revision + 1])}` });
+      if (!planning?.ok) return null;
+      nextState = planning.nextState; nextSessionState = "crew-planning"; nextPhase = "crew-planning";
+    } else { nextState.phase = "cleanup-advance"; nextState.revision += 1; }
+    nextState.lifecycleState = "active";
+    const candidate = capture(prior); if (!candidate.ok) return null;
+    const next = candidate.value, previousRevision = prior.revision, revision = previousRevision + 1;
+    next.revision = revision; next.sessionState = nextSessionState; next.encounterState = nextState;
+     const priorRiskEffects = Array.isArray(prior.encounterState.metadata?.riskBidEffects) ? prior.encounterState.metadata.riskBidEffects.filter((effect) => effect?.roundNumber === prior.encounterState.roundNumber) : [];
+     const benefitTransition = task5BenefitTransitionEvidenceList(prior.encounterState, priorRiskEffects);
+     if (!benefitTransition) return null;
+     const event = { type: "voyage.m12-round-closeout", sessionId: next.sessionId, eventId: next.eventId, definitionSnapshotId: next.definitionSnapshotId, shipId: next.shipId, roundId: round.roundId, roundNumber: prior.encounterState.roundNumber, previousRevision, revision, previousAuthorityEpoch: prior.authorityEpoch, authorityEpoch: prior.authorityEpoch, previousSessionState: prior.sessionState, nextSessionState, previousPhase: prior.encounterState.phase, nextPhase, stationResultIds: analysis.stationResultIds, successUnits: analysis.successUnits, failureUnits: analysis.failureUnits, roundResult: analysis.roundResult, momentumBefore: prior.encounterState.momentum, momentumAfter: analysis.roundResult === "round-neutral" ? prior.encounterState.momentum : analysis.roundResult.includes("success") ? Math.min(3, prior.encounterState.momentum + 1) : Math.max(0, prior.encounterState.momentum - 1), pressureBefore: capture(prior.encounterState.pressureSystems).value, pressureAfter: capture(effects.pressureAfter).value, pressureEffects: capture(effects.pressureEffects).value, breaches: capture(effects.breaches).value, hazardEffects: capture(effects.hazardEffects).value, consequenceEffects: capture(effects.consequenceEffects).value, benefitTransition, focusTransition: nextRound ? { previous: capture(prior.encounterState.metadata?.focusEffects ?? []).value, next: [] } : null, riskBidTransition: nextRound ? { previous: capture(prior.encounterState.metadata?.riskBidEffects ?? []).value, next: capture(nextState.metadata?.riskBidEffects ?? []).value } : null, recoveryControlTransition: nextRound ? { previous: capture(prior.encounterState.metadata?.recoveryControl ?? null).value, next: null } : null, nextRoundId };
+     next.encounterState.momentum = event.momentumAfter;
+     const checkpoint = { checkpointId: `arcflight-voyage-checkpoint:${JSON.stringify([next.sessionId, "before-round-closeout", previousRevision])}`, kind: "before-round-closeout", sessionId: next.sessionId, revision: previousRevision, encounterRevision: prior.encounterState.revision, eventCount: prior.events.length, sessionState: prior.sessionState, encounterState: capture(prior.encounterState).value, closeout: capture(prior.closeout).value, authorityEpoch: prior.authorityEpoch, invalidated: false };
+     if (!trustedWitness?.occurredAt) return null;
+     const audit = { auditId: auditId(next.sessionId, next.auditHistory.length, "round-closeout"), kind: "round-closeout", sessionId: next.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: next.authorityEpoch, previousRevision, revision, occurredAt: trustedWitness.occurredAt, details: { roundId: event.roundId, roundNumber: event.roundNumber, runtimeEventType: event.type, checkpointId: checkpoint.checkpointId, stationResultIds: capture(event.stationResultIds).value, successUnits: event.successUnits, failureUnits: event.failureUnits, roundResult: event.roundResult, momentumBefore: event.momentumBefore, momentumAfter: event.momentumAfter, pressureEffectIds: event.pressureEffects.map((entry) => entry.pressureEffectId), breachIds: event.breaches.map((entry) => entry.pressureBreachId), hazardEffectIds: event.hazardEffects.map((entry) => entry.hazardId), consequenceEffectIds: event.consequenceEffects.map((entry) => entry.effectId), benefitTransition: capture(event.benefitTransition).value, focusTransition: event.focusTransition, riskBidTransition: event.riskBidTransition, recoveryControlTransition: event.recoveryControlTransition, previousSessionState: event.previousSessionState, nextSessionState, nextRoundId } };
+     next.checkpoints.push(checkpoint); next.events.push(event); next.auditHistory.push(audit);
+     const response = closeoutResponse(next, value.requestId, event);
+     next.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fingerprint(next.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, "round-closeout", value.payload), commandKind: "round-closeout", resultKind: "round-closeout-completed", resultRevision: revision, response });
+     return { candidate: next, response };
+   } catch { return null; }
+ }
 function replayEventChain(envelope, context, startIndex = 0, startRevision = 0, checkpoint = null) {
   try {
-    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
+    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision, authorityEpoch: envelope.authorityEpoch };
     let priorRevision = startRevision, index = startIndex, replayedState = checkpoint ? { sessionState: checkpoint.sessionState, encounterState: capture(checkpoint.encounterState).value, closeout: capture(checkpoint.closeout).value } : null; const runtimeRevisions = new Set();
     while (index < envelope.events.length) {
       const event = envelope.events[index];
       if (isTask3DomainEvent(event) && isM12RuntimeEvent(envelope.events[index + 1])) {
         const runtime = envelope.events[index + 1];
         if (!validTask3DomainEvent(event, identity) || !validM12RuntimeEvent(runtime, identity)
-          || event.previousRevision !== priorRevision || event.revision !== runtime.previousEncounterRevision + 1
+          || event.revision !== runtime.previousEncounterRevision + 1
           || runtime.previousRevision !== priorRevision || runtime.revision !== priorRevision + 1) return null;
         priorRevision = runtime.revision;
         index += 2;
@@ -1967,7 +2803,7 @@ function validRecoveryReplayRecord(record, envelope, request, authenticatedUserI
       || value.resultRevision < 1 || !parsed.ok || !validStoredResponse(response, value, envelope.sessionId, envelope.authorityEpoch)
       || response.projection !== null || response.events.length !== (value.resultKind === "recovered-aborted" ? 2 : 1) || response.errors.length !== 0 || response.warnings.length !== 0) return false;
     const tuple = parsed.value, payload = tuple[6], event = response.events.at(-1);
-    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision };
+    const identity = { sessionId: envelope.sessionId, eventId: envelope.eventId, definitionSnapshotId: envelope.definitionSnapshotId, shipId: envelope.shipId, revision: envelope.revision, authorityEpoch: envelope.authorityEpoch };
     const responseRuntimeEvent = response.events.at(-1);
     const matchingEvent = envelope.events.find((storedEvent) => isPlainObject(storedEvent) && storedEvent.type === responseRuntimeEvent?.type && storedEvent.revision === responseRuntimeEvent?.revision
       && storedEvent.previousRevision === event?.previousRevision && storedEvent.recoveryAuthorityUserId === event?.recoveryAuthorityUserId && equal(storedEvent, event));
@@ -2007,6 +2843,12 @@ function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = nu
         || !["gm", "operator", "crew", "observer", "none"].includes(record.projectionKind) || !safeInteger(tuple.value[3]) || !safeInteger(tuple.value[4])
         || tuple.value[3] > envelope.authorityEpoch || tuple.value[4] > envelope.revision || !safeInteger(record.resultRevision) || record.resultRevision > envelope.revision
         || record.resultRevision < lastEvidenceRevision || !validStoredResponse(record.response, record, envelope.sessionId, envelope.authorityEpoch)) return false;
+      if (sessionEvidence && (FOCUS_COMMANDS.has(record.commandKind) || record.commandKind === FOCUS_PENDING_COMMAND_KIND)) {
+        lastEvidenceRevision = record.resultRevision;
+        auditIndex += 1;
+        ids.add(record.requestId);
+        continue;
+      }
       let audit = null;
       if (record.commandKind === TRANSFER_COMMAND_KIND) {
         if (record.projectionKind !== "gm" || record.resultKind !== TRANSFER_RESULT_KIND || tuple.value[2] !== "gm" || tuple.value[3] !== expectedAuthorityEpoch
@@ -2073,6 +2915,30 @@ function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = nu
         const task3Valid = runtimeEvent && domainEvent && audit && validM12Task3Record(record, sessionEvidence, audit, domainEvent, runtimeEvent);
         if (!task3Valid) return false;
         lastEvidenceRevision = record.resultRevision; auditIndex += 1;
+      } else if (sessionEvidence && record.commandKind === FOCUS_PENDING_COMMAND_KIND) {
+        const event = envelope.events.find((entry) => entry?.type === "voyage.m12-focus-reaction-committed" && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        const audit = envelope.auditHistory[auditIndex];
+        if (!event || !audit || !validFocusPendingRecord(record, sessionEvidence, audit, event)) return false;
+        lastEvidenceRevision = record.resultRevision; auditIndex += 1;
+      } else if (sessionEvidence && FOCUS_COMMANDS.has(record.commandKind)) {
+        const event = envelope.events.find((entry) => entry?.type === `voyage.m12-${record.commandKind}` && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        const audit = envelope.auditHistory[auditIndex];
+        if (!event || !audit || !validFocusRecord(record, sessionEvidence, audit, event)) return false;
+        lastEvidenceRevision = record.resultRevision; auditIndex += 1;
+      } else if (sessionEvidence && record.commandKind === "correct-session") {
+        const event = envelope.events.find((entry) => entry?.type === "voyage.m11-session-corrected" && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        const audit = envelope.auditHistory[auditIndex];
+        const tuple = parseStoredFingerprint(record.fingerprint);
+        const sliceI = tuple.ok && SLICE_I_CORRECTION_KINDS.includes(tuple.value[6]?.correctionKind);
+        const expectedEvents = sliceI ? 1 : (tuple.ok && tuple.value[6]?.correctionKind === "plan-unlock" ? 1 : 2);
+        if (!event || !audit || !validTask7Record(record, sessionEvidence, audit, event) || record.response.events.length !== expectedEvents || !equal(record.response.events.at(-1), event)) return false;
+        lastEvidenceRevision = record.resultRevision; auditIndex += 1;
+      } else if (sessionEvidence && record.commandKind === "round-closeout") {
+        const event = envelope.events.find((entry) => entry?.type === "voyage.m12-round-closeout" && entry.revision === record.resultRevision && entry.previousRevision === record.resultRevision - 1);
+        const audit = envelope.auditHistory[auditIndex];
+        const checkpoint = event && envelope.checkpoints.find((entry) => entry?.kind === "before-round-closeout" && entry.revision === event.previousRevision && entry.eventCount === envelope.events.indexOf(event));
+        if (!event || !audit || !checkpoint || !validRoundCloseoutRecord(record, sessionEvidence, audit, event) || !validRoundCloseoutDerivedEvidence(event, checkpoint, sessionEvidence)) return false;
+        lastEvidenceRevision = record.resultRevision; auditIndex += 1;
       } else if (sessionEvidence && (record.commandKind === "closeout-review" || record.commandKind === "closeout-prepare" || record.commandKind === "closeout-reserve" || record.commandKind === "closeout-ship-apply" || record.commandKind === "closeout-session-commit")) {
         if (record.commandKind === "closeout-prepare" || record.commandKind === "closeout-ship-apply") {
           if (!validCloseoutRecord(record, sessionEvidence, null, null)) return false;
@@ -2088,7 +2954,9 @@ function recoveryStoredRecordsValid(envelope, context = {}, currentRecovery = nu
         const eventType = record.commandKind === "abort-session" ? "voyage.m11-session-aborted" : "voyage.m11-session-corrected";
         const responseEvent = envelope.events.find((event) => event?.type === eventType && event.revision === record.resultRevision && event.previousRevision === record.resultRevision - 1);
         const audit = envelope.auditHistory[auditIndex];
-        if (!responseEvent || !audit || !validTask7Record(record, sessionEvidence, audit, responseEvent) || record.response.events.length !== 2 || !equal(record.response.events[1], responseEvent)) return false;
+        const correctionTuple = record.commandKind === "correct-session" ? parseStoredFingerprint(record.fingerprint) : null;
+        const planUnlock = correctionTuple?.ok === true && correctionTuple.value[6]?.correctionKind === "plan-unlock";
+        if (!responseEvent || !audit || !validTask7Record(record, sessionEvidence, audit, responseEvent) || record.response.events.length !== (planUnlock ? 1 : 2) || !equal(record.response.events[planUnlock ? 0 : 1], responseEvent)) return false;
         auditIndex += 1;
       } else return false;
       ids.add(record.requestId);
@@ -2228,6 +3096,202 @@ async function buildRecoveryAbortCandidate(baseSession, envelope, source, replay
     return { candidate, event: runtimeEvent, response };
   } catch { return null; }
 }
+function validPlanUnlockPredecessor(session, runtimeEvent) {
+  try {
+    const predecessor = session.events.find((event) => event?.revision === runtimeEvent.previousRevision);
+    return predecessor
+      && validM12RuntimeEvent(predecessor, session)
+      && predecessor.type === "voyage.m12-plan-lock"
+      && predecessor.transitionKind === "plan-lock"
+      && predecessor.previousSessionState === "crew-planning"
+      && predecessor.nextSessionState === "plan-locked"
+      && runtimeEvent.previousEncounterRevision === predecessor.encounterRevision
+      && runtimeEvent.encounterRevision === predecessor.encounterRevision + 1;
+  } catch { return false; }
+}
+
+function sliceICurrentStation(session) {
+  try {
+    const order = session?.encounterState?.committedStationOrder;
+    const checks = session?.encounterState?.pendingChecks;
+    if (!Array.isArray(order) || !Array.isArray(checks)) return null;
+    const voided = new Set((session?.encounterState?.metadata?.sliceIRecovery ?? [])
+      .filter((entry) => entry?.kind === "void-roll")
+      .flatMap((entry) => [entry.originalPendingCheckId, entry.replacementPendingCheckId].filter(nonBlank)));
+    const voidedStation = order.find((stationId) => checks.some((check) => check?.stationId === stationId && voided.has(check.pendingCheckId)));
+    if (voidedStation) return voidedStation;
+    return order.find((stationId) => checks.some((check) => check?.stationId === stationId && check.status === "pending" && !voided.has(check.pendingCheckId))) ?? null;
+  } catch { return null; }
+}
+function sliceIVoidedPendingCheck(session, pendingCheckId) {
+  try {
+    return Array.isArray(session?.encounterState?.metadata?.sliceIRecovery)
+      && session.encounterState.metadata.sliceIRecovery.some((entry) => entry?.kind === "void-roll" && [entry.originalPendingCheckId, entry.replacementPendingCheckId].includes(pendingCheckId));
+  } catch { return false; }
+}
+
+function sliceIOperatorTakeoverEligibility(session, stationId, context) {
+  try {
+    const assignment = analyzeVoyageStationAssignments(session?.encounterState?.stationAssignments).assignments
+      .find((entry) => entry?.stationId === stationId);
+    if (!assignment?.operator || typeof context?.resolveVoyageOperatorForPrincipal !== "function") return { ok: false, found: false };
+    const trusted = trustedUsers(context);
+    if (!trusted.ok || trusted.duplicates?.size) return { ok: false, found: false };
+    let found = false;
+    for (const user of trusted.users) {
+      if (typeof user.isGM !== "boolean" || typeof user.active !== "boolean") return { ok: false, found: false };
+      if (user.isGM !== false) continue;
+      let operators;
+      try { operators = canonicalOperators(context.resolveVoyageOperatorForPrincipal(user.id)); } catch { operators = null; }
+      if (!Array.isArray(operators) || !operators.some((operator) => operatorIdentityMatches(operator, assignment.operator))) continue;
+      found = true;
+      if (user.active === true) return { ok: false, found: true, active: true };
+    }
+    return { ok: found, found, active: false };
+  } catch { return { ok: false, found: false }; }
+}
+
+function validSliceIPayload(kind, payload) {
+  if (!isPlainObject(payload) || !SLICE_I_CORRECTION_KINDS.includes(kind)) return false;
+  const fields = {
+    "remaining-order": ["stationOrder"],
+    target: ["stationId", "targetStationId"],
+    "operator-takeover": ["stationId"],
+    "void-roll": ["pendingCheckId"],
+    "retry-roll-integration": ["pendingCheckId"],
+    "recorded-result": ["pendingCheckId", "correctedResult"]
+  }[kind];
+  if (!fields || !exactKeys(payload, fields) || containsForbiddenPayloadAuthority(payload)) return false;
+  if (kind === "remaining-order") return Array.isArray(payload.stationOrder) && payload.stationOrder.every(nonBlank);
+  if (kind === "target") return nonBlank(payload.stationId) && nonBlank(payload.targetStationId);
+  if (kind === "operator-takeover") return nonBlank(payload.stationId);
+  if (kind === "void-roll" || kind === "retry-roll-integration") return nonBlank(payload.pendingCheckId);
+  return nonBlank(payload.pendingCheckId) && isPlainObject(payload.correctedResult)
+    && exactKeys(payload.correctedResult, ["total", "degreeOfSuccess", "degreeOfSuccessSlug", "statisticSlug", "dc", "rollMode"])
+    && Number.isFinite(payload.correctedResult.total) && safeInteger(payload.correctedResult.degreeOfSuccess)
+    && payload.correctedResult.degreeOfSuccess >= 0 && payload.correctedResult.degreeOfSuccess <= 3
+    && ["critical-failure", "failure", "success", "critical-success"][payload.correctedResult.degreeOfSuccess] === payload.correctedResult.degreeOfSuccessSlug
+    && nonBlank(payload.correctedResult.statisticSlug) && safeInteger(payload.correctedResult.dc) && payload.correctedResult.dc >= 0
+    && ["public", "blind"].includes(payload.correctedResult.rollMode);
+}
+
+function sliceIHistoricalAuditAfter(session, audit, correctionKind) {
+  try {
+    const index = session.auditHistory.indexOf(audit);
+    for (let position = index - 1; position >= 0; position -= 1) {
+      const prior = session.auditHistory[position];
+      if (prior?.kind === "correction-applied" && prior.details?.correctionKind === correctionKind) return capture(prior.details.after).value;
+    }
+    if (correctionKind === "remaining-order") {
+      const orderRecord = [...session.processedRequests].reverse().find((record) => record?.commandKind === "station-order" && record.resultRevision < audit.revision);
+      const orderTuple = orderRecord && parseStoredFingerprint(orderRecord.fingerprint);
+      if (orderTuple?.ok && Array.isArray(orderTuple.value[6]?.stationOrder)) return capture(orderTuple.value[6].stationOrder).value;
+      const checkpoint = session.checkpoints.find((entry) => entry?.kind === "before-plan-lock");
+      return capture(checkpoint?.encounterState?.committedStationOrder).value;
+    }
+    return null;
+  } catch { return null; }
+}
+
+function sliceIExpectedReplacement(evidence, pendingCheckId, encounterRevision) {
+  const captured = capture(evidence);
+  if (!captured.ok || !nonBlank(pendingCheckId) || !safeInteger(encounterRevision)) return null;
+  const replacement = captured.value;
+  replacement.pendingCheckId = pendingCheckId;
+  replacement.preparedRevision = encounterRevision;
+  replacement.status = "pending";
+  replacement.result = null;
+  return replacement;
+}
+
+function sliceIRecoveryAuditBound(session, runtimeEvent, payload, audit) {
+  try {
+    const history = session.encounterState.metadata?.sliceIRecovery?.find((entry) => entry?.kind === payload.correctionKind && entry.originalPendingCheckId === payload.replacementPayload.pendingCheckId);
+    if (!history || !exactKeys(history, ["kind", "originalPendingCheckId", "replacementPendingCheckId", "evidence"]) || !equal(history.evidence, audit.details.before)) return false;
+    const expected = sliceIExpectedReplacement(history.evidence, history.replacementPendingCheckId, runtimeEvent.encounterRevision);
+    if (!expected || !equal(expected, audit.details.after)) return false;
+    if (payload.correctionKind === "retry-roll-integration") {
+      const current = session.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === history.replacementPendingCheckId);
+      return Boolean(current && equal(current, audit.details.after));
+    }
+    const current = session.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === history.replacementPendingCheckId);
+    if (current && equal(current, audit.details.after)) return true;
+    return session.encounterState.metadata?.sliceIRecovery?.some((entry) => entry?.kind === "retry-roll-integration"
+      && entry.originalPendingCheckId === history.originalPendingCheckId && equal(entry.evidence, history.evidence));
+  } catch { return false; }
+}
+
+function validSliceIAudit(audit, record, runtimeEvent, payload, session) {
+  const replacement = payload.replacementPayload;
+  const stationMatches = ["operator-takeover", "target"].includes(payload.correctionKind) ? audit?.details?.stationId === replacement?.stationId : true;
+  const checkMatches = ["void-roll", "retry-roll-integration", "recorded-result"].includes(payload.correctionKind) ? audit?.details?.pendingCheckId === replacement?.pendingCheckId : true;
+  if (!(audit && exactKeys(audit, AUDIT_FIELDS) && audit.kind === "correction-applied"
+    && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId
+    && safeInteger(audit.authorityEpoch) && audit.authorityEpoch === record.response.authorityEpoch
+    && audit.previousRevision === record.resultRevision - 1 && audit.revision === record.resultRevision
+    && validIsoTimestamp(audit.occurredAt) && exactKeys(audit.details, SLICE_I_CORRECTION_AUDIT_DETAILS)
+    && audit.details.correctionKind === payload.correctionKind && audit.details.targetRequestId === null
+    && audit.details.previousSessionState === "station-resolution" && audit.details.nextSessionState === "station-resolution"
+    && audit.details.reason === payload.reason && audit.details.previousEncounterRevision === runtimeEvent.previousEncounterRevision
+    && audit.details.encounterRevision === runtimeEvent.encounterRevision
+    && (audit.details.stationId === null || nonBlank(audit.details.stationId))
+    && (audit.details.pendingCheckId === null || nonBlank(audit.details.pendingCheckId)) && stationMatches && checkMatches
+    && capture(audit.details.before).ok && capture(audit.details.after).ok)) return false;
+  if (payload.correctionKind === "remaining-order") {
+    const before = audit.details.before, after = audit.details.after;
+    const currentOrder = session.encounterState.committedStationOrder;
+    const priorOrder = sliceIHistoricalAuditAfter(session, audit, payload.correctionKind);
+    if (!Array.isArray(before) || !Array.isArray(after) || !Array.isArray(currentOrder) || !Array.isArray(priorOrder)
+      || !equal(after, currentOrder) || !equal(before, priorOrder) || before.length !== currentOrder.length
+      || new Set(before).size !== before.length || new Set(before).size !== new Set(currentOrder).size
+      || before.some((stationId) => !currentOrder.includes(stationId))) return false;
+    const resolvedPrefix = currentOrder.filter((stationId) => session.encounterState.pendingChecks.some((check) => check.stationId === stationId && check.status !== "pending"));
+    if (!resolvedPrefix.every((stationId, index) => before[index] === stationId && after[index] === stationId)) return false;
+  } else if (payload.correctionKind === "operator-takeover") {
+    const priorControl = sliceIHistoricalAuditAfter(session, audit, payload.correctionKind);
+    const currentControl = session.encounterState.metadata?.recoveryControl ?? null;
+    if (!equal(audit.details.before, priorControl) || !equal(audit.details.after, currentControl)
+      || !isPlainObject(currentControl) || !exactKeys(currentControl, ["kind", "stationId", "operatorId", "controllerUserId"])
+      || currentControl.kind !== "operator-takeover" || currentControl.stationId !== replacement.stationId) return false;
+    const checkpoint = session.checkpoints.find((entry) => entry?.kind === "before-plan-lock");
+    if (checkpoint?.encounterState?.stationAssignments && !equal(checkpoint.encounterState.stationAssignments, session.encounterState.stationAssignments)) return false;
+  } else if (["void-roll", "retry-roll-integration"].includes(payload.correctionKind) && !sliceIRecoveryAuditBound(session, runtimeEvent, payload, audit)) return false;
+  return true;
+}
+
+function validSliceIRecord(record, session, audit, runtimeEvent) {
+  try {
+    if (record.commandKind !== "correct-session" || record.resultKind !== "corrected" || !validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) || record.response.status !== "station-resolution" || record.response.events.length !== 1) return false;
+    const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[5] !== "correct-session") return false;
+    const payload = tuple.value[6];
+    if (!exactKeys(payload, ["correctionKind", "targetRequestId", "targetCheckpointId", "replacementPayload", "reason", "confirmation"]) || payload.targetRequestId !== null || payload.targetCheckpointId !== null || payload.confirmation !== true || !nonBlank(payload.reason) || !validSliceIPayload(payload?.correctionKind, payload?.replacementPayload)) return false;
+    if (!SLICE_I_EXECUTABLE_CORRECTION_KINDS.has(payload.correctionKind)) return false;
+    if (!validRuntimeEvent(runtimeEvent, session, session.events.indexOf(runtimeEvent)) || runtimeEvent.type !== "voyage.m11-session-corrected" || runtimeEvent.correctionKind !== payload.correctionKind || runtimeEvent.correctionAuthorityUserId !== record.principalUserId || !equal(record.response.events[0], runtimeEvent)) return false;
+    if (!validSliceIAudit(audit, record, runtimeEvent, { correctionKind: payload.correctionKind, reason: payload.reason, replacementPayload: payload.replacementPayload }, session)) return false;
+    if (payload.correctionKind === "recorded-result") {
+      const check = session.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === payload.replacementPayload.pendingCheckId);
+      if (!check || check.status !== "resolved" || !equal(check.result, payload.replacementPayload.correctedResult)) return false;
+    }
+    if (["void-roll", "retry-roll-integration"].includes(payload.correctionKind)) {
+      const history = session.encounterState.metadata?.sliceIRecovery?.find((entry) => entry?.kind === payload.correctionKind && entry.originalPendingCheckId === payload.replacementPayload.pendingCheckId);
+      if (!history || !exactKeys(history, ["kind", "originalPendingCheckId", "replacementPendingCheckId", "evidence"]) || !equal(history.evidence, audit.details.before) || !isPlainObject(audit.details.after)) return false;
+      const expectedReplacement = capture(history.evidence);
+      if (!expectedReplacement.ok || !nonBlank(history.replacementPendingCheckId)) return false;
+      expectedReplacement.value.pendingCheckId = history.replacementPendingCheckId;
+      expectedReplacement.value.preparedRevision = runtimeEvent.encounterRevision;
+      expectedReplacement.value.status = "pending";
+      expectedReplacement.value.result = null;
+      if (!equal(expectedReplacement.value, audit.details.after)) return false;
+      if (payload.correctionKind === "void-roll") {
+        const replacement = session.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === history.replacementPendingCheckId);
+        const superseded = !replacement && session.encounterState.metadata?.sliceIRecovery?.some((entry) => entry?.kind === "retry-roll-integration" && entry.originalPendingCheckId === history.originalPendingCheckId && equal(entry.evidence, history.evidence));
+        if (!superseded && (!replacement || replacement.status !== "pending" || !equal(replacement, audit.details.after))) return false;
+      } else if (!nonBlank(history.replacementPendingCheckId) || history.replacementPendingCheckId !== audit.details.after.pendingCheckId) return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
 function validTask7Record(record, session, audit, runtimeEvent) {
   try {
     if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId) || record.projectionKind !== "gm" || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision || !isPlainObject(record.response)) return false;
@@ -2242,9 +3306,20 @@ function validTask7Record(record, session, audit, runtimeEvent) {
       return exactKeys(audit.details, fields) && audit.details.abortScope === runtimeEvent.abortScope && audit.details.nextSessionState === "aborted" && audit.details.reason === payload.reason && audit.details.previousSessionState !== "aborted" && audit.details.nextLifecycleState === (audit.kind === "setup-cancelled" ? "discarded" : "abandoned") && (audit.kind === "setup-cancelled" || audit.details.persistentConsequence === false);
     }
     if (record.commandKind === "correct-session") {
-      if (record.resultKind !== "corrected" || parsed.value[5] !== "correct-session" || !exactKeys(payload, ["correctionKind", "targetRequestId", "targetCheckpointId", "replacementPayload", "reason", "confirmation"]) || !["station-selection", "station-order"].includes(payload.correctionKind) || !exactKeys(payload.replacementPayload, payload.correctionKind === "station-selection" ? ["stationId", "actionId"] : ["stationOrder"]) || payload.targetRequestId !== null || payload.targetCheckpointId !== null || payload.confirmation !== true || !validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) || record.response.status !== "crew-planning" || record.response.events.length !== 2 || audit.details?.previousSessionState !== "crew-planning" || audit.details?.nextSessionState !== "crew-planning" || session.checkpoints.some((checkpoint) => checkpoint.kind === "before-plan-lock" && checkpoint.revision <= record.resultRevision - 1)) return false;
-      if (!validRuntimeEvent(runtimeEvent, session, session.events.indexOf(runtimeEvent)) || runtimeEvent.type !== "voyage.m11-session-corrected" || runtimeEvent.correctionAuthorityUserId !== record.principalUserId || !validTask7DomainPair(record.response.events[0], runtimeEvent, session) || !equal(record.response.events[1], runtimeEvent)) return false;
-      return audit && exactKeys(audit, AUDIT_FIELDS) && audit.kind === "correction-applied" && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId && safeInteger(audit.authorityEpoch) && parsed.value[3] === audit.authorityEpoch && audit.authorityEpoch === record.response.authorityEpoch && audit.revision === record.resultRevision && audit.previousRevision === record.resultRevision - 1 && validIsoTimestamp(audit.occurredAt) && exactKeys(audit.details, TASK7_CORRECTION_AUDIT_DETAILS) && audit.details.correctionKind === payload.correctionKind && audit.details.targetRequestId === null && audit.details.previousSessionState === "crew-planning" && audit.details.nextSessionState === "crew-planning" && audit.details.reason === payload.reason && audit.details.previousEncounterRevision === runtimeEvent.previousEncounterRevision && audit.details.encounterRevision === runtimeEvent.encounterRevision;
+      const unlock = payload.correctionKind === "plan-unlock";
+      if (SLICE_I_CORRECTION_KINDS.includes(payload.correctionKind)) return validSliceIRecord(record, session, audit, runtimeEvent);
+      if (record.resultKind !== "corrected" || parsed.value[5] !== "correct-session" || !exactKeys(payload, ["correctionKind", "targetRequestId", "targetCheckpointId", "replacementPayload", "reason", "confirmation"]) || !["station-selection", "station-order", "plan-unlock"].includes(payload.correctionKind)
+        || !exactKeys(payload.replacementPayload, unlock ? [] : payload.correctionKind === "station-selection" ? ["stationId", "actionId"] : ["stationOrder"])
+        || payload.targetRequestId !== null || payload.targetCheckpointId !== null || payload.confirmation !== true || !validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch)
+        || record.response.status !== "crew-planning" || record.response.events.length !== (unlock ? 1 : 2)
+        || audit.details?.previousSessionState !== (unlock ? "plan-locked" : "crew-planning") || audit.details?.nextSessionState !== "crew-planning"
+        || (!unlock && session.checkpoints.some((checkpoint) => checkpoint.kind === "before-plan-lock" && checkpoint.revision <= record.resultRevision - 1))) return false;
+      if (!validRuntimeEvent(runtimeEvent, session, session.events.indexOf(runtimeEvent)) || runtimeEvent.type !== "voyage.m11-session-corrected" || runtimeEvent.correctionAuthorityUserId !== record.principalUserId
+        || runtimeEvent.correctionKind !== payload.correctionKind
+        || (unlock && !validPlanUnlockPredecessor(session, runtimeEvent))
+        || (unlock ? !equal(record.response.events[0], runtimeEvent) : (!validTask7DomainPair(record.response.events[0], runtimeEvent, session) || !equal(record.response.events[1], runtimeEvent)))) return false;
+      const unlockAuditValid = audit && exactKeys(audit, AUDIT_FIELDS) && audit.kind === "correction-applied" && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId && safeInteger(audit.authorityEpoch) && parsed.value[3] === audit.authorityEpoch && audit.authorityEpoch === record.response.authorityEpoch && audit.revision === record.resultRevision && audit.previousRevision === record.resultRevision - 1 && validIsoTimestamp(audit.occurredAt) && exactKeys(audit.details, TASK7_CORRECTION_AUDIT_DETAILS) && audit.details.correctionKind === payload.correctionKind && audit.details.targetRequestId === null && audit.details.previousSessionState === (unlock ? "plan-locked" : "crew-planning") && audit.details.nextSessionState === "crew-planning" && audit.details.reason === payload.reason && audit.details.previousEncounterRevision === runtimeEvent.previousEncounterRevision && audit.details.encounterRevision === runtimeEvent.encounterRevision;
+      return unlockAuditValid;
     }
     return false;
   } catch { return false; }
@@ -2290,18 +3365,27 @@ function task2PayloadValid(commandKind, payload) {
     && payload.stationOrder.every((entry) => nonBlank(entry) && !UNSAFE_KEYS.has(entry)) && new Set(payload.stationOrder).size === payload.stationOrder.length;
   return nonBlank(payload.phaseStartSnapshotId) && !UNSAFE_KEYS.has(payload.phaseStartSnapshotId);
 }
+function operatorAllowedCommand(commandKind) {
+  return commandKind === "station-selection" || commandKind === "station-selection-clear" || commandKind === "station-order";
+}
 
 function validM12Task2Record(record, session, audit, event, checkpoint = null) {
   try {
+    const operatorRecord = record.commandKind === "station-selection" || record.commandKind === "station-selection-clear" || record.commandKind === "station-order";
     if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId)
-      || record.projectionKind !== "gm" || !TASK2_COMMANDS.has(record.commandKind)
+      || !["gm", ...(operatorRecord ? ["operator"] : [])].includes(record.projectionKind) || !TASK2_COMMANDS.has(record.commandKind)
       || record.resultKind !== TASK2_RESULT_KINDS[record.commandKind] || !safeInteger(record.resultRevision)
       || record.resultRevision < 1 || record.resultRevision > session.revision || !isPlainObject(record.response)) return false;
     const parsed = parseStoredFingerprint(record.fingerprint); if (!parsed.ok) return false;
     const tuple = parsed.value;
-    if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== "gm"
+    if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== record.projectionKind
       || !safeInteger(tuple[3]) || !safeInteger(tuple[4]) || tuple[3] > session.authorityEpoch || tuple[4] !== record.resultRevision - 1
       || tuple[5] !== record.commandKind || !task2PayloadValid(record.commandKind, tuple[6])) return false;
+    if (record.projectionKind === "operator") {
+      if (record.commandKind === "station-order") {
+        if (!Array.isArray(tuple[6].stationOrder) || !tuple[6].stationOrder.every((stationId) => session.encounterState.stationAssignments.some((entry) => entry?.stationId === stationId))) return false;
+      } else if (!session.encounterState.stationAssignments.some((entry) => entry?.stationId === tuple[6].stationId)) return false;
+    }
     if (!validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch)
       || record.response.status !== (record.commandKind === "plan-lock" ? "plan-locked" : "crew-planning")
       || record.response.authorityEpoch !== tuple[3] || record.response.events.length !== 1) return false;
@@ -2313,7 +3397,7 @@ function validM12Task2Record(record, session, audit, event, checkpoint = null) {
       || audit.auditId !== auditId(session.sessionId, session.auditHistory.indexOf(audit), audit.kind)
       || audit.sessionId !== session.sessionId || audit.requestId !== record.requestId || audit.actorUserId !== record.principalUserId
       || audit.authorityEpoch !== tuple[3] || audit.previousRevision !== record.resultRevision - 1 || audit.revision !== record.resultRevision
-      || !validIsoTimestamp(audit.occurredAt) || !exactKeys(audit.details, M12_AUDIT_DETAILS_FIELDS)
+       || !validIsoTimestamp(audit.occurredAt) || !exactKeys(audit.details, M12_AUDIT_DETAILS_FIELDS)
       || audit.details.transitionKind !== record.commandKind
       || audit.details.previousSessionState !== (record.commandKind === "plan-lock" ? "crew-planning" : "crew-planning")
       || audit.details.nextSessionState !== record.response.status
@@ -2326,7 +3410,7 @@ function validM12Task2Record(record, session, audit, event, checkpoint = null) {
         || checkpoint.encounterState?.phase !== "crew-planning" || checkpoint.encounterState?.revision !== event.previousEncounterRevision
         || !validCheckpoint(checkpoint, session, session.events, session.checkpoints.indexOf(checkpoint))) return false;
       const matching = session.checkpoints.filter((entry) => entry?.kind === "before-plan-lock");
-      if (matching.length !== 1) return false;
+      if (matching.filter((entry) => entry.revision === record.resultRevision - 1).length !== 1) return false;
     } else if (checkpoint !== null) return false;
     return true;
   } catch { return false; }
@@ -2392,7 +3476,7 @@ function validTask3DomainEvent(event, session) {
 function task3PayloadValid(commandKind, payload) {
   if (!isPlainObject(payload)) return false;
   if (commandKind === "resolution-start") return exactKeys(payload, ["phaseStartSnapshotId"]) && nonBlank(payload.phaseStartSnapshotId) && !UNSAFE_KEYS.has(payload.phaseStartSnapshotId);
-  if (commandKind === "action-segment") return exactKeys(payload, ["executionResult"]) && isPlainObject(payload.executionResult);
+  if (commandKind === "action-segment") return exactKeys(payload, []) || (exactKeys(payload, ["executionResult"]) && isPlainObject(payload.executionResult));
   if (commandKind === "pending-checks-prepared") return exactKeys(payload, ["pendingCheckIds"]) && Array.isArray(payload.pendingCheckIds)
     && payload.pendingCheckIds.every((entry) => isPlainObject(entry) && exactKeys(entry, ["sequence", "pendingCheckId"]) && safeInteger(entry.sequence) && nonBlank(entry.pendingCheckId));
   return false;
@@ -2417,15 +3501,16 @@ function task3SourceBoundState(state) {
 
 function validM12Task3Record(record, session, audit, domainEvent, runtimeEvent) {
   try {
-    if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId) || record.projectionKind !== "gm"
+    if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId) || !["gm", "operator"].includes(record.projectionKind)
       || !TASK3_RECORD_COMMANDS.has(record.commandKind) || record.resultKind !== TASK3_RESULT_KINDS[record.commandKind] || !safeInteger(record.resultRevision)
       || record.resultRevision < 1 || record.resultRevision > session.revision || !isPlainObject(record.response)) return false;
     const parsed = parseStoredFingerprint(record.fingerprint); if (!parsed.ok) return false;
     const tuple = parsed.value;
-    if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== "gm" || !safeInteger(tuple[3]) || !safeInteger(tuple[4])
+    if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== record.projectionKind || !safeInteger(tuple[3]) || !safeInteger(tuple[4])
       || tuple[3] > session.authorityEpoch || tuple[5] !== record.commandKind || !task3PayloadValid(record.commandKind, tuple[6])
       || !validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) || record.response.status !== "station-resolution"
       || record.response.authorityEpoch !== tuple[3] || record.response.events.length !== 2 || !domainEvent || !runtimeEvent
+      || (record.commandKind !== "action-segment" && record.projectionKind !== "gm")
       || !validTask3DomainEvent(domainEvent, session) || !validM12RuntimeEvent(runtimeEvent, session) || runtimeEvent.type !== `voyage.m12-${record.commandKind === "pending-checks-prepared" ? "pending-checks-prepared" : record.commandKind}`
       || runtimeEvent.previousRevision !== record.resultRevision - 1 || runtimeEvent.revision !== record.resultRevision
       || !equal(record.response.events[0], domainEvent) || !equal(record.response.events[1], runtimeEvent)) return false;
@@ -2438,44 +3523,650 @@ function validM12Task3Record(record, session, audit, domainEvent, runtimeEvent) 
     return tuple[4] === record.resultRevision - 1;
   } catch { return false; }
 }
+function ownedPlanningOptions(session, authority) {
+  try {
+    const captured = capture(session);
+    if (!captured.ok || !isPlainObject(captured.value) || !isPlainObject(captured.value.encounterState)) return [];
+    const state = captured.value.encounterState;
+    const owned = new Set((authority?.ownedOperators ?? []).map((entry) => entry?.stationId).filter((entry) => nonBlank(entry)));
+    if (authority?.role !== "gm" && authority?.role !== "operator") return [];
+    const assignments = Array.isArray(state.stationAssignments) ? state.stationAssignments : [];
+    const selections = isPlainObject(state.selections) ? state.selections : {};
+    const riskBids = isPlainObject(state.riskBids) ? state.riskBids : {};
+    const editable = state.phase === "crew-planning" && session.sessionState === "crew-planning";
+    const stations = Array.isArray(state.availableStations) ? state.availableStations : [];
+    return assignments.filter((assignment) => owned.has(assignment?.stationId)).map((assignment) => {
+      const stationId = assignment.stationId;
+      const authored = stations.find((entry) => entry?.stationId === stationId);
+      const selection = isPlainObject(selections[stationId]) ? selections[stationId] : null;
+      const selectedBid = isPlainObject(riskBids[stationId]) ? riskBids[stationId] : null;
+      const actions = Array.isArray(authored?.actions) ? authored.actions : [];
+      const safeActions = actions.map((action) => {
+        const selected = selection?.actionId === action?.actionId;
+        const approaches = Array.isArray(action?.approaches) ? action.approaches : [];
+        const bids = Array.isArray(action?.riskBidOptions) ? action.riskBidOptions : [];
+        const presentation = isPlainObject(action?.riskBidPresentation) ? action.riskBidPresentation : {};
+        const safeApproaches = approaches.map((approach) => ({
+          approachId: approach?.approachId ?? null,
+          label: approach?.name ?? approach?.label ?? null,
+          description: approach?.description ?? null,
+          selected: selection?.approachId === approach?.approachId
+        }));
+        const safeBids = bids.filter((bid) => [2, 5, 8].includes(Number(bid?.dcAdjustment))).map((bid) => {
+          const details = isPlainObject(presentation[String(bid?.dcAdjustment)]) ? presentation[String(bid.dcAdjustment)] : null;
+          const outcome = isPlainObject(details?.outcome) ? details.outcome : {};
+          return {
+            riskBidId: bid?.riskBidId ?? null,
+            dcAdjustment: bid?.dcAdjustment ?? null,
+            label: details?.label ?? `+${bid?.dcAdjustment ?? ""} Risk Bid`,
+            intendedBenefit: details?.intendedBenefit ?? null,
+            target: details?.target ?? null,
+            outcome: {
+              criticalSuccess: outcome.criticalSuccess ?? null,
+              success: outcome.success ?? null,
+              failure: outcome.failure ?? null,
+              criticalFailure: outcome.criticalFailure ?? null
+            },
+            selected: selectedBid?.riskBidId === bid?.riskBidId
+          };
+        });
+        const targetRule = isPlainObject(action?.targetRule) ? action.targetRule : null;
+        const eligibleTargets = Array.isArray(action?.eligibleTargets) ? action.eligibleTargets : [];
+        return {
+          actionId: action?.actionId ?? null,
+          displayName: action?.name ?? action?.label ?? action?.actionId ?? null,
+          description: action?.description ?? null,
+          selected,
+          approaches: safeApproaches,
+          riskBidCapable: safeBids.length > 0,
+          riskBidOptions: safeBids,
+          targetRequired: Boolean(targetRule),
+          eligibleTargets: eligibleTargets.map((target) => ({ targetId: target?.targetId ?? target?.stationId ?? null, label: target?.label ?? target?.name ?? target?.stationId ?? null }))
+        };
+      });
+      return {
+        stationId,
+        selectedActionId: selection?.actionId ?? null,
+        selectedApproachId: selection?.approachId ?? null,
+        selectedRiskBidId: selectedBid?.riskBidId ?? null,
+        editable,
+        ready: Boolean(selection?.actionId && selection?.approachId),
+        actions: safeActions
+      };
+    });
+  } catch { return []; }
+}
+function multiplayerResolutionState(session) {
+  try {
+    const state = session?.encounterState;
+    const order = Array.isArray(state?.committedStationOrder) ? state.committedStationOrder.filter((entry) => nonBlank(entry)) : [];
+    const assignments = Array.isArray(state?.stationAssignments) ? state.stationAssignments : [];
+    const byStation = new Map(assignments.map((entry) => [entry?.stationId, entry?.operator ?? null]));
+    const pending = Array.isArray(state?.pendingChecks) ? state.pendingChecks : [];
+    const pendingByStation = new Map(pending.map((entry) => [entry?.stationId, entry]));
+    const started = session.sessionState === "station-resolution" && state?.phase === "resolution";
+    const unresolved = order.find((stationId) => pendingByStation.get(stationId)?.status !== "resolved");
+    const currentStationId = started ? (unresolved ?? (pending.length === 0 ? order[0] ?? null : null)) : null;
+    const currentIndex = currentStationId === null ? -1 : order.indexOf(currentStationId);
+    const stations = order.map((stationId, index) => {
+      const check = pendingByStation.get(stationId);
+      const status = check?.status === "resolved" ? "resolved" : stationId === currentStationId ? "current" : "waiting";
+      const operator = byStation.get(stationId);
+      return {
+        stationId,
+        orderPosition: index + 1,
+        status,
+        current: status === "current",
+        operator: operator ? { id: operator.id ?? null, uuid: operator.uuid ?? null, name: operator.name ?? null } : null
+      };
+    });
+    return {
+      resolutionStarted: started,
+      resolutionOrder: [...order],
+      resolutionCurrentStationId: currentStationId,
+      resolutionCurrentOperator: currentStationId === null ? null : stations.find((entry) => entry.stationId === currentStationId)?.operator ?? null,
+      resolutionOrderPosition: currentIndex < 0 ? null : currentIndex + 1,
+      resolutionTotalStations: order.length,
+      resolutionStations: stations,
+      resolutionComplete: started && stations.length > 0 && stations.every((entry) => entry.status === "resolved")
+    };
+  } catch {
+    return {
+      resolutionStarted: false,
+      resolutionOrder: [],
+      resolutionCurrentStationId: null,
+      resolutionCurrentOperator: null,
+      resolutionOrderPosition: null,
+      resolutionTotalStations: 0,
+      resolutionStations: [],
+      resolutionComplete: false
+    };
+  }
+}
+function multiplayerExecutionPresentation(session, authority, resolution) {
+  try {
+    const state = session.encounterState;
+    const currentStationId = resolution.resolutionCurrentStationId;
+    const pending = Array.isArray(state.pendingChecks)
+      ? state.pendingChecks.find((entry) => entry?.stationId === currentStationId && entry?.status === "pending" && !sliceIVoidedPendingCheck(session, entry.pendingCheckId))
+      : null;
+    const assignment = Array.isArray(state.stationAssignments)
+      ? state.stationAssignments.find((entry) => entry?.stationId === currentStationId)
+      : null;
+    const owned = authority.ownedOperators?.some((entry) => entry?.stationId === currentStationId) === true;
+    const windowOpen = state.metadata?.reactionWindow?.status === "open"
+      && state.metadata.reactionWindow.stationId === currentStationId;
+    const station = Array.isArray(state.availableStations)
+      ? state.availableStations.find((entry) => entry?.stationId === currentStationId)
+      : null;
+    const selection = isPlainObject(state.selections?.[currentStationId]) ? state.selections[currentStationId] : null;
+    const action = station?.actions?.find((entry) => entry?.actionId === selection?.actionId) ?? null;
+    const approach = action?.approaches?.find((entry) => entry?.approachId === selection?.approachId) ?? null;
+    const bid = isPlainObject(state.riskBids?.[currentStationId]) ? state.riskBids[currentStationId] : null;
+    const bidOption = action?.riskBidOptions?.find((entry) => entry?.riskBidId === bid?.riskBidId) ?? null;
+    const riskPresentation = bidOption && isPlainObject(action?.riskBidPresentation?.[String(bidOption.dcAdjustment)])
+      ? action.riskBidPresentation[String(bidOption.dcAdjustment)]
+      : null;
+    const canExecute = session.sessionState === "station-resolution"
+      && state.phase === "resolution"
+      && Boolean(currentStationId && pending && pending.status !== "resolved")
+      && !windowOpen
+      && (authority.role === "gm" || (authority.role === "operator" && owned));
+    let stateLabel = "not-started";
+    if (resolution.resolutionComplete) stateLabel = "complete";
+    else if (!resolution.resolutionStarted) stateLabel = "not-started";
+    else if (!currentStationId || !pending) stateLabel = "waiting";
+    else if (windowOpen) stateLabel = "waiting-reaction";
+    else if (authority.role === "operator" && !owned) stateLabel = "waiting-on-operator";
+    else if (canExecute) stateLabel = "available";
+    return {
+      canExecuteCurrentStation: canExecute,
+      currentStationOwnedByViewer: owned,
+      currentExecutionState: stateLabel,
+      currentExecution: {
+        stationId: currentStationId ?? null,
+        stationName: assignment?.stationId ?? currentStationId ?? null,
+        actionName: action?.name ?? action?.label ?? null,
+        approachName: approach?.name ?? approach?.label ?? null,
+        statisticLabel: selection?.statisticSlugOrAbilityId ?? approach?.statisticSlugOrAbilityId ?? null,
+        riskBidLabel: bidOption ? (riskPresentation?.label ?? bidOption.label ?? bidOption.riskBidId ?? null) : "NO BID",
+        waitingForReaction: windowOpen
+      }
+    };
+  } catch {
+    return {
+      canExecuteCurrentStation: false,
+      currentStationOwnedByViewer: false,
+      currentExecutionState: "unavailable",
+      currentExecution: { stationId: null, stationName: null, actionName: null, approachName: null, statisticLabel: null, riskBidLabel: null, waitingForReaction: false }
+    };
+  }
+}
+function reactionParticipantForAuthority(session, authority, reactionId) {
+  try {
+    const window = session?.encounterState?.metadata?.reactionWindow;
+    const opportunity = window?.opportunities?.find((entry) => entry?.reactionId === reactionId);
+    if (!opportunity || window.status !== "open" || window.resolved?.includes(reactionId)) return null;
+    if (authority?.role === "gm") return opportunity;
+    if (authority?.role !== "operator") return null;
+    return authority.ownedOperators?.some((entry) => entry.stationId === opportunity.stationId
+      && [entry.operatorId, entry.operatorUuid].includes(opportunity.operatorId)) ? opportunity : null;
+  } catch { return null; }
+}
+function multiplayerReactionPresentation(session, authority) {
+  const empty = {
+    hasPendingPlayerDecision: false, decisionPhase: null, decisionRequired: false, decisionStationId: null,
+    decisionStationName: null, decisionTargetStationId: null, decisionTargetStationName: null, decisionTitle: null,
+    decisionDescription: null, decisionNarration: null, decisionSourceOperatorName: null, decisionCost: null,
+    decisionStatisticLabel: null, decisionDc: null, decisionVisibility: null, decisionOutcomes: [], decisionOptions: [],
+    canUseFocus: false, canPassReaction: false, rollBlockedByDecision: false
+  };
+  try {
+    const state = session.encounterState;
+    const window = state.metadata?.reactionWindow;
+    if (!window || window.status !== "open" || !Array.isArray(window.opportunities)) return empty;
+    const pending = window.opportunities.find((entry) => !window.resolved?.includes(entry.reactionId));
+    if (!pending) return empty;
+    const eligible = reactionParticipantForAuthority(session, authority, pending.reactionId);
+    if (!eligible) return { ...empty, hasPendingPlayerDecision: true, decisionPhase: "waiting-reaction", decisionRequired: true, rollBlockedByDecision: true };
+    const ability = state.metadata?.focusAbilities?.find((entry) => entry.focusAbilityId === pending.focusAbilityId);
+    const assignment = state.stationAssignments?.find((entry) => entry.stationId === pending.stationId);
+    const targetAssignment = state.stationAssignments?.find((entry) => entry.stationId === pending.targetStationId);
+    const pool = state.metadata?.focusPools?.find((entry) => entry.stationId === pending.stationId && entry.operatorId === pending.operatorId);
+    if (!ability || !assignment || !pool) return { ...empty, hasPendingPlayerDecision: true, decisionPhase: "waiting-reaction", decisionRequired: true, rollBlockedByDecision: true };
+    const privateVisible = ability.visibility === "public" || ability.secrecy === "public";
+    const outcomes = privateVisible ? ["criticalSuccess", "success", "failure", "criticalFailure"].map((key) => ({ key, text: ability.outcomeNarration?.[key] ?? null })) : [];
+    const options = [{ reactionId: pending.reactionId, kind: "focus-reaction-use", label: "USE FOCUS" }];
+    options.push({ reactionId: pending.reactionId, kind: "focus-reaction-pass", label: "PASS" });
+    return {
+      hasPendingPlayerDecision: true, decisionPhase: "before-roll", decisionRequired: true,
+      decisionStationId: pending.stationId, decisionStationName: assignment.stationId,
+      decisionTargetStationId: pending.targetStationId, decisionTargetStationName: targetAssignment?.stationId ?? pending.targetStationId,
+      decisionTitle: ability.name, decisionDescription: ability.description, decisionNarration: ability.narration,
+      decisionSourceOperatorName: assignment.operator?.name ?? pending.operatorId, decisionCost: ability.cost,
+      decisionStatisticLabel: ability.statisticSlugOrAbilityId, decisionDc: privateVisible ? ability.dc : null,
+      decisionVisibility: ability.visibility ?? ability.secrecy, decisionOutcomes: outcomes, decisionOptions: options,
+      canUseFocus: pool.current >= ability.cost, canPassReaction: true, rollBlockedByDecision: true
+    };
+  } catch { return empty; }
+}
+function buildMultiplayerProjection(session, authority) {
+  const common = buildSessionProjection(session, authority.role);
+  if (!common || !authority || !["gm", "operator", "crew", "observer"].includes(authority.role)) return null;
+  const encounter = session.encounterState;
+  const assignedOrder = Array.isArray(encounter.stationAssignments) ? encounter.stationAssignments.map((entry) => entry?.stationId).filter((entry) => nonBlank(entry)) : [];
+  const proposedOrder = Array.isArray(encounter.proposedStationOrder) ? encounter.proposedStationOrder : [];
+  const committedOrder = Array.isArray(encounter.committedStationOrder) ? encounter.committedStationOrder : [];
+  const sharedStationOrder = committedOrder.length > 0 ? [...committedOrder] : proposedOrder.length > 0 ? [...proposedOrder] : [...assignedOrder];
+  let planReady = false;
+  try { planReady = session.sessionState === "crew-planning" && prepareVoyageEncounterCrewPlanningReadiness(encounter).readyToLock === true; } catch { planReady = false; }
+  const planLocked = PLAN_LOCKED_SESSION_STATES.has(session.sessionState);
+  const resolution = multiplayerResolutionState(session);
+  const execution = multiplayerExecutionPresentation(session, authority, resolution);
+  const reaction = multiplayerReactionPresentation(session, authority);
+  const projection = {
+    ...common,
+    projectionRole: authority.role,
+    ownedOperators: authority.ownedOperators,
+    readOnlyStationIds: authority.readOnlyStationIds,
+    ownedPlanningOptions: ownedPlanningOptions(session, authority),
+    sharedStationOrder,
+    planReady,
+    planLocked,
+    canMutateSharedOrder: authority.role === "operator" && session.sessionState === "crew-planning" && encounter.phase === "crew-planning",
+    currentActingStationId: resolution.resolutionCurrentStationId,
+    ...resolution,
+    ...execution,
+    ...reaction
+  };
+  const isolated = capture(projection);
+  return isolated.ok && exactKeys(isolated.value, MULTIPLAYER_PROJECTION_FIELDS) ? isolated.value : null;
+}
+
+function createResolvedRiskBidEffects(prior, candidate, commandValue) {
+  try {
+    if (commandValue.commandKind !== "action-segment") return [];
+    const resultSlug = commandValue.payload?.executionResult?.result?.degreeOfSuccessSlug;
+    if (!["success", "critical-success"].includes(resultSlug)) return [];
+    const pendingId = commandValue.payload.executionResult.pendingCheckId;
+    const sourceCheck = prior.encounterState.pendingChecks.find((check) => check.pendingCheckId === pendingId);
+    if (!sourceCheck) return [];
+    const selection = prior.encounterState.selections?.[sourceCheck.stationId];
+    const bid = prior.encounterState.riskBids?.[sourceCheck.stationId];
+    if (!selection?.actionId || !bid?.riskBidId) return [];
+    const station = prior.encounterState.availableStations?.find((entry) => entry.stationId === sourceCheck.stationId);
+    const action = station?.actions?.find((entry) => entry.actionId === selection.actionId);
+    const presentation = action?.riskBidPresentation?.[String(bid.dcAdjustment)];
+    const authored = presentation?.mechanicalEffect;
+    if (!authored || !Array.isArray(authored.effects)) return [];
+    const order = prior.encounterState.committedStationOrder ?? [];
+    const sourceIndex = order.indexOf(sourceCheck.stationId);
+    const effects = authored.effects.filter((effect) => nonBlank(effect?.targetStationIds?.[0])
+      && prior.encounterState.pendingChecks.some((check) => check.stationId === effect.targetStationIds[0]));
+    return effects.map((effect, index) => {
+      const targetStationId = effect.targetStationIds?.[0];
+      const targetCheck = prior.encounterState.pendingChecks.find((check) => check.stationId === targetStationId);
+      const targetIndex = order.indexOf(targetStationId);
+      const validTarget = nonBlank(targetStationId) && targetCheck && sourceIndex >= 0 && targetIndex > sourceIndex;
+      return {
+        effectId: `arcflight-risk-bid-effect:${JSON.stringify([candidate.sessionId, candidate.revision, bid.riskBidId, targetStationId, index])}`,
+        sourceStationId: sourceCheck.stationId,
+        sourceActionId: selection.actionId,
+        riskBidId: bid.riskBidId,
+        sourceRevision: candidate.revision,
+        sourceEncounterRevision: candidate.encounterState.revision,
+        sourceResult: resultSlug,
+        targetStationId,
+        targetPendingCheckId: targetCheck.pendingCheckId,
+        effectKind: effect.effectKind,
+        effectValue: effect.value,
+        activationTiming: effect.activationTiming,
+        consumptionTiming: effect.consumptionTiming,
+        roundNumber: candidate.encounterState.roundNumber,
+        requiresSourceBeforeTarget: effect.requiresSourceBeforeTarget === true,
+        status: validTarget ? "active" : "blocked",
+        consumedAtRevision: null
+      };
+    });
+  } catch { return []; }
+}
 
 async function dispatchTask3Command(value, identities, initialAuth, initialMatch, context) {
-  const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth);
+  const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth, context);
   if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
   return runExclusiveSessionMutation(context, descriptor, async (trustedWitness) => withTransferLock(value.sessionId, async () => {
-    const auth = authority(context, { requireConnection: true });
-    if (auth.error || auth.authenticatedUserId !== descriptor.authenticatedUserId || auth.authenticatedConnectionId !== descriptor.connectionId || auth.activeGmUserId !== descriptor.activeGmUserId) return failure([auth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
+    const auth = context?.__trustedResolutionOperator === true
+      ? authenticatedContext(context)
+      : authority(context, { requireConnection: true });
+    if (auth.error || !coordinatorIdentityMatches(auth, descriptor, context)) return failure([auth.error ?? diagnostic("m11-active-gm-required", "transport.connection")], identities);
     const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
     if (resolved.match.documentId !== descriptor.sessionDocumentId || !pristineSession(resolved.match.session, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
     const prior = resolved.match.session;
-    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
-    const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, "gm", fp, identities); if (replay) return replay;
+    const projectionKind = deriveProjectionKind(auth, prior, context);
+    if (context?.__trustedResolutionOperator === true && projectionKind !== "operator") return failure([diagnostic("m11-projection-not-authorized", "transport.user")], identities);
+    const takeover = prior.encounterState?.metadata?.recoveryControl;
+    if (context?.__trustedResolutionOperator === true && takeover?.kind === "operator-takeover" && takeover.stationId === prior.encounterState?.committedStationOrder?.find((stationId) => prior.encounterState.pendingChecks?.some((check) => check.stationId === stationId && check.status === "pending"))) return failure([diagnostic("m11-projection-not-authorized", "transport.user")], identities);
+    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
+    const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, projectionKind, fp, identities); if (replay) return replay;
     if (prior.activeGmUserId !== auth.activeGmUserId || value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
     if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
     if (value.commandKind === "resolution-start" && context?.__trustedResolutionStart !== true) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    if (ownData(context, "focusAbilities").ok && !focusMetadata(prior.encounterState, context)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
     let applied;
+    let executionResult = value.payload.executionResult;
+    if (value.commandKind === "action-segment" && context?.__executePendingCheck === true) {
+      const state = prior.encounterState;
+      const currentStationId = state.committedStationOrder?.find((stationId) => state.pendingChecks?.some((check) => check.stationId === stationId && check.status === "pending"));
+      const pending = state.pendingChecks?.find((check) => check.stationId === currentStationId && check.status === "pending" && !sliceIVoidedPendingCheck(prior, check.pendingCheckId));
+      const owned = projectionKind === "operator" && deriveProjectionAuthority(auth, prior, context).ownedOperators.some((entry) => entry.stationId === currentStationId);
+      if (!pending || (projectionKind === "operator" && !owned) || state.metadata?.reactionWindow?.status === "open") return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
+      const executor = m10Function(context, "executeVoyagePf2ePendingCheck", null);
+      if (typeof executor !== "function") return failure([diagnostic("m11-command-not-allowed", "transport")], identities);
+      const focusModifier = focusModifierForCheck(state, pending.pendingCheckId, pending.stationId);
+      const riskModifier = riskBidModifierForCheck(state, pending.pendingCheckId, pending.stationId);
+      const activeRiskEffects = activeRiskBidEffectsForCheck(state, pending.pendingCheckId, pending.stationId);
+      const effectiveArcflightModifier = Math.max(-5, Math.min(5, (pending.momentumRollBonus ?? 0) + focusModifier + riskModifier));
+      const executionInput = capture(pending).value;
+      const cappedFocusModifier = effectiveArcflightModifier - (pending.momentumRollBonus ?? 0);
+      if (cappedFocusModifier !== 0) executionInput.focusModifier = cappedFocusModifier;
+      let rawExecution = null;
+      try { rawExecution = await executor(executionInput); } catch { rawExecution = null; }
+      const isolatedExecution = capture(rawExecution);
+      if (!isolatedExecution.ok || !isPlainObject(isolatedExecution.value) || isolatedExecution.value.ok !== true) return failure([diagnostic("m11-command-payload-invalid", "executionResult")], identities);
+      executionResult = applyRiskBidDegreeShift(isolatedExecution.value, activeRiskEffects);
+    }
     if (value.commandKind === "resolution-start") {
       if (prior.sessionState !== "plan-locked" || prior.encounterState.phase !== "lock-readiness") return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
       const bound = task3SourceBoundState(prior.encounterState); if (!bound) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
       applied = applyVoyageEncounterResolutionTransition(bound, value.payload);
     } else {
       if (prior.sessionState !== "station-resolution" || prior.encounterState.phase !== "resolution") return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
-      applied = applyVoyageEncounterPendingCheckResult(prior.encounterState, value.payload.executionResult);
+      applied = applyVoyageEncounterPendingCheckResult(prior.encounterState, executionResult);
     }
     if (!applied?.ok || !applied.nextState || !Array.isArray(applied.events) || applied.events.length !== 1 || !trustedWitness?.occurredAt) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
     const captured = capture(prior); if (!captured.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
     const candidate = captured.value; candidate.encounterState = capture(applied.nextState).value; candidate.revision = prior.revision + 1;
+    if (value.commandKind === "action-segment") {
+      const priorEffects = Array.isArray(prior.encounterState.metadata?.riskBidEffects)
+        ? prior.encounterState.metadata.riskBidEffects.map((effect) => ({ ...effect }))
+        : [];
+      const consumed = priorEffects.map((effect) => effect.status === "active"
+        && effect.targetPendingCheckId === executionResult?.pendingCheckId
+        ? { ...effect, status: "consumed", consumedAtRevision: candidate.revision }
+        : effect);
+      const effectCommand = executionResult === value.payload.executionResult ? value : { ...value, payload: { executionResult } };
+      candidate.encounterState.metadata.riskBidEffects = [...consumed, ...createResolvedRiskBidEffects(prior, candidate, effectCommand)];
+    }
+    if (value.commandKind === "action-segment") prepareFocusWindowForNextPending(candidate.encounterState, context);
+    if (value.commandKind === "resolution-start") {
+      const focus = focusMetadata(candidate.encounterState, context);
+      if (ownData(context, "focusAbilities").ok && !focus) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+      if (focus) {
+        candidate.encounterState.metadata.focusPools = focus.pools;
+        candidate.encounterState.metadata.focusAbilities = focus.abilities;
+        candidate.encounterState.metadata.reactionWindow = null;
+        candidate.encounterState.metadata.focusEffects = [];
+      }
+      candidate.encounterState.metadata.riskBidEffects = [];
+    }
     candidate.sessionState = "station-resolution";
     const domainEvent = capture(applied.events[0]); if (!domainEvent.ok || !validTask3DomainEvent(domainEvent.value, candidate)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
     const runtimeEvent = { type: `voyage.m12-${value.commandKind}`, sessionId: candidate.sessionId, eventId: candidate.eventId, definitionSnapshotId: candidate.definitionSnapshotId, shipId: candidate.shipId, transitionKind: value.commandKind, previousSessionState: prior.sessionState, nextSessionState: candidate.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, previousRevision: prior.revision, revision: candidate.revision };
     candidate.events.push(domainEvent.value, runtimeEvent);
     candidate.auditHistory.push({ auditId: auditId(candidate.sessionId, candidate.auditHistory.length, TASK3_AUDIT_KINDS[value.commandKind]), kind: TASK3_AUDIT_KINDS[value.commandKind], sessionId: candidate.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision: prior.revision, revision: candidate.revision, occurredAt: trustedWitness.occurredAt, details: { transitionKind: value.commandKind, previousSessionState: prior.sessionState, nextSessionState: candidate.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, eventCount: candidate.events.length } });
     const response = successWithEvents(candidate, value.requestId, [domainEvent.value, runtimeEvent]);
-    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fp, commandKind: value.commandKind, resultKind: TASK3_RESULT_KINDS[value.commandKind], resultRevision: candidate.revision, response });
+    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind, fingerprint: fp, commandKind: value.commandKind, resultKind: TASK3_RESULT_KINDS[value.commandKind], resultRevision: candidate.revision, response });
     if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
     const acceptedReread = (reread) => task3RereadMatches(reread, candidate, descriptor.sessionDocumentId, value.requestId, value.commandKind, context);
     try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response, acceptedReread }); }
     return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response, acceptedReread });
+  }), identities, { nonWinnerCode: "m11-control-transfer-required", nonWinnerPath: "authorityEpoch" });
+}
+
+function focusPayloadValid(payload) { return isPlainObject(payload) && exactKeys(payload, ["reactionId"]) && nonBlank(payload.reactionId); }
+function focusParticipantAuthorized(auth, session, reactionId, context) {
+  try {
+    if (auth.user?.isGM === true && auth.authenticatedUserId === auth.activeGmUserId) return true;
+    const authorityDecision = deriveProjectionAuthority(auth, session, context);
+    return reactionParticipantForAuthority(session, authorityDecision, reactionId) !== null;
+  } catch { return false; }
+}
+function validPendingFocusCheck(check, session) {
+  try {
+    return isPlainObject(check) && exactKeys(check, ["pendingCheckId", "targetPendingCheckId", "sequence", "status", "mode", "source", "approachId", "statisticSlugOrAbilityId", "finalDc", "momentumRollBonus", "secrecy", "reactionId", "focusAbilityId", "sourceStationId", "targetStationId", "executionStatus", "executionReceipt"])
+      && nonBlank(check.pendingCheckId) && safeInteger(check.sequence) && check.status === "pending" && check.mode === "check"
+      && isPlainObject(check.source) && exactKeys(check.source, ["kind", "uuid"]) && check.source.kind === "character" && nonBlank(check.source.uuid)
+      && nonBlank(check.targetPendingCheckId) && nonBlank(check.approachId) && nonBlank(check.statisticSlugOrAbilityId) && safeInteger(check.finalDc) && safeInteger(check.momentumRollBonus)
+      && ["public", "secret"].includes(check.secrecy) && nonBlank(check.reactionId) && nonBlank(check.focusAbilityId) && nonBlank(check.sourceStationId) && nonBlank(check.targetStationId)
+      && ["executing", "captured"].includes(check.executionStatus)
+      && (check.executionReceipt === null || (check.executionReceipt && validDurableFocusReceipt(check.executionReceipt, check)))
+      && session.encounterState.pendingChecks.some((entry) => entry.pendingCheckId === check.targetPendingCheckId);
+  } catch { return false; }
+}
+function validFocusPendingRecord(record, session, audit, event) {
+  try {
+    if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || record.commandKind !== FOCUS_PENDING_COMMAND_KIND || record.resultKind !== FOCUS_PENDING_RESULT_KIND
+      || !["gm", "operator"].includes(record.projectionKind) || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision
+      || !isPlainObject(record.response) || !audit || audit.kind !== FOCUS_PENDING_AUDIT_KIND || !event || event.type !== "voyage.m12-focus-reaction-committed") return false;
+    const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[0] !== session.sessionId || tuple.value[1] !== record.principalUserId || tuple.value[2] !== record.projectionKind
+      || !safeInteger(tuple.value[3]) || !safeInteger(tuple.value[4]) || tuple.value[4] + 1 !== record.resultRevision || tuple.value[5] !== FOCUS_PENDING_COMMAND_KIND || !focusPayloadValid(tuple.value[6])) return false;
+    const pending = session.encounterState.metadata?.focusPendingCheck;
+    const reactionId = tuple.value[6].reactionId;
+    const pendingMatches = pending?.reactionId === reactionId;
+    const completed = Array.isArray(session.encounterState.metadata?.focusResults)
+      && session.encounterState.metadata.focusResults.some((entry) => entry?.reactionId === reactionId)
+      && Array.isArray(session.encounterState.metadata?.focusEffects)
+      && session.encounterState.metadata.focusEffects.some((entry) => entry?.reactionId === reactionId);
+    const passed = session.processedRequests.some((candidate) => {
+      if (candidate?.commandKind !== "focus-reaction-pass" || candidate.resultRevision <= record.resultRevision) return false;
+      const candidateFingerprint = parseStoredFingerprint(candidate.fingerprint);
+      return candidateFingerprint.ok && candidateFingerprint.value[6]?.reactionId === reactionId
+        && session.events.some((entry) => entry?.type === "voyage.m12-focus-reaction-pass"
+          && entry.revision === candidate.resultRevision && entry.previousRevision === candidate.resultRevision - 1);
+    });
+    const pendingEvidenceValid = pending
+      ? (pendingMatches ? validPendingFocusCheck(pending, session) : completed || passed)
+      : completed || passed;
+    const ok = pendingEvidenceValid
+      && validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && record.response.status === "station-resolution" && record.response.events.length === 1 && equal(record.response.events[0], event)
+      && validM12RuntimeEvent(event, session) && exactKeys(audit, AUDIT_FIELDS) && audit.auditId === auditId(session.sessionId, session.auditHistory.indexOf(audit), audit.kind)
+      && audit.sessionId === session.sessionId && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId && audit.authorityEpoch === tuple.value[3]
+      && audit.previousRevision === record.resultRevision - 1 && audit.revision === record.resultRevision && validIsoTimestamp(audit.occurredAt)
+      && exactKeys(audit.details, M12_AUDIT_DETAILS_FIELDS) && audit.details.transitionKind === FOCUS_PENDING_COMMAND_KIND;
+    if (!ok) return false;
+    return true;
+  } catch { return false; }
+}
+function validFocusRecord(record, session, audit, event) {
+  try {
+    if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !["gm", "operator"].includes(record.projectionKind) || !FOCUS_COMMANDS.has(record.commandKind)
+      || record.resultKind !== FOCUS_RESULT_KINDS[record.commandKind] || !safeInteger(record.resultRevision) || record.resultRevision < 1 || record.resultRevision > session.revision
+      || !isPlainObject(record.response) || !audit || audit.kind !== FOCUS_AUDIT_KINDS[record.commandKind] || !event || event.type !== `voyage.m12-${record.commandKind}`) return false;
+    const tuple = parseStoredFingerprint(record.fingerprint); if (!tuple.ok || tuple.value[0] !== session.sessionId || tuple.value[1] !== record.principalUserId || tuple.value[2] !== record.projectionKind || !safeInteger(tuple.value[3]) || !safeInteger(tuple.value[4]) || ![tuple.value[4] + 1, tuple.value[4] + 2].includes(record.resultRevision) || tuple.value[5] !== record.commandKind || !focusPayloadValid(tuple.value[6])) return false;
+    let focusEvidenceValid = true;
+    if (record.commandKind === "focus-reaction-use") {
+      const stored = session.encounterState.metadata?.focusResults?.find((entry) => entry.reactionId === tuple.value[6].reactionId);
+      const effect = session.encounterState.metadata?.focusEffects?.find((entry) => entry.reactionId === tuple.value[6].reactionId);
+      const binding = stored ? focusEvidenceBinding(stored, session.encounterState) : null;
+      const effectBinding = effect ? focusEvidenceBinding(effect, session.encounterState) : null;
+      focusEvidenceValid = Boolean(stored && effect && binding && effectBinding && equal(binding, effectBinding) && validStoredFocusResult(stored.result, binding, binding.ability) && validStoredFocusResult(effect.result, effectBinding, binding.ability) && effect.modifier === stored.modifier && stored.modifier === focusOutcomeModifier(binding.ability, stored.result.normalizedDegree));
+    }
+    const ok = focusEvidenceValid && validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && record.response.status === "station-resolution" && record.response.authorityEpoch === tuple.value[3]
+      && record.response.events.length === 1 && equal(record.response.events[0], event) && validM12RuntimeEvent(event, session)
+      && exactKeys(audit, AUDIT_FIELDS) && audit.auditId === auditId(session.sessionId, session.auditHistory.indexOf(audit), audit.kind) && audit.sessionId === session.sessionId && audit.requestId === record.requestId && audit.actorUserId === record.principalUserId
+      && audit.kind === FOCUS_AUDIT_KINDS[record.commandKind] && audit.revision === record.resultRevision && audit.previousRevision === record.resultRevision - 1 && safeInteger(audit.authorityEpoch) && audit.authorityEpoch === tuple.value[3] && validIsoTimestamp(audit.occurredAt)
+      && exactKeys(audit.details, M12_AUDIT_DETAILS_FIELDS) && audit.details.transitionKind === record.commandKind && audit.details.previousSessionState === event.previousSessionState && audit.details.nextSessionState === event.nextSessionState
+      && audit.details.previousEncounterRevision === event.previousEncounterRevision && audit.details.encounterRevision === event.encounterRevision && audit.details.eventCount === session.events.indexOf(event) + 1;
+    return ok;
+  } catch { return false; }
+}
+
+async function persistDurableFocusReceipt(document, value, descriptor, prior, pending, focusResult, normalizedDegree, context, identities) {
+  try {
+    const candidate = capture(prior).value;
+    candidate.encounterState.metadata.focusPendingCheck.executionStatus = "captured";
+    candidate.encounterState.metadata.focusPendingCheck.executionReceipt = { ...capture(focusResult).value, normalizedDegree };
+    if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+    try { await document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { /* reread below classifies persisted-then-thrown safely */ }
+    const reread = resolveSessionDocument(value.sessionId, context);
+    if (!reread.error && reread.match.documentId === descriptor.sessionDocumentId && pristineSession(reread.match.session, descriptor.sessionDocumentId, { replayContext: context })) {
+      const stored = reread.match.session.encounterState.metadata?.focusPendingCheck;
+      if (stored?.executionStatus === "captured" && validDurableFocusReceipt(stored.executionReceipt, stored)) return { ok: true, session: reread.match.session };
+      if (equal(reread.match.session, prior)) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+    }
+    return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+  } catch { return failure([diagnostic("m11-recovery-required", "recovery")], identities); }
+}
+
+async function completePersistedFocusUse(value, identities, descriptor, auth, pendingSession, context, trustedWitness, { allowExecution = false, projectionKind = "gm" } = {}) {
+  try {
+    let pending = pendingSession.encounterState.metadata?.focusPendingCheck;
+    const focus = focusMetadata(pendingSession.encounterState, context);
+    const ability = focus?.abilities.find((entry) => entry.focusAbilityId === pending?.focusAbilityId);
+    if (!pending || !ability || !trustedWitness?.occurredAt) return failure([diagnostic("m11-command-payload-invalid", "focusResult")], identities);
+    const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
+    const executor = m10Function(context, "executeVoyagePf2eFocusCheck", m10Function(context, "executeVoyagePf2ePendingCheck", null));
+    if (typeof executor !== "function") return failure([diagnostic("m11-command-not-allowed", "transport")], identities);
+    let focusResult = pending.executionStatus === "captured" && pending.executionReceipt
+      ? capture(pending.executionReceipt).value
+      : null;
+    if (!focusResult && allowExecution && pending.executionStatus === "executing") {
+      try { focusResult = await executor(capture(pending).value); } catch { focusResult = null; }
+    }
+    if (!focusResult && pending.executionStatus === "executing" && !allowExecution) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+    if (!validFocusResult(focusResult, pending)) return failure([diagnostic("m11-command-payload-invalid", "focusResult")], identities);
+    const rawDegree = focusResult.result?.degreeOfSuccessSlug ?? focusResult.result?.degreeOfSuccess;
+    const degree = normalizeFocusDegree(rawDegree);
+    const modifier = focusOutcomeModifier(ability, degree); if (modifier === null) return failure([diagnostic("m11-command-payload-invalid", "focusResult")], identities);
+    let prior = resolved.match.session;
+    if (resolved.match.documentId !== descriptor.sessionDocumentId || !pristineSession(prior, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+    const currentPending = prior.encounterState.metadata?.focusPendingCheck;
+    if (!currentPending || !equal(currentPending, pending)) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+    if (pending.executionStatus === "captured" && !validDurableFocusReceipt(focusResult, pending)) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+    if (pending.executionStatus !== "captured") {
+      const receiptPersisted = await persistDurableFocusReceipt(resolved.match.document, value, descriptor, prior, pending, focusResult, degree, context, identities);
+      if (!receiptPersisted?.ok) return receiptPersisted;
+      prior = receiptPersisted.session;
+      pending = prior.encounterState.metadata?.focusPendingCheck;
+    }
+    const candidate = capture(prior).value;
+    const metadata = candidate.encounterState.metadata;
+    metadata.focusPendingCheck = null;
+    const window = metadata.reactionWindow;
+    const resolvedIds = [...(window?.resolved ?? []), pending.reactionId];
+    const remaining = window?.opportunities?.some((entry) => !resolvedIds.includes(entry.reactionId)) ?? false;
+    metadata.reactionWindow = window ? { ...window, status: remaining ? "open" : "closed", resolved: resolvedIds, committed: (window.committed ?? []).filter((id) => id !== pending.reactionId), result: { reactionId: pending.reactionId, focusAbilityId: pending.focusAbilityId, stationId: pending.sourceStationId, targetStationId: pending.targetStationId, targetPendingCheckId: pending.targetPendingCheckId, modifier, result: capture(focusResult).value } } : null;
+    metadata.focusResults = Array.isArray(metadata.focusResults) ? metadata.focusResults : [];
+    metadata.focusResults.push({ reactionId: pending.reactionId, pendingCheckId: pending.pendingCheckId, targetPendingCheckId: pending.targetPendingCheckId, focusAbilityId: pending.focusAbilityId, sourceStationId: pending.sourceStationId, sourceOperatorId: pending.source.uuid, targetStationId: pending.targetStationId, modifier, result: { ...capture(focusResult).value, normalizedDegree: degree } });
+    metadata.focusEffects = Array.isArray(metadata.focusEffects) ? metadata.focusEffects : [];
+    metadata.focusEffects.push({ reactionId: pending.reactionId, pendingCheckId: pending.pendingCheckId, focusAbilityId: pending.focusAbilityId, sourceStationId: pending.sourceStationId, sourceOperatorId: pending.source.uuid, targetStationId: pending.targetStationId, targetPendingCheckId: pending.targetPendingCheckId, modifier, result: { ...capture(focusResult).value, normalizedDegree: degree } });
+    candidate.revision = prior.revision + 1; candidate.encounterState.revision = prior.encounterState.revision + 1;
+    const runtimeEvent = { type: "voyage.m12-focus-reaction-use", sessionId: candidate.sessionId, eventId: candidate.eventId, definitionSnapshotId: candidate.definitionSnapshotId, shipId: candidate.shipId, transitionKind: "focus-reaction-use", previousSessionState: prior.sessionState, nextSessionState: prior.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, previousRevision: prior.revision, revision: candidate.revision };
+    candidate.events.push(runtimeEvent);
+    const audit = { auditId: auditId(candidate.sessionId, candidate.auditHistory.length, FOCUS_AUDIT_KINDS["focus-reaction-use"]), kind: FOCUS_AUDIT_KINDS["focus-reaction-use"], sessionId: candidate.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision: prior.revision, revision: candidate.revision, occurredAt: trustedWitness.occurredAt, details: { transitionKind: "focus-reaction-use", previousSessionState: prior.sessionState, nextSessionState: prior.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, eventCount: candidate.events.length } };
+    candidate.auditHistory.push(audit);
+    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
+    const response = successWithEvents(candidate, value.requestId, [runtimeEvent]);
+    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind, fingerprint: fp, commandKind: value.commandKind, resultKind: FOCUS_RESULT_KINDS[value.commandKind], resultRevision: candidate.revision, response });
+    if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+    try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch {
+      return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response });
+    }
+    return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response });
+  } catch { return failure([diagnostic("m11-command-payload-invalid", "focusResult")], identities); }
+}
+
+async function dispatchFocusReactionCommand(value, identities, initialAuth, initialMatch, context) {
+  const descriptor = coordinatorDescriptor(value, initialMatch.documentId, initialAuth, context);
+  if (!descriptor) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+  return runExclusiveSessionMutation(context, descriptor, async (trustedWitness) => withTransferLock(value.sessionId, async () => {
+    const auth = authenticatedContext(context);
+    if (auth.error || !coordinatorIdentityMatches(auth, descriptor, context)) return failure([auth.error ?? diagnostic("m11-authentication-required", "transport.user")], identities);
+    const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
+    const prior = resolved.match.session;
+    if (resolved.match.documentId !== descriptor.sessionDocumentId || !pristineSession(prior, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+    const isGm = auth.user?.isGM === true && auth.authenticatedUserId === auth.activeGmUserId;
+    const projectionKind = isGm ? "gm" : deriveProjectionKind(auth, prior, context);
+    if (!isGm && (projectionKind !== "operator" || !focusParticipantAuthorized(auth, prior, value.payload.reactionId, context))) return failure([diagnostic("m11-projection-not-authorized", "request.payload.reactionId")], identities);
+    const fp = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, value.commandKind, value.payload);
+    const replay = replayOrConflict(prior.processedRequests, value.requestId, auth.authenticatedUserId, projectionKind, fp, identities); if (replay) return replay;
+    const existingPending = prior.encounterState.metadata?.focusPendingCheck;
+    if (value.commandKind === "focus-reaction-use" && existingPending?.reactionId === value.payload.reactionId) {
+      if (value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+      if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+      return completePersistedFocusUse(value, identities, descriptor, auth, prior, context, trustedWitness, { projectionKind });
+    }
+    if (prior.sessionState !== "station-resolution" || prior.encounterState.phase !== "resolution" || value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
+    if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+    const window = prior.encounterState.metadata?.reactionWindow;
+    if (!isPlainObject(window) || window.status !== "open" || !Array.isArray(window.opportunities)) return failure([diagnostic("m11-command-not-allowed", "reactionWindow")], identities);
+    const opportunity = window.opportunities.find((entry) => entry.reactionId === value.payload.reactionId);
+    if (!opportunity || window.resolved?.includes(opportunity.reactionId)) return failure([diagnostic("m11-command-not-allowed", "request.payload.reactionId")], identities);
+    const focus = focusMetadata(prior.encounterState, context); const pool = focus?.pools.find((entry) => entry.stationId === opportunity.stationId && entry.operatorId === opportunity.operatorId);
+    if (!focus || !pool || (value.commandKind === "focus-reaction-use" && pool.current < 1)) return failure([diagnostic("m11-command-not-allowed", "reactionWindow")], identities);
+    if (value.commandKind === "focus-reaction-use") {
+      const ability = focus.abilities.find((entry) => entry.focusAbilityId === opportunity.focusAbilityId);
+      if (!ability || !trustedWitness?.occurredAt || opportunity.targetPendingCheckId === null) return failure([diagnostic("m11-command-payload-invalid", "reactionWindow")], identities);
+      const targetPending = prior.encounterState.pendingChecks.find((entry) => entry.pendingCheckId === opportunity.targetPendingCheckId && entry.status === "pending");
+      if (!targetPending) return failure([diagnostic("m11-command-not-allowed", "reactionWindow")], identities);
+      const candidate = capture(prior).value, metadata = candidate.encounterState.metadata;
+      metadata.focusPools = metadata.focusPools.map((entry) => entry.stationId === pool.stationId && entry.operatorId === pool.operatorId ? { ...entry, current: entry.current - 1 } : entry);
+      metadata.focusPendingCheck = { pendingCheckId: `arcflight-focus-check:${JSON.stringify([value.sessionId, prior.revision + 1, opportunity.reactionId])}`, targetPendingCheckId: targetPending.pendingCheckId, sequence: 0, status: "pending", mode: "check", source: { kind: "character", uuid: opportunity.operatorId }, approachId: ability.focusAbilityId, statisticSlugOrAbilityId: ability.statisticSlugOrAbilityId, finalDc: ability.dc, momentumRollBonus: prior.encounterState.momentum, secrecy: ability.secrecy, reactionId: opportunity.reactionId, focusAbilityId: ability.focusAbilityId, sourceStationId: opportunity.stationId, targetStationId: opportunity.targetStationId, executionStatus: "executing", executionReceipt: null };
+      metadata.reactionWindow = { ...window, status: "open", committed: [...(window.committed ?? []), opportunity.reactionId] };
+      candidate.revision = prior.revision + 1; candidate.encounterState.revision = prior.encounterState.revision + 1;
+      const pendingEvent = { type: "voyage.m12-focus-reaction-committed", sessionId: candidate.sessionId, eventId: candidate.eventId, definitionSnapshotId: candidate.definitionSnapshotId, shipId: candidate.shipId, transitionKind: "focus-reaction-committed", previousSessionState: prior.sessionState, nextSessionState: prior.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, previousRevision: prior.revision, revision: candidate.revision };
+      candidate.events.push(pendingEvent);
+      candidate.auditHistory.push({ auditId: auditId(candidate.sessionId, candidate.auditHistory.length, FOCUS_PENDING_AUDIT_KIND), kind: FOCUS_PENDING_AUDIT_KIND, sessionId: candidate.sessionId, requestId: `${value.requestId}:pending`, actorUserId: auth.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision: prior.revision, revision: candidate.revision, occurredAt: trustedWitness.occurredAt, details: { transitionKind: FOCUS_PENDING_COMMAND_KIND, previousSessionState: prior.sessionState, nextSessionState: prior.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, eventCount: candidate.events.length } });
+      const pendingRequestId = `${value.requestId}:pending`;
+      const pendingFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, FOCUS_PENDING_COMMAND_KIND, { reactionId: value.payload.reactionId });
+      const pendingResponse = successWithEvents(candidate, pendingRequestId, [pendingEvent]);
+      candidate.processedRequests.push({ requestId: pendingRequestId, principalUserId: auth.authenticatedUserId, projectionKind, fingerprint: pendingFingerprint, commandKind: FOCUS_PENDING_COMMAND_KIND, resultKind: FOCUS_PENDING_RESULT_KIND, resultRevision: candidate.revision, response: pendingResponse });
+      if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+      let pendingWrite; try { pendingWrite = await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { const classified = sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, pendingRequestId, context, { successResponse: pendingResponse }); if (!classified.ok) return classified; }
+      if (pendingWrite !== undefined) { const classified = sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, pendingRequestId, context, { successResponse: pendingResponse }); if (!classified.ok) return classified; }
+      const refreshed = resolveSessionDocument(value.sessionId, context); if (refreshed.error) return failure([diagnostic("m11-recovery-required", "recovery")], identities);
+      return completePersistedFocusUse(value, identities, descriptor, auth, refreshed.match.session, context, trustedWitness, { allowExecution: true, projectionKind });
+    }
+    let focusResult = null, modifier = 0;
+    if (value.commandKind === "focus-reaction-use") {
+      const ability = focus.abilities.find((entry) => entry.focusAbilityId === opportunity.focusAbilityId); if (!ability || !trustedWitness?.occurredAt) return failure([diagnostic("m11-command-payload-invalid", "reactionWindow")], identities);
+      const executor = m10Function(context, "executeVoyagePf2eFocusCheck", m10Function(context, "executeVoyagePf2ePendingCheck", null));
+      if (typeof executor !== "function") return failure([diagnostic("m11-command-not-allowed", "transport")], identities);
+      const focusPendingCheck = {
+        pendingCheckId: opportunity.reactionId,
+        sequence: 0,
+        status: "pending",
+        mode: "check",
+        source: { kind: "character", uuid: opportunity.operatorId },
+        approachId: ability.focusAbilityId,
+        statisticSlugOrAbilityId: ability.statisticSlugOrAbilityId,
+        finalDc: ability.dc,
+        momentumRollBonus: prior.encounterState.momentum,
+        secrecy: ability.secrecy ?? "public"
+      };
+      try { focusResult = capture(await executor(focusPendingCheck)).value; } catch { focusResult = null; }
+      if (!validFocusResult(focusResult, focusPendingCheck)) return failure([diagnostic("m11-command-payload-invalid", "focusResult")], identities);
+      const rawDegree = focusResult.result?.degreeOfSuccessSlug ?? focusResult.degreeOfSuccessSlug ?? focusResult.result?.degreeOfSuccess;
+      const degree = normalizeFocusDegree(rawDegree); modifier = focusOutcomeModifier(ability, degree); if (modifier === null) return failure([diagnostic("m11-command-payload-invalid", "focusResult")], identities);
+    }
+    const candidate = capture(prior).value; const metadata = candidate.encounterState.metadata;
+    const terminalPending = existingPending?.reactionId === opportunity.reactionId;
+    if (value.commandKind === "focus-reaction-pass" && terminalPending) metadata.focusPendingCheck = null;
+    metadata.focusPools = metadata.focusPools.map((entry) => entry.stationId === pool.stationId && entry.operatorId === pool.operatorId ? { ...entry, current: value.commandKind === "focus-reaction-use" ? entry.current - 1 : entry.current } : entry);
+    const resolvedIds = [...(window.resolved ?? []), opportunity.reactionId];
+    const remaining = window.opportunities.some((entry) => !resolvedIds.includes(entry.reactionId));
+    metadata.reactionWindow = { ...window, status: remaining ? "open" : "closed", resolved: resolvedIds, committed: terminalPending ? (window.committed ?? []).filter((id) => id !== opportunity.reactionId) : (window.committed ?? []), result: value.commandKind === "focus-reaction-use" ? { reactionId: opportunity.reactionId, focusAbilityId: opportunity.focusAbilityId, stationId: opportunity.stationId, targetStationId: opportunity.targetStationId, modifier, result: focusResult.result ?? focusResult, focusSpent: 1 } : null };
+    metadata.focusEffects = Array.isArray(metadata.focusEffects) ? metadata.focusEffects : [];
+    if (value.commandKind === "focus-reaction-use") metadata.focusEffects.push({ reactionId: opportunity.reactionId, targetStationId: opportunity.targetStationId, modifier });
+    const revision = prior.revision + 1; candidate.revision = revision; candidate.encounterState.revision = prior.encounterState.revision + 1;
+    const runtimeEvent = { type: `voyage.m12-${value.commandKind}`, sessionId: candidate.sessionId, eventId: candidate.eventId, definitionSnapshotId: candidate.definitionSnapshotId, shipId: candidate.shipId, transitionKind: value.commandKind, previousSessionState: prior.sessionState, nextSessionState: prior.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, previousRevision: prior.revision, revision };
+    candidate.events.push(runtimeEvent);
+    candidate.auditHistory.push({ auditId: auditId(candidate.sessionId, candidate.auditHistory.length, FOCUS_AUDIT_KINDS[value.commandKind]), kind: FOCUS_AUDIT_KINDS[value.commandKind], sessionId: candidate.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision: prior.revision, revision, occurredAt: trustedWitness.occurredAt, details: { transitionKind: value.commandKind, previousSessionState: prior.sessionState, nextSessionState: prior.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, eventCount: candidate.events.length } });
+    const response = successWithEvents(candidate, value.requestId, [runtimeEvent]);
+    candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind, fingerprint: fp, commandKind: value.commandKind, resultKind: FOCUS_RESULT_KINDS[value.commandKind], resultRevision: revision, response });
+    if (!pristineSession(candidate, descriptor.sessionDocumentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+    try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response }); }
+    return sessionWriteClassification(resolved.match.document, value.sessionId, descriptor.sessionDocumentId, candidate, prior, value.requestId, context, { successResponse: response });
   }), identities, { nonWinnerCode: "m11-control-transfer-required", nonWinnerPath: "authorityEpoch" });
 }
 
@@ -2524,6 +4215,88 @@ function task7AbortEvent(session, request, auth, previousRevision, revision, pre
 
 function task7CorrectionEvent(session, request, auth, previousRevision, revision, previousEncounterRevision, encounterRevision) {
   return { type: "voyage.m11-session-corrected", sessionId: session.sessionId, eventId: session.eventId, definitionSnapshotId: session.definitionSnapshotId, shipId: session.shipId, correctionKind: request.correctionKind, targetRequestId: null, correctionAuthorityUserId: auth.authenticatedUserId, previousRevision, revision, previousEncounterRevision, encounterRevision };
+}
+
+async function buildSliceICorrectionCandidate(prior, value, auth, trustedWitness, context) {
+  try {
+    const kind = value.correctionKind;
+    if (!SLICE_I_CORRECTION_KINDS.includes(kind) || prior.sessionState !== "station-resolution" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "resolution") return null;
+    if (!validSliceIPayload(kind, value.replacementPayload)) return null;
+    const currentStation = sliceICurrentStation(prior);
+    const payload = value.replacementPayload;
+    const candidate = capture(prior); if (!candidate.ok) return null;
+    const next = candidate.value, previousEncounterRevision = prior.encounterState.revision;
+    let stationId = null, pendingCheckId = null, before = null, after = null;
+    if (kind === "remaining-order") {
+      const committedOrder = prior.encounterState.committedStationOrder;
+      if (!currentStation || !Array.isArray(committedOrder) || payload.stationOrder.length !== committedOrder.length || new Set(payload.stationOrder).size !== payload.stationOrder.length || new Set(payload.stationOrder).size !== new Set(committedOrder).size || payload.stationOrder.some((stationId) => !committedOrder.includes(stationId))) return null;
+      const resolvedPrefix = prior.encounterState.committedStationOrder.filter((id) => !prior.encounterState.pendingChecks.some((check) => check.stationId === id && check.status === "pending"));
+      if (resolvedPrefix.some((id, index) => payload.stationOrder[index] !== id) || !payload.stationOrder.includes(currentStation)) return null;
+      before = capture(prior.encounterState.committedStationOrder).value; next.encounterState.committedStationOrder = [...payload.stationOrder]; after = capture(next.encounterState.committedStationOrder).value;
+    } else if (kind === "operator-takeover") {
+      if (!currentStation || payload.stationId !== currentStation) return null;
+      const eligibility = sliceIOperatorTakeoverEligibility(prior, currentStation, context);
+      if (!eligibility.ok) return null;
+      const assignment = prior.encounterState.stationAssignments?.find((entry) => entry?.stationId === currentStation);
+      const operatorId = assignment?.operator?.id ?? assignment?.operator?.uuid ?? null; if (!nonBlank(operatorId)) return null;
+      stationId = currentStation; before = capture(next.encounterState.metadata?.recoveryControl ?? null).value;
+      next.encounterState.metadata.recoveryControl = { kind: "operator-takeover", stationId: currentStation, operatorId, controllerUserId: auth.activeGmUserId };
+      after = capture(next.encounterState.metadata.recoveryControl).value;
+    } else {
+      const check = prior.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === payload.pendingCheckId);
+      const existingHistory = Array.isArray(prior.encounterState.metadata?.sliceIRecovery)
+        ? prior.encounterState.metadata.sliceIRecovery.find((entry) => entry?.kind === "void-roll" && entry.originalPendingCheckId === payload.pendingCheckId && nonBlank(entry.replacementPendingCheckId))
+        : null;
+      const replacementCheck = existingHistory?.replacementPendingCheckId
+        ? prior.encounterState.pendingChecks?.find((entry) => entry?.pendingCheckId === existingHistory.replacementPendingCheckId)
+        : null;
+      const source = kind === "retry-roll-integration" && existingHistory?.evidence
+        ? (replacementCheck ?? existingHistory.evidence)
+        : check;
+      const sourceStation = source?.stationId ?? null;
+      if (!source || !nonBlank(sourceStation) || (kind === "retry-roll-integration" ? !existingHistory : !currentStation || sourceStation !== currentStation)) return null;
+      stationId = sourceStation; pendingCheckId = payload.pendingCheckId;
+      before = kind === "retry-roll-integration" && existingHistory ? capture(existingHistory.evidence).value : capture(source).value;
+      const integrationStatus = source.integrationStatus ?? next.encounterState.metadata?.pendingCheckIntegrationStatus;
+      if (kind === "retry-roll-integration") {
+        if (!existingHistory || !["failed", "uncertain", "recovery-required", "invalid", "erroneous", "voidable"].includes(integrationStatus)) return null;
+        const replacement = capture(source).value;
+        replacement.pendingCheckId = `arcflight-pending-check:recovery:${JSON.stringify([prior.sessionId, prior.revision + 1, source.pendingCheckId, kind])}`;
+        replacement.preparedRevision = prior.encounterState.revision + 1; replacement.status = "pending"; replacement.result = null;
+        const index = next.encounterState.pendingChecks.findIndex((entry) => entry?.pendingCheckId === source.pendingCheckId); if (index < 0) return null;
+        next.encounterState.pendingChecks[index] = replacement;
+        next.encounterState.metadata.sliceIRecovery = Array.isArray(next.encounterState.metadata.sliceIRecovery) ? next.encounterState.metadata.sliceIRecovery : [];
+        next.encounterState.metadata.sliceIRecovery.push({ kind, originalPendingCheckId: existingHistory.originalPendingCheckId, replacementPendingCheckId: replacement.pendingCheckId, evidence: capture(existingHistory.evidence).value });
+        after = capture(replacement).value;
+      } else {
+        if (!check || check.status !== "pending" || existingHistory || !["invalid", "erroneous", "voidable", "failed", "uncertain"].includes(integrationStatus)) return null;
+        const replacement = capture(check).value;
+        replacement.pendingCheckId = `arcflight-pending-check:recovery:${JSON.stringify([prior.sessionId, prior.revision + 1, check.pendingCheckId, kind])}`;
+        replacement.preparedRevision = prior.encounterState.revision + 1; replacement.status = "pending"; replacement.result = null;
+        const index = next.encounterState.pendingChecks.findIndex((entry) => entry?.pendingCheckId === check.pendingCheckId); if (index < 0) return null;
+        next.encounterState.pendingChecks[index] = replacement;
+        next.encounterState.metadata.sliceIRecovery = Array.isArray(next.encounterState.metadata.sliceIRecovery) ? next.encounterState.metadata.sliceIRecovery : [];
+        next.encounterState.metadata.sliceIRecovery.push({ kind, originalPendingCheckId: check.pendingCheckId, replacementPendingCheckId: replacement.pendingCheckId, evidence: before });
+        after = capture(replacement).value;
+      }
+    }
+    if (kind === "remaining-order") {
+      const stationReport = validateVoyageEncounterStationOrder(next.encounterState);
+      const resolutionReport = analyzeVoyageEncounterResolutionOrder(next.encounterState);
+      if (stationReport.valid !== true || resolutionReport.valid !== true) return null;
+    }
+    next.revision = prior.revision + 1; next.encounterState.revision = previousEncounterRevision + 1;
+    if (!validEncounterState(next.encounterState, prior) || !trustedWitness?.occurredAt) return null;
+    const runtimeEvent = task7CorrectionEvent(next, value, auth, prior.revision, next.revision, previousEncounterRevision, next.encounterState.revision);
+    next.events.push(runtimeEvent);
+    const audit = { auditId: auditId(next.sessionId, next.auditHistory.length, "correction-applied"), kind: "correction-applied", sessionId: next.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: next.authorityEpoch, previousRevision: prior.revision, revision: next.revision, occurredAt: trustedWitness.occurredAt, details: { correctionKind: kind, targetRequestId: null, previousSessionState: prior.sessionState, nextSessionState: next.sessionState, previousEncounterRevision, encounterRevision: next.encounterState.revision, reason: value.reason, stationId, pendingCheckId, before, after } };
+    next.auditHistory.push(audit);
+    const response = successWithEvents(next, value.requestId, [runtimeEvent]);
+    const payloadForFingerprint = { correctionKind: kind, targetRequestId: null, targetCheckpointId: null, replacementPayload: capture(payload).value, reason: value.reason, confirmation: true };
+    const fp = fingerprint(next.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, prior.revision, "correct-session", payloadForFingerprint);
+    next.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fp, commandKind: "correct-session", resultKind: "corrected", resultRevision: next.revision, response });
+    return { candidate: next, response };
+  } catch { return null; }
 }
 
 async function task7AbortWithinExclusive(value, identities, descriptor, initialAuth, trustedWitness, context) {
@@ -2577,11 +4350,44 @@ async function task7CorrectionWithinExclusive(value, identities, descriptor, tru
     if (value.authorityEpoch !== prior.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
     if (value.expectedRevision !== prior.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
     if (value.confirmation !== true) return failure([diagnostic("m11-correction-confirmation-required", "confirmation")], identities);
-    if (value.correctionKind !== "station-selection" && value.correctionKind !== "station-order") return failure([diagnostic("m11-command-payload-invalid", "correctionKind")], identities);
+    if (!["station-selection", "station-order", "plan-unlock", ...SLICE_I_CORRECTION_KINDS].includes(value.correctionKind)) return failure([diagnostic("m11-command-payload-invalid", "correctionKind")], identities);
     if (value.targetRequestId !== null || value.targetCheckpointId !== null || !nonBlank(value.reason) || containsForbiddenPayloadAuthority(value.replacementPayload)) return failure([diagnostic("m11-command-payload-invalid", "replacementPayload")], identities);
-    if (prior.sessionState !== "crew-planning" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "crew-planning" || prior.checkpoints.some((checkpoint) => checkpoint.kind === "before-plan-lock")) return failure([diagnostic("m11-command-not-allowed", "request.kind")], identities);
-    const fields = value.correctionKind === "station-selection" ? ["stationId", "actionId"] : ["stationOrder"];
+    if (SLICE_I_CORRECTION_KINDS.includes(value.correctionKind) && !SLICE_I_EXECUTABLE_CORRECTION_KINDS.has(value.correctionKind)) return failure([diagnostic("m11-command-not-allowed", "correctionKind")], identities);
+    if (SLICE_I_CORRECTION_KINDS.includes(value.correctionKind)) {
+      const built = await buildSliceICorrectionCandidate(prior, value, auth, trustedWitness, context);
+      if (!built) return failure([diagnostic(prior.sessionState !== "station-resolution" ? "m11-command-not-allowed" : "m11-correction-invalid", "replacementPayload")], identities);
+      if (!pristineSession(built.candidate, resolved.match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+      try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: built.candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(resolved.match.document, value.sessionId, resolved.match.documentId, built.candidate, prior, value.requestId, context, { successResponse: built.response }); }
+      return sessionWriteClassification(resolved.match.document, value.sessionId, resolved.match.documentId, built.candidate, prior, value.requestId, context, { successResponse: built.response });
+    }
+    const unlock = value.correctionKind === "plan-unlock";
+    if (unlock) {
+      if (prior.sessionState !== "plan-locked" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "lock-readiness") return failure([diagnostic("m11-command-not-allowed", "request.kind")], identities);
+    } else if (prior.sessionState !== "crew-planning" || prior.encounterState.lifecycleState !== "active" || prior.encounterState.phase !== "crew-planning" || prior.checkpoints.some((checkpoint) => checkpoint.kind === "before-plan-lock")) return failure([diagnostic("m11-command-not-allowed", "request.kind")], identities);
+    const fields = unlock ? [] : value.correctionKind === "station-selection" ? ["stationId", "actionId"] : ["stationOrder"];
     if (!exactKeys(value.replacementPayload, fields)) return failure([diagnostic("m11-command-payload-invalid", "replacementPayload")], identities);
+    if (unlock) {
+      if (containsForbiddenPayloadAuthority(value.replacementPayload)) return failure([diagnostic("m11-command-payload-invalid", "replacementPayload")], identities);
+      if (!Array.isArray(prior.encounterState.committedStationOrder) || prior.encounterState.committedStationOrder.length === 0) return failure([diagnostic("m11-command-not-allowed", "request.kind")], identities);
+      const candidate = capture(prior).value, previousRevision = prior.revision, revision = previousRevision + 1;
+      candidate.revision = revision;
+      candidate.sessionState = "crew-planning";
+      candidate.encounterState.lifecycleState = "active";
+      candidate.encounterState.phase = "crew-planning";
+      candidate.encounterState.proposedStationOrder = [...prior.encounterState.committedStationOrder];
+      candidate.encounterState.committedStationOrder = [];
+      candidate.encounterState.revision = prior.encounterState.revision + 1;
+      if (!validEncounterState(candidate.encounterState, prior)) return failure([diagnostic("m11-correction-invalid", "replacementPayload")], identities);
+      if (!trustedWitness?.occurredAt) return failure([diagnostic("m11-cross-client-coordinator-required", "transport.coordinator")], identities);
+      const runtimeEvent = task7CorrectionEvent(candidate, value, auth, previousRevision, revision, prior.encounterState.revision, candidate.encounterState.revision);
+      candidate.events.push(runtimeEvent);
+      candidate.auditHistory.push({ auditId: auditId(candidate.sessionId, candidate.auditHistory.length, "correction-applied"), kind: "correction-applied", sessionId: candidate.sessionId, requestId: value.requestId, actorUserId: auth.authenticatedUserId, authorityEpoch: candidate.authorityEpoch, previousRevision, revision, occurredAt: trustedWitness.occurredAt, details: { correctionKind: value.correctionKind, targetRequestId: null, previousSessionState: prior.sessionState, nextSessionState: candidate.sessionState, previousEncounterRevision: prior.encounterState.revision, encounterRevision: candidate.encounterState.revision, reason: value.reason } });
+      const response = successWithEvents(candidate, value.requestId, [runtimeEvent]);
+      candidate.processedRequests.push({ requestId: value.requestId, principalUserId: auth.authenticatedUserId, projectionKind: "gm", fingerprint: fp, commandKind: "correct-session", resultKind: "corrected", resultRevision: revision, response });
+      if (!pristineSession(candidate, resolved.match.documentId, { replayContext: context })) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], identities);
+      try { await resolved.match.document.update({ [VOYAGE_SESSION_PATH]: candidate }, { diff: false, recursive: false }); } catch { return sessionWriteClassification(resolved.match.document, value.sessionId, resolved.match.documentId, candidate, prior, value.requestId, context, { successResponse: response }); }
+      return sessionWriteClassification(resolved.match.document, value.sessionId, resolved.match.documentId, candidate, prior, value.requestId, context, { successResponse: response });
+    }
     const api = m10Function(context, value.correctionKind === "station-selection" ? "applyVoyageEncounterStationActionSelectionChange" : "applyVoyageEncounterStationOrderProposalChange", value.correctionKind === "station-selection" ? applyVoyageEncounterStationActionSelectionChange : applyVoyageEncounterStationOrderProposalChange);
     let result = null;
     try { result = typeof api === "function" ? await api(capture(prior.encounterState).value, capture(value.replacementPayload).value) : null; result = capture(result).ok ? capture(result).value : null; } catch { result = null; }
@@ -2739,6 +4545,7 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
   if (value.kind !== "voyage.m11-command") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
   const auth = authenticatedContext(context); if (auth.error) return failure([auth.error], identities);
   if (!nonBlank(value.sessionId) || !nonBlank(value.commandKind) || !safeInteger(value.expectedRevision) || !safeInteger(value.authorityEpoch) || !isPlainObject(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+  if (FOCUS_COMMANDS.has(value.commandKind) && (auth.trustedTransportContext !== true || !nonBlank(auth.authenticatedConnectionId))) return failure([diagnostic("m11-authentication-required", "transport.user")], identities);
   const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
   const match = resolved.match; if (!pristineSession(match.session, match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
   if (match.session.activeGmUserId !== auth.activeGmUserId) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
@@ -2751,14 +4558,34 @@ export function dispatchVoyageEventSessionCommand(request, context = {}) {
   const trustedResolutionExecution = value.commandKind === "action-segment" && context?.__trustedResolutionExecution === true;
   if (value.commandKind !== "closeout-review" && !trustedResolutionExecution && containsForbiddenPayloadAuthority(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
   if (TASK2_COMMANDS.has(value.commandKind)) {
-    if (auth.user?.isGM !== true || auth.authenticatedUserId !== auth.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.activeGm")], identities);
+    if (auth.user?.isGM !== true && !operatorAllowedCommand(value.commandKind)) return failure([diagnostic("m11-active-gm-required", "transport.activeGm")], identities);
     if (!task2PayloadValid(value.commandKind, value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    if (auth.user?.isGM !== true) {
+      const authorityDecision = deriveProjectionAuthority(auth, match.session, context);
+      const authorizedOrder = value.commandKind === "station-order"
+        ? authorityDecision.ownedOperators.length > 0
+        : authorityDecision.ownedOperators.some((entry) => entry.stationId === value.payload.stationId);
+      if (authorityDecision.role !== "operator" || !authorizedOrder) return failure([diagnostic("m11-projection-not-authorized", value.commandKind === "station-order" ? "request.payload.stationOrder" : "request.payload.stationId")], identities);
+    }
     return dispatchTask2Command(value, identities, auth, match, context);
   }
   if (TASK3_COMMANDS.has(value.commandKind)) {
-    if (auth.user?.isGM !== true || auth.authenticatedUserId !== auth.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.activeGm")], identities);
-    if (!task3PayloadValid(value.commandKind, value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    const trustedPlayerExecution = value.commandKind === "action-segment" && context?.__trustedResolutionOperator === true && context?.__executePendingCheck === true;
+    const trustedExecution = value.commandKind === "action-segment" && context?.__trustedResolutionExecution === true && context?.__executePendingCheck === true;
+    if (!trustedPlayerExecution && (auth.user?.isGM !== true || auth.authenticatedUserId !== auth.activeGmUserId)) return failure([diagnostic("m11-active-gm-required", "transport.activeGm")], identities);
+    const internalExecutionPayload = trustedExecution && exactKeys(value.payload, []);
+    if (!task3PayloadValid(value.commandKind, value.payload) && !internalExecutionPayload) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
     return dispatchTask3Command(value, identities, auth, match, context);
+  }
+  if (FOCUS_COMMANDS.has(value.commandKind)) {
+    if (!focusPayloadValid(value.payload)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    if (!focusParticipantAuthorized(auth, match.session, value.payload.reactionId, context)) return failure([diagnostic("m11-projection-not-authorized", "request.payload.reactionId")], identities);
+    return dispatchFocusReactionCommand(value, identities, auth, match, context);
+  }
+  if (value.commandKind === "round-closeout") {
+    if (auth.user?.isGM !== true || auth.authenticatedUserId !== auth.activeGmUserId) return failure([diagnostic("m11-active-gm-required", "transport.activeGm")], identities);
+    if (!exactKeys(value.payload, ["roundId"]) || !nonBlank(value.payload.roundId)) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], identities);
+    return dispatchRoundCloseoutCommand(value, identities, auth, match, context);
   }
   if (CLOSEOUT_COMMANDS.has(value.commandKind)) return dispatchCloseoutCommand(value, identities, auth, match, context);
   return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
@@ -2951,6 +4778,58 @@ export function readVoyageEventSessionProjection(request, context = {}) {
   return response;
 }
 
+/**
+ * Slice A read boundary.  This deliberately leaves the accepted M11 common
+ * projection untouched and adds only trusted role/ownership decisions.
+ */
+export function readVoyageEventSessionMultiplayerProjection(request, context = {}) {
+  const captured = capture(request); if (!captured.ok) return failure([diagnostic("m11-hostile-data-capture-failed", "$")]);
+  const value = captured.value, identities = requestIdentities(value);
+  if (!exactKeys(value, READ_PROJECTION_FIELDS)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  if (value.kind !== "voyage.m12-read-multiplayer-projection") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
+  const auth = projectionPrincipal(context); if (auth.error) return failure([auth.error], identities);
+  if (!nonBlank(value.requestId) || !nonBlank(value.sessionId) || !safeInteger(value.expectedRevision)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
+  const match = resolved.match;
+  if (!pristineSession(match.session, match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const authorityDecision = deriveProjectionAuthority(auth, match.session, context);
+  if (value.expectedRevision !== match.session.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
+  if (match.session.processedRequests.some((record) => record.requestId === value.requestId)) return failure([diagnostic("m11-request-id-conflict", "request.requestId")], identities);
+  const projection = buildMultiplayerProjection(match.session, authorityDecision);
+  if (!projection) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const response = success(match.session, value.requestId);
+  response.projection = projection;
+  return response;
+}
+
+/** Reusable, read-only owned-operator authorization for future M12 commands. */
+export function authorizeVoyageEventSessionOperator(request, context = {}) {
+  const captured = capture(request); if (!captured.ok) return failure([diagnostic("m11-hostile-data-capture-failed", "$")]);
+  const value = captured.value, identities = requestIdentities(value);
+  if (!exactKeys(value, MULTIPLAYER_AUTHORIZATION_FIELDS)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  if (value.kind !== "voyage.m12-authorize-operator") return failure([diagnostic("m11-invalid-mode", "request.kind")], identities);
+  const auth = projectionPrincipal(context); if (auth.error) return failure([auth.error], identities);
+  if (!nonBlank(value.sessionId) || !nonBlank(value.stationId)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
+  const resolved = resolveSessionDocument(value.sessionId, context); if (resolved.error) return failure([resolved.error], identities);
+  if (!pristineSession(resolved.match.session, resolved.match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  const authorityDecision = deriveProjectionAuthority(auth, resolved.match.session, context);
+  const assignment = resolved.match.session.encounterState.stationAssignments.find((entry) => entry.stationId === value.stationId);
+  if (!assignment) return failure([diagnostic("m11-projection-not-authorized", "request.stationId")], identities);
+  const owned = authorityDecision.ownedOperators.find((entry) => entry.stationId === value.stationId);
+  const result = {
+    ok: true,
+    sessionId: resolved.match.session.sessionId,
+    stationId: value.stationId,
+    projectionRole: authorityDecision.role,
+    operatorId: assignment.operator?.id ?? null,
+    operatorUuid: assignment.operator?.uuid ?? null,
+    canAct: Boolean(owned?.canAct),
+    gmTakeover: Boolean(owned?.gmTakeover)
+  };
+  const isolated = capture(result);
+  return isolated.ok ? isolated.value : failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+}
+
 /** Read the GM-only planning data needed by the M12 Event Manager. */
 export function readVoyageEventSessionPlanning(sessionId, context = {}) {
   const captured = capture(sessionId);
@@ -2967,7 +4846,10 @@ export function readVoyageEventSessionPlanning(sessionId, context = {}) {
     let available = capture(match.session.encounterState.availableStations);
     const canonical = canonicalTask2Stations(match.session, context);
     if (canonical && !equal(available.value, canonical)) {
-      if (bareTask2Stations(available.value)) available = { ok: true, value: canonical };
+      const sourceBound = canonicalTask3SourceBoundStations(match.session, canonical);
+      if (sourceBound && equal(available.value, sourceBound)) {
+        // Resolution-start durably binds authored character checks to their assigned operators.
+      } else if (bareTask2Stations(available.value)) available = { ok: true, value: canonical };
       else return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identity);
     }
     const selections = capture(match.session.encounterState.selections);
@@ -2991,7 +4873,9 @@ export function readVoyageEventSessionPlanning(sessionId, context = {}) {
       selections: selections.value,
       riskBids: riskBids.value,
       proposedStationOrder: proposed.value,
-      committedStationOrder: committed.value
+      committedStationOrder: committed.value,
+      focusPools: capture(match.session.encounterState.metadata?.focusPools ?? []).value,
+      focusAbilities: capture(match.session.encounterState.metadata?.focusAbilities ?? []).value
     };
     const isolated = capture(planning); if (!isolated.ok) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identity);
     const out = success(match.session, null); out.projection = isolated.value; return out;
@@ -3001,6 +4885,11 @@ export function readVoyageEventSessionPlanning(sessionId, context = {}) {
 function resolutionProjection(session, context) {
   try {
     const state = session.encounterState;
+    const resolvedDefinition = typeof context?.resolveEventDefinitionSnapshot === "function" ? context.resolveEventDefinitionSnapshot(session.eventId, session.definitionSnapshotId) : null;
+    const capturedDefinition = resolvedDefinition && typeof resolvedDefinition.then !== "function" ? capture(resolvedDefinition) : null;
+    const authoredRound = capturedDefinition?.ok ? task5DefinitionRound(capturedDefinition.value, state.roundNumber) : null;
+    const roundId = nonBlank(authoredRound?.roundId) ? authoredRound.roundId : null;
+    const focus = focusMetadata(state, context);
     const report = prepareVoyageEncounterActionExecutionRequests(state);
     const assignments = new Map((state.stationAssignments ?? []).map((entry) => [entry.stationId, entry.operator]));
     const selections = state.selections ?? {};
@@ -3013,6 +4902,7 @@ function resolutionProjection(session, context) {
       const bid = bids[stationId] ?? null;
       const request = report.executionRequests?.find((entry) => entry.stationId === stationId) ?? null;
       const check = pending.get(stationId) ?? null;
+      const riskEffects = check ? activeRiskBidEffectsForCheck(state, check.pendingCheckId, stationId) : [];
       return {
         stationId,
         order: index + 1,
@@ -3024,11 +4914,14 @@ function resolutionProjection(session, context) {
         riskBidDcAdjustment: bid?.dcAdjustment ?? 0,
         baseDc: request?.baseDc ?? null,
         finalDc: request?.finalDc ?? null,
+        focusModifier: focusModifierForCheck(state, check?.pendingCheckId, stationId),
+        riskBidModifier: riskBidModifierForCheck(state, check?.pendingCheckId, stationId),
+        riskBidEffects: capture(riskEffects).value,
         momentum: state.momentum,
         pendingCheckId: check?.pendingCheckId ?? null,
         status: check?.status === "resolved" ? "resolved" : "pending",
         current: stationId === currentStationId,
-        canRoll: state.phase === "resolution" && stationId === currentStationId && check?.status !== "resolved",
+        canRoll: state.phase === "resolution" && stationId === currentStationId && check?.status !== "resolved" && !(state.metadata?.reactionWindow?.status === "open" && state.metadata.reactionWindow.stationId === stationId),
         result: check?.status === "resolved" && isPlainObject(check.result) ? capture(check.result).value : null
       };
     });
@@ -3040,12 +4933,43 @@ function resolutionProjection(session, context) {
       sessionState: session.sessionState,
       roundNumber: state.roundNumber,
       phase: state.phase,
+      roundId,
+      roundCloseoutReady: closeoutLifecycleAllowed(session, "round-closeout"),
       stationOrder: order,
       currentStationId: current?.stationId ?? null,
       currentActionId: current?.actionId ?? null,
       currentOperator: current?.operator ?? null,
+      currentFocusRemaining: current ? (state.metadata?.focusPools?.find((pool) => pool.stationId === current.stationId && [current.operator?.id, current.operator?.uuid].includes(pool.operatorId))?.current ?? 0) : 0,
       completed: stations.length > 0 && stations.every((entry) => entry.status === "resolved"),
       stations
+      ,focusPools: capture(state.metadata?.focusPools ?? []).value
+      ,reactionWindow: capture(state.metadata?.reactionWindow ?? null).value
+      ,reactionWindowOpen: state.metadata?.reactionWindow?.status === "open"
+      ,reactionWindowPending: capture((state.metadata?.reactionWindow?.opportunities ?? []).filter((entry) => !(state.metadata?.reactionWindow?.resolved ?? []).includes(entry.reactionId)).map((entry) => {
+        const ability = focus?.abilities.find((candidate) => candidate.focusAbilityId === entry.focusAbilityId);
+        return {
+          ...entry,
+          focusAbility: ability ? {
+            name: ability.name ?? ability.focusAbilityId,
+            description: ability.description ?? "Authored Focus reaction",
+            cost: ability.cost,
+            sourceStationId: ability.stationId,
+            sourceStationName: ability.stationId.replace(/(^|-)(\w)/g, (_match, _prefix, letter) => letter.toUpperCase()),
+            targetStationId: ability.targetStationId,
+            targetStationName: ability.targetStationId.replace(/(^|-)(\w)/g, (_match, _prefix, letter) => letter.toUpperCase()),
+            statisticSlugOrAbilityId: ability.statisticSlugOrAbilityId,
+            statisticName: ability.statisticSlugOrAbilityId.replace(/(^|-)(\w)/g, (_match, _prefix, letter) => letter.toUpperCase()),
+            dc: ability.dc,
+            criticalSuccess: ability.outcomeNarration?.criticalSuccess ?? "Critical Success benefit applies.",
+            success: ability.outcomeNarration?.success ?? "Success benefit applies.",
+            failure: ability.outcomeNarration?.failure ?? "Failure consequence applies.",
+            criticalFailure: ability.outcomeNarration?.criticalFailure ?? "Critical Failure consequence applies.",
+            visibility: ability.visibility ?? ability.secrecy,
+            narration: ability.narration ?? ""
+          } : null
+        };
+      })).value
+      ,focusEffects: capture(state.metadata?.focusEffects ?? []).value
     };
   } catch { return null; }
 }
@@ -3074,10 +4998,18 @@ export async function beginVoyageEventSessionResolution(request, context = {}) {
   if (!pristineSession(resolved.match.session, resolved.match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
   const phaseStartSnapshotId = `arcflight-voyage-resolution:${JSON.stringify([value.sessionId, value.expectedRevision + 1])}`;
   const replay = replayOrConflict(resolved.match.session.processedRequests, value.requestId, auth.authenticatedUserId, "gm", fingerprint(value.sessionId, auth.authenticatedUserId, "gm", value.authorityEpoch, value.expectedRevision, "resolution-start", { phaseStartSnapshotId }), identities);
-  if (replay) return replay;
+  if (replay) {
+    const storedPending = resolved.match.session.processedRequests.find((record) => record.commandKind === "pending-checks-prepared");
+    if (replay.ok && storedPending?.response) { const response = capture(storedPending.response).value; response.requestId = value.requestId; return response; }
+    return replay;
+  }
   if (resolved.match.session.activeGmUserId !== auth.activeGmUserId || value.authorityEpoch !== resolved.match.session.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
   if (value.expectedRevision !== resolved.match.session.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
-  return dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: value.requestId, sessionId: value.sessionId, expectedRevision: value.expectedRevision, authorityEpoch: value.authorityEpoch, commandKind: "resolution-start", payload: { phaseStartSnapshotId } }, { ...context, __trustedResolutionStart: true });
+  const started = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: value.requestId, sessionId: value.sessionId, expectedRevision: value.expectedRevision, authorityEpoch: value.authorityEpoch, commandKind: "resolution-start", payload: { phaseStartSnapshotId } }, { ...context, __trustedResolutionStart: true });
+  if (!started?.ok) return started;
+  const prepared = await persistTask3PendingChecks(value.sessionId, context);
+  if (prepared?.ok) prepared.requestId = value.requestId;
+  return prepared;
 }
 
 async function persistTask3PendingChecks(sessionId, context) {
@@ -3093,13 +5025,26 @@ async function persistTask3PendingChecks(sessionId, context) {
     if (state.activeGmUserId !== locked.activeGmUserId) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], { sessionId });
     if (state.sessionState !== "station-resolution" || state.encounterState.phase !== "resolution") return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], { sessionId });
     if (state.revision !== descriptor.expectedRevision || state.authorityEpoch !== descriptor.expectedAuthorityEpoch) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], { sessionId });
-    if (state.encounterState.pendingChecks?.length) return success(state, null);
+    if (state.encounterState.pendingChecks?.length) {
+      const stored = state.processedRequests.find((record) => record.commandKind === "pending-checks-prepared");
+      if (stored?.response) return capture(stored.response).value;
+      return success(state, null);
+    }
     const bound = task3SourceBoundState(state.encounterState); if (!bound) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], { sessionId });
     const report = prepareVoyageEncounterActionExecutionRequests(bound); if (!report.readyForExecution || report.checkCount === 0) return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], { sessionId });
     const mappings = report.executionRequests.filter((entry) => entry.mode === "check").map((entry) => ({ sequence: entry.sequence, pendingCheckId: `arcflight-pending-check:${JSON.stringify([sessionId, state.revision + 1, entry.sequence])}` }));
     const prepared = applyVoyageEncounterPendingCheckPreparation(bound, { pendingCheckIds: mappings });
     if (!prepared?.ok) return failure([diagnostic("m11-command-payload-invalid", "request.payload")], { sessionId });
     const candidate = capture(state).value; candidate.encounterState = capture(prepared.nextState).value; candidate.revision = state.revision + 1;
+    const focus = focusMetadata(candidate.encounterState, context);
+    if (focus) {
+      candidate.encounterState.metadata.focusPools = focus.pools;
+      candidate.encounterState.metadata.focusAbilities = focus.abilities;
+      candidate.encounterState.metadata.focusEffects = Array.isArray(candidate.encounterState.metadata.focusEffects) ? candidate.encounterState.metadata.focusEffects : [];
+      const currentStationId = candidate.encounterState.committedStationOrder.find((stationId) => candidate.encounterState.pendingChecks.some((check) => check.stationId === stationId && check.status === "pending"));
+      const currentPending = candidate.encounterState.pendingChecks.find((check) => check.stationId === currentStationId && check.status === "pending");
+      if ((!candidate.encounterState.metadata.reactionWindow || candidate.encounterState.metadata.reactionWindow.status !== "open" || candidate.encounterState.metadata.reactionWindow.stationId !== currentStationId || candidate.encounterState.metadata.reactionWindow.targetPendingCheckId !== currentPending?.pendingCheckId) && currentStationId) candidate.encounterState.metadata.reactionWindow = focusWindowForState(candidate.encounterState, currentStationId, context, currentPending?.pendingCheckId ?? null);
+    }
     const domainEvent = capture(prepared.events[0]); if (!domainEvent.ok || !validTask3DomainEvent(domainEvent.value, candidate)) return failure([diagnostic("m11-session-write-failed", VOYAGE_SESSION_PATH)], { sessionId });
     const runtimeEvent = { type: "voyage.m12-pending-checks-prepared", sessionId: candidate.sessionId, eventId: candidate.eventId, definitionSnapshotId: candidate.definitionSnapshotId, shipId: candidate.shipId, transitionKind: "pending-checks-prepared", previousSessionState: state.sessionState, nextSessionState: state.sessionState, previousEncounterRevision: state.encounterState.revision, encounterRevision: candidate.encounterState.revision, previousRevision: state.revision, revision: candidate.revision };
     candidate.events.push(domainEvent.value, runtimeEvent);
@@ -3121,22 +5066,31 @@ export async function resolveVoyageEventSessionStation(request, context = {}) {
   const captured = capture(request); if (!captured.ok) return failure([diagnostic("m11-hostile-data-capture-failed", "$")]);
   const value = captured.value, identities = requestIdentities(value);
   if (!isPlainObject(value) || !exactKeys(value, ["kind", "requestId", "sessionId", "expectedRevision", "authorityEpoch"]) || value.kind !== "voyage.m12-resolve-station" || !nonBlank(value.requestId) || !nonBlank(value.sessionId) || !safeInteger(value.expectedRevision) || !safeInteger(value.authorityEpoch)) return failure([diagnostic("m11-invalid-request-shape", "request")], identities);
-  const auth = authority(context, { requireConnection: true }); if (auth.error) return failure([auth.error], identities);
+  const auth = authenticatedContext(context); if (auth.error) return failure([auth.error], identities);
   const initial = resolveSessionDocument(value.sessionId, context); if (initial.error) return failure([initial.error], identities);
   if (!pristineSession(initial.match.session, initial.match.documentId, { replayContext: context })) return failure([diagnostic("m11-invalid-session-document", VOYAGE_SESSION_PATH)], identities);
+  if (auth.trustedTransportContext !== true || !nonBlank(auth.authenticatedConnectionId)) return failure([diagnostic("m11-authentication-required", "transport.user")], identities);
+  const isGm = auth.user?.isGM === true && auth.authenticatedUserId === auth.activeGmUserId;
+  const authorityDecision = isGm ? { role: "gm", ownedOperators: [] } : deriveProjectionAuthority(auth, initial.match.session, context);
+  const projectionKind = isGm ? "gm" : authorityDecision.role;
+  const requestFingerprint = fingerprint(value.sessionId, auth.authenticatedUserId, projectionKind, value.authorityEpoch, value.expectedRevision, "action-segment", {});
+  const replay = replayOrConflict(initial.match.session.processedRequests, value.requestId, auth.authenticatedUserId, projectionKind, requestFingerprint, identities);
+  if (replay) return replay;
   if (initial.match.session.activeGmUserId !== auth.activeGmUserId || value.authorityEpoch !== initial.match.session.authorityEpoch) return failure([diagnostic("m11-control-transfer-required", "authorityEpoch")], identities);
   if (value.expectedRevision !== initial.match.session.revision) return failure([diagnostic("m11-stale-session-revision", "expectedRevision")], identities);
   if (initial.match.session.sessionState !== "station-resolution" || initial.match.session.encounterState.phase !== "resolution") return failure([diagnostic("m11-command-not-allowed", "request.commandKind")], identities);
-  let prepared = await persistTask3PendingChecks(value.sessionId, context); if (!prepared.ok) return prepared;
+  if (!isGm && authorityDecision.role !== "operator") return failure([diagnostic("m11-projection-not-authorized", "transport.user")], identities);
+  let prepared = { ok: true };
+  const hasPreparedChecks = Array.isArray(initial.match.session.encounterState.pendingChecks) && initial.match.session.encounterState.pendingChecks.length > 0;
+  if (isGm && !hasPreparedChecks) { prepared = await persistTask3PendingChecks(value.sessionId, context); if (!prepared.ok) return prepared; }
   const refreshed = resolveSessionDocument(value.sessionId, context); if (refreshed.error) return failure([refreshed.error], identities);
-  const pending = refreshed.match.session.encounterState.pendingChecks?.find((entry) => entry.status === "pending");
+  const currentStationId = refreshed.match.session.encounterState.committedStationOrder?.find((stationId) => refreshed.match.session.encounterState.pendingChecks?.some((entry) => entry.stationId === stationId && entry.status === "pending"));
+  const pending = refreshed.match.session.encounterState.pendingChecks?.find((entry) => entry.stationId === currentStationId && entry.status === "pending");
   if (!pending) return readVoyageEventSessionResolution(value.sessionId, context);
-  const executor = m10Function(context, "executeVoyagePf2ePendingCheck", null);
-  if (!executor) return failure([diagnostic("m11-command-not-allowed", "transport")], identities);
-  let execution; try { execution = await executor(capture(pending).value); } catch { execution = null; }
-  const isolated = capture(execution); if (!isolated.ok || !isPlainObject(isolated.value) || isolated.value.ok !== true) return failure([diagnostic("m11-command-payload-invalid", "executionResult")], identities);
+  if (!isGm && !authorityDecision.ownedOperators.some((entry) => entry.stationId === currentStationId)) return failure([diagnostic("m11-projection-not-authorized", "transport.user")], identities);
+  if (refreshed.match.session.encounterState.metadata?.reactionWindow?.status === "open") return failure([diagnostic("m11-command-not-allowed", "reactionWindow")], { requestId: value.requestId, sessionId: value.sessionId });
   const latest = resolveSessionDocument(value.sessionId, context); if (latest.error) return failure([latest.error], identities);
-  return dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: value.requestId, sessionId: value.sessionId, expectedRevision: latest.match.session.revision, authorityEpoch: latest.match.session.authorityEpoch, commandKind: "action-segment", payload: { executionResult: isolated.value } }, { ...context, __trustedResolutionExecution: true });
+  return dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: value.requestId, sessionId: value.sessionId, expectedRevision: value.expectedRevision, authorityEpoch: value.authorityEpoch, commandKind: "action-segment", payload: {} }, { ...context, __trustedResolutionExecution: true, __executePendingCheck: true, __trustedResolutionOperator: !isGm });
 }
 
 export function reloadVoyageEventSession(sessionId, context = {}) {

@@ -3,6 +3,18 @@
   "title": "Arcflight",
   "description": "A Foundry VTT module scaffold for PF2E-compatible fantasy voidfaring campaigns.",
   "version": "0.0.0",
+  "socket": true,
+  "relationships": {
+    "requires": [
+      {
+        "id": "socketlib",
+        "type": "module",
+        "compatibility": {
+          "minimum": "1.1.4"
+        }
+      }
+    ]
+  },
   "compatibility": {
     "minimum": "14",
     "verified": "14"

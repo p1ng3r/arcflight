@@ -153,7 +153,7 @@ test("Resolution transition preserves canonical Risk Bid state, snapshot, and or
   assert.deepEqual(state, before);
 });
 
-test("Resolution transition rejects forged and over-limit Risk Bid state atomically", () => {
+test("Resolution transition rejects forged and unoccupied Risk Bid state atomically", () => {
   const forged = lockedRiskState(2);
   forged.riskBids.navigator.dcAdjustment = 8;
   let result = assertAtomicFailure(forged, {
@@ -163,16 +163,21 @@ test("Resolution transition rejects forged and over-limit Risk Bid state atomica
     (entry) => entry.code === "risk-bid-dc-adjustment-mismatch"
   ));
 
-  const overLimit = overLimitLockedState();
-  result = assertAtomicFailure(overLimit, {
-    phaseStartSnapshotId: "over-limit-risk-bids"
+  const unoccupied = overLimitLockedState();
+  unoccupied.riskBids.veilwarden = {
+    stationId: "veilwarden",
+    actionId: "action-veilwarden",
+    riskBidId: "bid-veilwarden",
+    dcAdjustment: 2
+  };
+  result = assertAtomicFailure(unoccupied, {
+    phaseStartSnapshotId: "unoccupied-risk-bid"
   });
   assert.ok(result.errors.some(
-    (entry) => entry.code === "risk-bid-round-limit-exceeded"
-      && entry.path === "riskBids"
+    (entry) => entry.code === "risk-bid-selection-missing"
+      && entry.path === "riskBids.veilwarden"
   ));
 });
-
 test("rejects every ordinary invalid boundary atomically", () => {
   const cases = [
     (state) => { state.lifecycleState = "paused"; }, (state) => { state.phase = "crew-planning"; }, (state) => { delete state.selections.engineer; },

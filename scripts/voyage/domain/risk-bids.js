@@ -13,7 +13,6 @@ const issue = (errors, code, path, message) => errors.push({ code, path, message
 const hasId = (value) => typeof value === "string" && value.trim().length > 0;
 const safeKey = (value) => !UNSAFE_KEYS.has(value);
 const CANONICAL_DC_ADJUSTMENTS = new Set([2, 5, 8]);
-const RISK_BID_ROUND_LIMIT = 3;
 const OUTCOME_FIELDS = Object.freeze([
   OUTCOME_BRANCHES.CRITICAL_SUCCESS,
   OUTCOME_BRANCHES.SUCCESS,
@@ -601,15 +600,15 @@ function inspectRiskBidCollectionKeys(riskBids, errors) {
   return stationKeys;
 }
 
-function riskBidValidationReport(valid, errors, warnings, selectedRiskBidStationIds = [], baseActionStationIds = []) {
+function riskBidValidationReport(valid, errors, warnings, selectedRiskBidStationIds = [], baseActionStationIds = [], riskBidLimit = 0) {
   const selectedIds = [...selectedRiskBidStationIds];
   return {
     valid,
     selectedRiskBidCount: selectedIds.length,
     selectedRiskBidStationIds: selectedIds,
     baseActionStationIds: [...baseActionStationIds],
-    riskBidLimit: RISK_BID_ROUND_LIMIT,
-    overRiskBidLimit: selectedIds.length > RISK_BID_ROUND_LIMIT,
+    riskBidLimit,
+    overRiskBidLimit: selectedIds.length > riskBidLimit,
     errors: deduplicateIssues(errors),
     warnings: deduplicateIssues(warnings)
   };
@@ -621,13 +620,17 @@ function validateVoyageEncounterRiskBidsUnsafe(state) {
     return riskBidValidationReport(
       false,
       [...structural.errors],
-      [...structural.warnings]
+      [...structural.warnings],
+      [],
+      [],
+      deriveOccupiedVoyageStationIds(state?.stationAssignments).length
     );
   }
   const selections = validateVoyageEncounterStationSelections(state);
   const errors = [...selections.errors]; const warnings = [...structural.warnings, ...selections.warnings];
   const authoredOptions = validateAuthoredOptions(state, errors);
   const riskBidKeys = inspectRiskBidCollectionKeys(state.riskBids, errors);
+  const occupiedStationIds = deriveOccupiedVoyageStationIds(state.stationAssignments);
   const validBidStationIds = new Set();
   for (const key of riskBidKeys) {
     const entryErrorCount = errors.length;
@@ -652,7 +655,6 @@ function validateVoyageEncounterRiskBidsUnsafe(state) {
       validBidStationIds.add(key);
     }
   }
-  const occupiedStationIds = deriveOccupiedVoyageStationIds(state.stationAssignments);
   const selectedRiskBidStationIds = occupiedStationIds.filter(
     (stationId) => validBidStationIds.has(stationId)
   );
@@ -670,7 +672,8 @@ function validateVoyageEncounterRiskBidsUnsafe(state) {
     errors,
     warnings,
     selectedRiskBidStationIds,
-    baseActionStationIds
+    baseActionStationIds,
+    occupiedStationIds.length
   );
 }
 

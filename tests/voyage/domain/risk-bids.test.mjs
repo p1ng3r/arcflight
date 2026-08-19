@@ -899,80 +899,72 @@ test("stored map and record accessors, symbols, and inherited bids stay containe
   ));
 });
 
-test("the validator reports the round-wide three-bid cap without invalidating canonical records", () => {
+test("the validator caps selected bids at occupied-station capacity", () => {
   const source = state();
   source.availableStations = [];
   source.stationAssignments = [];
   source.selections = {};
   source.riskBids = {};
-  for (const [index, stationId] of [
-    "captain",
-    "engineer",
-    "navigator",
-    "watchmaster"
-  ].entries()) {
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+  for (const [index, stationId] of stationIds.entries()) {
     const actionId = `action-${stationId}`;
     const approachId = `approach-${stationId}`;
     const riskBidId = `bid-${stationId}`;
-    const dcAdjustment = [2, 5, 8, 2][index];
+    const dcAdjustment = [2, 5, 8, 2, 5][index];
     source.availableStations.push({
       stationId,
       actions: [{
         actionId,
-        approaches: [{
-          approachId,
-          statisticSlugOrAbilityId: approachId
-        }],
+        approaches: [{ approachId, statisticSlugOrAbilityId: approachId }],
         riskBidOptions: [option(riskBidId, dcAdjustment)]
       }]
     });
-    source.stationAssignments.push({
-      stationId,
-      operator: {
-        kind: "actor",
-        uuid: `Actor.${stationId}`
-      }
-    });
-    source.selections[stationId] = {
-      stationId,
-      actionId,
-      approachId,
-      statisticSlugOrAbilityId: approachId
-    };
-    source.riskBids[stationId] = {
-      stationId,
-      actionId,
-      riskBidId,
-      dcAdjustment
-    };
+    source.stationAssignments.push({ stationId, operator: { kind: "actor", uuid: `Actor.${stationId}` } });
+    source.selections[stationId] = { stationId, actionId, approachId, statisticSlugOrAbilityId: approachId };
+    source.riskBids[stationId] = { stationId, actionId, riskBidId, dcAdjustment };
   }
   const report = validateVoyageEncounterRiskBids(source);
   assert.equal(report.valid, true);
-  assert.equal(report.selectedRiskBidCount, 4);
-  assert.deepEqual(report.selectedRiskBidStationIds, [
-    "captain",
-    "engineer",
-    "navigator",
-    "watchmaster"
-  ]);
+  assert.equal(report.selectedRiskBidCount, 5);
+  assert.deepEqual(report.selectedRiskBidStationIds, stationIds);
   assert.deepEqual(report.baseActionStationIds, []);
-  assert.equal(report.riskBidLimit, 3);
-  assert.equal(report.overRiskBidLimit, true);
-  assert.equal(Object.keys(source.riskBids).length, 4);
+  assert.equal(report.riskBidLimit, 5);
+  assert.equal(report.overRiskBidLimit, false);
+  assert.equal(Object.keys(source.riskBids).length, 5);
 
-  const threeSelected = clonePlainData(source);
-  delete threeSelected.riskBids.watchmaster;
-  const fourthSelection = applyVoyageEncounterRiskBidSelection(
-    threeSelected,
-    { stationId: "watchmaster", riskBidId: "bid-watchmaster" }
-  );
-  assert.equal(fourthSelection.ok, true);
-  const fourthReport = validateVoyageEncounterRiskBids(
-    fourthSelection.nextState
-  );
-  assert.equal(fourthReport.valid, true);
-  assert.equal(fourthReport.selectedRiskBidCount, 4);
-  assert.equal(fourthReport.overRiskBidLimit, true);
+  const fourStationSource = clonePlainData(source);
+  delete fourStationSource.stationAssignments[4];
+  fourStationSource.stationAssignments = fourStationSource.stationAssignments.filter(Boolean);
+  delete fourStationSource.availableStations[4];
+  fourStationSource.availableStations = fourStationSource.availableStations.filter(Boolean);
+  delete fourStationSource.selections.veilwarden;
+  delete fourStationSource.riskBids.veilwarden;
+  const fourReport = validateVoyageEncounterRiskBids(fourStationSource);
+  assert.equal(fourReport.valid, true);
+  assert.equal(fourReport.selectedRiskBidCount, 4);
+  assert.equal(fourReport.riskBidLimit, 4);
+  assert.equal(fourReport.overRiskBidLimit, false);
+
+  const threeStationSource = clonePlainData(fourStationSource);
+  threeStationSource.stationAssignments = threeStationSource.stationAssignments.slice(0, 3);
+  threeStationSource.availableStations = threeStationSource.availableStations.slice(0, 3);
+  delete threeStationSource.selections.watchmaster;
+  delete threeStationSource.riskBids.watchmaster;
+  const threeReport = validateVoyageEncounterRiskBids(threeStationSource);
+  assert.equal(threeReport.riskBidLimit, 3);
+  assert.equal(threeReport.selectedRiskBidCount, 3);
+  assert.equal(threeReport.overRiskBidLimit, false);
+  threeStationSource.riskBids.watchmaster = {
+    stationId: "watchmaster",
+    actionId: "action-watchmaster",
+    riskBidId: "bid-watchmaster",
+    dcAdjustment: 2
+  };
+  const unoccupiedReport = validateVoyageEncounterRiskBids(threeStationSource);
+  assert.equal(unoccupiedReport.riskBidLimit, 3);
+  assert.equal(unoccupiedReport.selectedRiskBidCount, 3);
+  assert.equal(unoccupiedReport.overRiskBidLimit, false);
+  assert.ok(unoccupiedReport.errors.some((entry) => entry.code === "risk-bid-selection-missing" && entry.path === "riskBids.watchmaster"));
 });
 
 test("persisted bid maps retain empty, one, and multiple selection behavior", () => {
@@ -1011,7 +1003,7 @@ test("validation reports optional base actions and valid bids in occupied order"
     "navigator",
     "captain"
   ]);
-  assert.equal(emptyReport.riskBidLimit, 3);
+  assert.equal(emptyReport.riskBidLimit, 2);
   assert.equal(emptyReport.overRiskBidLimit, false);
 
   const selected = state();

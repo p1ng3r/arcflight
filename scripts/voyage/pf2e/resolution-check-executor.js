@@ -160,6 +160,7 @@ export async function executeVoyagePf2ePendingCheck(pendingCheck, dependencies) 
   };
 
   parameters.momentumRollBonus = resolved.context.momentumRollBonus;
+  if (resolved.context.focusModifier !== undefined && resolved.context.focusModifier !== 0) parameters.focusModifier = resolved.context.focusModifier;
 
   let roll;
   try {

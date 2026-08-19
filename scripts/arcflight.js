@@ -137,9 +137,10 @@ import {
 } from "./helpers/item-organization.js";
 import { findMissingCoreArcflightItems, syncCoreArcflightItems } from "./helpers/core-item-sync.js";
 import { launchVoyageEventSession as launchVoyageEventSessionInternal, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections, buildVoyageEventManagerDashboardModel } from "./voyage/foundry/event-launcher.js";
-import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION } from "./voyage/m12/event-definition.js";
+import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_PRESENTATION, M12_FOCUS_ABILITIES } from "./voyage/m12/event-definition.js";
 import { getFoundrySessionMutationCoordinator } from "./voyage/foundry/session-coordinator.js";
-import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, beginVoyageEventSessionResolution, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
+import { executeVoyagePlayerIntent, registerVoyageGmCommandTransport, voyagePlayerIntentTransportState } from "./voyage/foundry/gm-command-transport.js";
+import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, authorizeVoyageEventSessionOperator, beginVoyageEventSessionResolution, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
 import { executeVoyagePf2ePendingCheckInFoundry } from "./voyage/pf2e/runtime-execution.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 
@@ -151,6 +152,34 @@ function trustedFoundryUsers() {
     return users.map((user) => ({ id: user?.id, isGM: user?.isGM, active: user?.active }));
   } catch {
     return [];
+  }
+}
+
+function trustedOwnedVoyageOperators(userId) {
+  try {
+    const users = globalThis.game?.users;
+    const user = typeof users?.get === "function" ? users.get(userId) : (Array.isArray(users) ? users.find((entry) => entry?.id === userId) : null);
+    if (!user) return null;
+    const ownerLevel = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+    const documents = [];
+    // M12 station operators are currently canonical Actor identities. Item
+    // ownership is not an operator authority source in this slice.
+    for (const collection of [globalThis.game?.actors]) {
+      const values = Array.isArray(collection) ? collection : collection?.contents;
+      if (Array.isArray(values)) documents.push(...values);
+    }
+    const result = [];
+    for (const document of documents) {
+      const permission = typeof document?.testUserPermission === "function"
+        ? (document.testUserPermission(user, "OWNER") === true || document.testUserPermission(user, ownerLevel) === true)
+        : (typeof document?.permission?.[userId] === "number" && document.permission[userId] >= ownerLevel);
+      if (permission !== true) continue;
+      const identity = { kind: "actor", id: document?.id ?? null, uuid: document?.uuid ?? null, name: document?.name ?? "" };
+      if (typeof identity.id === "string" && identity.id.length > 0 && typeof identity.uuid === "string" && identity.uuid.length > 0) result.push(identity);
+    }
+    return result;
+  } catch {
+    return null;
   }
 }
 
@@ -168,27 +197,94 @@ function trustedLaunchContext() {
     isJournalEntryDocument: (document) => document?.documentName === "JournalEntry" || document?.constructor?.name === "JournalEntry",
     createDocumentId: () => globalThis.foundry?.utils?.randomID?.(),
     resolveEventDefinitionSnapshot: (eventId, definitionSnapshotId) => getM12EventDefinition(eventId, definitionSnapshotId),
+    resolveVoyageOperatorForPrincipal: (userId) => trustedOwnedVoyageOperators(userId),
+    focusAbilities: M12_FOCUS_ABILITIES,
     runExclusiveSessionMutation: getFoundrySessionMutationCoordinator(globalThis.game),
     executeVoyagePf2ePendingCheck: (pendingCheck) => executeVoyagePf2ePendingCheckInFoundry(pendingCheck, globalThis),
     applyVoyageEncounterAbortTransition
   };
 }
 
+function trustedRemotePlayerContext(originatingUserId) {
+  const base = trustedLaunchContext();
+  const executingGmUserId = globalThis.game?.user?.id ?? null;
+  const connectionId = globalThis.game?.socket?.id ?? null;
+  return {
+    ...base,
+    authenticatedUserId: originatingUserId,
+    authenticatedConnectionId: connectionId,
+    trustedTransportContext: typeof connectionId === "string" && connectionId.length > 0,
+    __trustedRemotePlayerIntent: true,
+    originatingUserId,
+    executingGmUserId
+  };
+}
+
+async function handleVoyagePlayerIntent(request, { originatingUserId } = {}) {
+  if (typeof originatingUserId !== "string" || originatingUserId.length === 0) return null;
+  const context = trustedRemotePlayerContext(originatingUserId);
+  if (request.kind === "voyage.m12-resolve-station") return resolveVoyageEventSessionStation(request, context);
+  return dispatchVoyageEventSessionCommand(request, context);
+}
+
+Hooks.once("socketlib.ready", () => {
+  const registered = registerVoyageGmCommandTransport({ onIntent: handleVoyagePlayerIntent });
+  if (!registered) console.error("Arcflight | Required socketlib transport could not be registered.");
+});
+
 async function launchVoyageEventSessionFromPublicBoundary(request) {
   return launchVoyageEventSessionInternal(request, trustedLaunchContext());
 }
 
 function dispatchVoyageEventSessionCommandFromPublicBoundary(request) {
+  if (globalThis.game?.user?.isGM !== true && ["focus-reaction-use", "focus-reaction-pass"].includes(request?.commandKind)) return executeVoyagePlayerIntent(request);
+  if (globalThis.game?.user?.isGM !== true && request?.commandKind) {
+    return Promise.resolve({ ok: false, requestId: request?.requestId ?? null, sessionId: request?.sessionId ?? null, status: "failed", revision: null, authorityEpoch: null, projection: null, events: [], errors: [{ code: "m11-command-not-allowed", path: "request.commandKind", message: "Command is not allowed in the current session state.", severity: "error" }], warnings: [] });
+  }
   return dispatchVoyageEventSessionCommand(request, trustedLaunchContext());
 }
 
 function readVoyageEventSessionPlanningFromPublicBoundary(sessionId) {
   return readVoyageEventSessionPlanning(sessionId, trustedLaunchContext());
 }
+function readVoyageEventSessionProjectionFromPublicBoundary(request) {
+  return readVoyageEventSessionProjection(request, trustedLaunchContext());
+}
+function readVoyageEventSessionMultiplayerProjectionFromPublicBoundary(request) {
+  return readVoyageEventSessionMultiplayerProjection(request, trustedLaunchContext());
+}
+
+function discoverVoyageEventSessionFromPublicBoundary() {
+  try {
+    const source = globalThis.game?.journal;
+    const entries = typeof source?.values === "function" ? [...source.values()] : (Array.isArray(source) ? source : source?.contents ?? []);
+    const candidates = [];
+    for (const entry of entries) {
+      const session = entry?.flags?.arcflight?.system?.voyageSession ?? entry?.toObject?.()?.flags?.arcflight?.system?.voyageSession;
+      if (!session || typeof session.sessionId !== "string" || !Number.isSafeInteger(session.revision)) continue;
+      const projection = readVoyageEventSessionMultiplayerProjection({
+        kind: "voyage.m12-read-multiplayer-projection",
+        requestId: `m12-discover-${session.sessionId}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`,
+        sessionId: session.sessionId,
+        expectedRevision: session.revision
+      }, trustedLaunchContext());
+      if (projection?.ok && !["completed", "aborted", "recovery-required"].includes(projection.projection?.sessionState)) {
+        candidates.push({ sessionId: projection.projection.sessionId, revision: projection.projection.revision });
+      }
+    }
+    return candidates.length === 1 ? candidates[0] : null;
+  } catch {
+    return null;
+  }
+}
+function authorizeVoyageEventSessionOperatorFromPublicBoundary(request) {
+  return authorizeVoyageEventSessionOperator(request, trustedLaunchContext());
+}
 function readVoyageEventSessionResolutionFromPublicBoundary(sessionId) {
   return readVoyageEventSessionResolution(sessionId, trustedLaunchContext());
 }
 function resolveVoyageEventSessionStationFromPublicBoundary(request) {
+  if (globalThis.game?.user?.isGM !== true) return executeVoyagePlayerIntent(request);
   return resolveVoyageEventSessionStation(request, trustedLaunchContext());
 }
 function beginVoyageEventSessionResolutionFromPublicBoundary(request) {
@@ -196,6 +292,9 @@ function beginVoyageEventSessionResolutionFromPublicBoundary(request) {
 }
 function abortVoyageEventSessionFromPublicBoundary(request) {
   return abortVoyageEventSession(request, trustedLaunchContext());
+}
+function correctVoyageEventSessionFromPublicBoundary(request) {
+  return correctVoyageEventSession(request, trustedLaunchContext());
 }
 import {
   backfillInstallStateForAllShips,
@@ -422,11 +521,18 @@ Hooks.once("init", () => {
     validateVoyageEncounterState,
     launchVoyageEventSession: launchVoyageEventSessionFromPublicBoundary,
     dispatchVoyageEventSessionCommand: dispatchVoyageEventSessionCommandFromPublicBoundary,
+    executeVoyagePlayerIntent,
+    voyagePlayerIntentTransportState,
+    readVoyageEventSessionProjection: readVoyageEventSessionProjectionFromPublicBoundary,
+    readVoyageEventSessionMultiplayerProjection: readVoyageEventSessionMultiplayerProjectionFromPublicBoundary,
+    discoverVoyageEventSession: discoverVoyageEventSessionFromPublicBoundary,
+    authorizeVoyageEventSessionOperator: authorizeVoyageEventSessionOperatorFromPublicBoundary,
     readVoyageEventSessionPlanning: readVoyageEventSessionPlanningFromPublicBoundary,
     readVoyageEventSessionResolution: readVoyageEventSessionResolutionFromPublicBoundary,
     beginVoyageEventSessionResolution: beginVoyageEventSessionResolutionFromPublicBoundary,
     resolveVoyageEventSessionStation: resolveVoyageEventSessionStationFromPublicBoundary,
     abortVoyageEventSession: abortVoyageEventSessionFromPublicBoundary,
+    correctVoyageEventSession: correctVoyageEventSessionFromPublicBoundary,
     listVoyageEventLaunchShips,
     normalizeVoyageEventOperatorSelections,
     buildVoyageEventManagerDashboardModel,
@@ -437,6 +543,10 @@ Hooks.once("init", () => {
     openEventManager: async () => {
       const { openArcflightEventManager } = await import("./voyage/apps/event-manager.js");
       return openArcflightEventManager();
+    },
+    openPlayerEvent: async () => {
+      const { openVoyagePlayerEvent } = await import("./voyage/apps/player-event.js");
+      return openVoyagePlayerEvent();
     },
     validateVoyageEncounterStationSelections,
     applyVoyageEncounterStationActionSelection,
@@ -558,11 +668,16 @@ export {
   normalizeVoyageEncounterState,
   launchVoyageEventSessionFromPublicBoundary as launchVoyageEventSession,
   dispatchVoyageEventSessionCommandFromPublicBoundary as dispatchVoyageEventSessionCommand,
+  readVoyageEventSessionProjectionFromPublicBoundary as readVoyageEventSessionProjection,
+  readVoyageEventSessionMultiplayerProjectionFromPublicBoundary as readVoyageEventSessionMultiplayerProjection,
+  discoverVoyageEventSessionFromPublicBoundary as discoverVoyageEventSession,
+  authorizeVoyageEventSessionOperatorFromPublicBoundary as authorizeVoyageEventSessionOperator,
   readVoyageEventSessionPlanningFromPublicBoundary as readVoyageEventSessionPlanning,
   readVoyageEventSessionResolutionFromPublicBoundary as readVoyageEventSessionResolution,
   beginVoyageEventSessionResolutionFromPublicBoundary as beginVoyageEventSessionResolution,
   resolveVoyageEventSessionStationFromPublicBoundary as resolveVoyageEventSessionStation,
   abortVoyageEventSessionFromPublicBoundary as abortVoyageEventSession,
+  correctVoyageEventSessionFromPublicBoundary as correctVoyageEventSession,
   listVoyageEventLaunchShips,
   normalizeVoyageEventOperatorSelections,
   buildVoyageEventManagerDashboardModel,
