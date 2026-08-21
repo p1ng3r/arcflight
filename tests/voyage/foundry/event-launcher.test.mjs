@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { buildVoyageEventManagerDashboardModel, isVoyageEventSessionActive, isVoyageEventSessionTerminal, launchVoyageEventSession, listVoyageEventLaunchShips, normalizeVoyageEventOperatorSelections } from "../../../scripts/voyage/foundry/event-launcher.js";
-import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID, M12_FOCUS_ABILITIES } from "../../../scripts/voyage/m12/event-definition.js";
+import { getM12EventDefinition, M12_DEFINITION_SNAPSHOT_ID, M12_EVENT_ID, M12_EVENT_PRESENTATION, M12_FOCUS_ABILITIES } from "../../../scripts/voyage/m12/event-definition.js";
 import { ARCFLIGHT_SHIP_ACTOR_TYPE } from "../../../scripts/documents/ships.js";
 import { analyzeVoyageEventDefinitionRoundActionAuthoring } from "../../../scripts/voyage/domain/round-action-authoring.js";
-import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
+import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 
 globalThis.foundry ??= { applications: { api: { HandlebarsApplicationMixin: (base) => base, ApplicationV2: class {} } } };
 const { buildEventManagerResolutionPresentation, buildEventManagerRoundCloseoutPresentation, buildEventManagerRoundCloseoutCommand, buildPlanningStations, buildVoyagePlanReview, buildVoyagePlanningOrder, buildVoyageRiskBidDependencies, buildVoyageStationSelectionClearCommand, buildEventManagerProgressSegments, buildEventManagerStatusRail, buildVoyagePlanSummary, readVoyageActorStatisticModifier, isVoyagePlanReady, reorderVoyagePlanningOrder, EVENT_MANAGER_TAB_IDS, normalizeEventManagerTab, captureEventManagerViewState, restoreEventManagerViewState, buildVoyageStationSelectionPayload } = await import("../../../scripts/voyage/apps/event-manager.js");
@@ -141,13 +141,13 @@ test("M12 launch reaches Round 1 Crew Planning and replays idempotently", async 
   const request = { kind: "voyage.m12-launch-event", requestId: "launch-1", sessionId: "session-1", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } };
   const first = await launchVoyageEventSession(request, fx.context);
   assert.equal(first.ok, true, JSON.stringify(first.errors));
-  assert.equal(first.status, "crew-planning");
-  assert.equal(first.revision, 5);
+  assert.equal(first.status, "round-introduction");
+  assert.equal(first.revision, 4);
   assert.equal(fx.tracker.creates, 1);
   assert.equal(fx.tracker.updates, 1);
   const reloaded = reloadVoyageEventSession("session-1", fx.context);
   assert.equal(reloaded.ok, true, JSON.stringify(reloaded.errors));
-  assert.equal(reloaded.sessionState ?? reloaded.status, "crew-planning");
+  assert.equal(reloaded.sessionState ?? reloaded.status, "round-introduction");
   assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.checkpoints, []);
   const replay = await launchVoyageEventSession(request, fx.context);
   assert.deepEqual(replay, first);
@@ -162,13 +162,60 @@ test("M12 launch reaches Round 1 Crew Planning and replays idempotently", async 
   assert.equal(fx.tracker.updates, 1);
 });
 
+test("M12 round introduction projects authored narrative and requires an explicit GM begin-planning transition", async () => {
+  const fx = fixture();
+  fx.actors.push(actor("navigator", "Navigator Vale"), actor("watchmaster", "Watchmaster Orr"), actor("veilwarden", "Veilwarden Vale"));
+  fx.context.resolveEventDefinitionSnapshot = () => getM12EventDefinition();
+  const request = { kind: "voyage.m12-launch-event", requestId: "intro-launch", sessionId: "intro-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer", navigator: "navigator", watchmaster: "watchmaster", veilwarden: "veilwarden" } };
+  const launched = await launchVoyageEventSession(request, fx.context);
+  assert.equal(launched.ok, true, JSON.stringify(launched.errors));
+  const round = getM12EventDefinition().rounds[0];
+  const read = readVoyageEventSessionProjection({ kind: "voyage.m11-read-projection", requestId: "intro-read", sessionId: "intro-session", expectedRevision: launched.revision }, fx.context);
+  assert.equal(read.ok, true, JSON.stringify(read.errors));
+  assert.deepEqual({ roundId: read.projection.roundId, roundNumber: read.projection.roundNumber, roundTitle: read.projection.roundTitle, vignette: read.projection.vignette, situation: read.projection.situation, objective: read.projection.objective, knownStakes: read.projection.knownStakes }, { roundId: round.roundId, roundNumber: round.roundNumber, roundTitle: round.title, vignette: round.vignette, situation: round.situation, objective: round.objective, knownStakes: round.knownStakes });
+  assert.equal(read.projection.sessionState, "round-introduction");
+  assert.equal(read.projection.stationAssignments.length, 5);
+  const dashboard = buildVoyageEventManagerDashboardModel(read.projection, M12_EVENT_PRESENTATION, "gm-1");
+  const progress = buildEventManagerProgressSegments({ sessionState: dashboard.sessionState, phase: dashboard.phase });
+  assert.equal(progress.find((segment) => segment.id === "situation").active, true);
+  assert.equal(progress.find((segment) => segment.id === "crew-plan").upcoming, true);
+  const writes = fx.tracker.updates;
+  const beforeBegin = structuredClone(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState);
+  const introStored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.equal(introStored.events.length, 4);
+  assert.equal(introStored.events.some((event) => event.type === "voyage.m12-crew-planning"), false);
+  const beginRequest = { kind: "voyage.m11-command", requestId: "intro-begin", sessionId: "intro-session", expectedRevision: launched.revision, authorityEpoch: 0, commandKind: "begin-crew-planning", payload: { phaseStartSnapshotId: "intro-begin-snapshot" } };
+  const begun = await dispatchVoyageEventSessionCommand(beginRequest, fx.context);
+  assert.equal(begun.ok, true, JSON.stringify(begun.errors));
+  assert.equal(begun.status, "crew-planning");
+  assert.equal(begun.revision, launched.revision + 1);
+  assert.equal(fx.tracker.updates, writes + 1);
+  const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
+  assert.equal(stored.sessionState, "crew-planning");
+  assert.equal(stored.encounterState.roundNumber, 1);
+  const planningDashboard = buildVoyageEventManagerDashboardModel({ ...read.projection, sessionState: begun.status, phase: "crew-planning" }, M12_EVENT_PRESENTATION, "gm-1");
+  const planningProgress = buildEventManagerProgressSegments({ sessionState: planningDashboard.sessionState, phase: planningDashboard.phase });
+  assert.equal(planningProgress.find((segment) => segment.id === "situation").complete, true);
+  assert.equal(planningProgress.find((segment) => segment.id === "crew-plan").active, true);
+  assert.deepEqual(stored.encounterState.stationAssignments, beforeBegin.stationAssignments);
+  assert.equal(stored.encounterState.momentum, beforeBegin.momentum);
+  assert.deepEqual(stored.encounterState.pressureSystems, beforeBegin.pressureSystems);
+  assert.deepEqual(stored.encounterState.activeHazards, beforeBegin.activeHazards);
+  const replay = await dispatchVoyageEventSessionCommand(beginRequest, fx.context);
+  assert.deepEqual(replay, begun);
+  assert.equal(fx.tracker.updates, writes + 1);
+  const malformed = await dispatchVoyageEventSessionCommand({ ...beginRequest, requestId: "intro-begin-invalid", expectedRevision: begun.revision, commandKind: "begin-crew-planning", payload: {} }, fx.context);
+  assert.equal(malformed.ok, false);
+  assert.equal(malformed.errors[0].code, "m11-command-payload-invalid");
+  assert.equal(fx.tracker.updates, writes + 1);
+});
 test("M12 new launch keeps revision-0 draft canonical and hydrates Task 2 authored planning on read", async () => {
   const fx = fixture();
   const request = { kind: "voyage.m12-launch-event", requestId: "draft-launch", sessionId: "draft-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } };
   const launched = await launchVoyageEventSession(request, fx.context);
   assert.equal(launched.ok, true, JSON.stringify(launched.errors));
   const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
-  assert.equal(stored.revision, 5);
+  assert.equal(stored.revision, 4);
   assert.equal(stored.encounterState.availableStations.every((station) => station.actions.length === 3), true);
   const planning = readVoyageEventSessionPlanning("draft-session", fx.context);
   assert.equal(planning.ok, true, JSON.stringify(planning.errors));
@@ -186,7 +233,7 @@ test("M12 new launch verifies stable persisted ID across distinct create and rer
   const request = { kind: "voyage.m12-launch-event", requestId: "distinct-launch", sessionId: "distinct-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } };
   const result = await launchVoyageEventSession(request, fx.context);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.revision, 5);
+  assert.equal(result.revision, 4);
   assert.equal(fx.journals.length, 1);
   assert.equal(fx.journals[0].id, "Journal.session-1");
   assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.sessionId, "distinct-session");
@@ -200,7 +247,7 @@ test("M12 revision-zero creation survives Foundry-like JSON flag round-trip and 
   const request = { kind: "voyage.m12-launch-event", requestId: "json-roundtrip-launch", sessionId: "json-roundtrip-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } };
   const result = await launchVoyageEventSession(request, fx.context);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.revision, 5);
+  assert.equal(result.revision, 4);
   assert.equal(fx.journals.length, 1);
   assert.equal(fx.journals[0].id, "Journal.session-1");
   assert.equal(reloadVoyageEventSession("json-roundtrip-session", fx.context).ok, true);
@@ -286,7 +333,7 @@ test("M12 fresh launch after abandon verifies the new document by ID across dist
   assert.equal(fx.journals.length, 2);
   assert.equal(fx.journals.filter((entry) => entry.id === "Journal.session-2").length, 1);
   assert.equal(reloadVoyageEventSession("abandon-session", fx.context).status, "aborted");
-  assert.equal(reloadVoyageEventSession("fresh-session", fx.context).status, "crew-planning");
+  assert.equal(reloadVoyageEventSession("fresh-session", fx.context).status, "round-introduction");
   assert.equal(fx.tracker.deletes, 0);
 });
 
@@ -307,7 +354,7 @@ test("M12 fresh launch after abandon accepts a persisted-then-thrown update with
   assert.equal(fx.tracker.updates, writesBeforeFresh + 1);
   assert.equal(fx.tracker.deletes, 0);
   assert.equal(fx.journals.length, 2);
-  assert.equal(reloadVoyageEventSession("fresh-session", fx.context).status, "crew-planning");
+  assert.equal(reloadVoyageEventSession("fresh-session", fx.context).status, "round-introduction");
 });
 
 test("M12 historical Foundry Journals with exportSource accessors do not block repeated fresh launches", async () => {
@@ -336,12 +383,12 @@ test("M12 historical Foundry Journals with exportSource accessors do not block r
   const abandonedB = await abortVoyageEventSession({ kind: "voyage.m11-abort-session", requestId: "historical-abort-b", sessionId: "historical-session-b", expectedRevision: eventB.revision, authorityEpoch: 0, reason: "GM test abandon", confirmation: true }, fx.context);
   assert.equal(abandonedB.ok, true, JSON.stringify(abandonedB.errors));
   const eventC = await launch("historical-c", "historical-session-c", "Journal.historical-c");
-  assert.equal(eventC.status, "crew-planning");
+  assert.equal(eventC.status, "round-introduction");
   assert.equal(fx.tracker.creates, 3);
   assert.deepEqual(fx.journals.map((entry) => entry.id).sort(), ["Journal.historical-a", "Journal.historical-b", "Journal.historical-c"]);
   assert.equal(reloadVoyageEventSession("historical-session-a", fx.context).status, "aborted");
   assert.equal(reloadVoyageEventSession("historical-session-b", fx.context).status, "aborted");
-  assert.equal(reloadVoyageEventSession("historical-session-c", fx.context).status, "crew-planning");
+  assert.equal(reloadVoyageEventSession("historical-session-c", fx.context).status, "round-introduction");
   assert.equal(fx.tracker.deletes, 0);
 });
 
@@ -587,7 +634,7 @@ test("M12 Crew Plan action cards keep the canonical selection path", () => {
   assert.match(template, /data-m12-action-option/);
   assert.match(template, /class="action-card-grid"/);
   assert.match(template, /data-action-id="\{\{actionId\}\}"/);
-  assert.match(template, /data-approach-id="\{\{approaches\.\[0\]\.approachId\}\}"/);
+  assert.match(template, /data-approach-id="\{\{approaches\.0\.approachId\}\}"/);
   assert.match(template, /resourceIconPath/);
   assert.match(template, /aria-label="\{\{stationIconTitle\}\}"/);
   assert.match(runtime, /#selectActionOption/);
@@ -629,7 +676,7 @@ test("M12 command console exposes the persistent status rail for all station pre
   assert.equal(rail.momentum.value, 2);
   assert.match(rail.momentum.iconPath, /momentum_icon\.webp$/);
   assert.equal(rail.pressureRows.length, 5);
-  assert.equal(rail.pressureRows.find((row) => row.stationId === "engineer").danger, true);
+  assert.equal(rail.pressureRows.find((row) => row.stationId === "engineer").atCapacity, true);
   assert.equal(rail.hazards[0].name, "Arkengine Breach");
   assert.match(rail.hazards[0].iconPath, /hazard_icon\.webp$/);
   const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
@@ -657,7 +704,7 @@ test("M12 station identity and restrained themes stay canonical across presentat
   assert.match(template, /class="resolution-order-card station-cell \{\{stationThemeClass\}\}"/);
   assert.match(template, /class="plan-review-station station-cell \{\{stationThemeClass\}\}"/);
   assert.match(template, /class="resolution-current-card station-cell \{\{stationThemeClass\}\}"/);
-  assert.match(template, /class="pressure-row \{\{stationThemeClass\}\}/);
+  assert.match(template, /class="status-pressure-item \{\{stationThemeClass\}\}/);
   assert.match(template, /data-m12-focus-use/);
   assert.match(template, /data-m12-focus-pass/);
 });
@@ -882,7 +929,7 @@ test("M12 Task 2 clearing a selection preserves order, marks the station incompl
   assert.equal(captain.ready, false);
   const planLock = await run("locked-too-soon", 9, "plan-lock", { phaseStartSnapshotId: "not-ready" });
   assert.equal(planLock.ok, false);
-  assert.equal(fx.tracker.updates, 5);
+  assert.equal(fx.tracker.updates, 6);
   const replay = await run("clear-selection", 8, "station-selection-clear", { stationId: "captain" });
   assert.deepEqual(replay, cleared);
   const writesAfterClear = fx.tracker.updates;
@@ -896,13 +943,15 @@ test("M12 Task 2 clearing a selection preserves order, marks the station incompl
   assert.equal(reselected.ok, true, JSON.stringify(reselected.errors));
   assert.equal(reselected.revision, 10);
   assert.equal(reloadVoyageEventSession("task2-session", fx.context).ok, true);
-  assert.equal(fx.tracker.updates, 6);
+  assert.equal(fx.tracker.updates, 7);
 });
 
 test("M12 Task 2 persists canonical selections, order, and one pre-lock checkpoint", async () => {
   const fx = fixture();
   const launch = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "task2-launch", sessionId: "task2-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } }, fx.context);
   assert.equal(launch.ok, true, JSON.stringify(launch.errors));
+  const begin = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task2-begin-crew-planning", sessionId: "task2-session", expectedRevision: launch.revision, authorityEpoch: 0, commandKind: "begin-crew-planning", payload: { phaseStartSnapshotId: "task2-begin-crew-planning-snapshot" } }, fx.context);
+  assert.equal(begin.ok, true, JSON.stringify(begin.errors));
   const command = (requestId, expectedRevision, commandKind, payload) => dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId, sessionId: "task2-session", expectedRevision, authorityEpoch: 0, commandKind, payload }, fx.context);
   const captain = await command("task2-captain", 5, "station-selection", { stationId: "captain", actionId: "captain-round-1-action-1", approachId: "captain-round-1-action-1-approach", riskBidId: "captain-round-1-action-1-risk-2" });
   assert.equal(captain.ok, true, JSON.stringify(captain.errors));
@@ -913,7 +962,7 @@ test("M12 Task 2 persists canonical selections, order, and one pre-lock checkpoi
   const locked = await command("task2-lock", 8, "plan-lock", { phaseStartSnapshotId: "task2-lock-snapshot" });
   assert.equal(locked.ok, true, JSON.stringify(locked.errors));
   assert.equal(locked.status, "plan-locked");
-  assert.equal(fx.tracker.updates, 5);
+  assert.equal(fx.tracker.updates, 6);
   const stored = fx.journals[0].__testSource.flags.arcflight.system.voyageSession;
   assert.equal(stored.checkpoints.length, 1);
   assert.equal(stored.checkpoints[0].kind, "before-plan-lock");
@@ -1072,10 +1121,25 @@ async function task2Fixture() {
   const fx = fixture();
   const launch = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "task2-launch", sessionId: "task2-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } }, fx.context);
   assert.equal(launch.ok, true, JSON.stringify(launch.errors));
+  const begin = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "task2-begin-crew-planning", sessionId: "task2-session", expectedRevision: launch.revision, authorityEpoch: 0, commandKind: "begin-crew-planning", payload: { phaseStartSnapshotId: "task2-begin-crew-planning-snapshot" } }, fx.context);
+  assert.equal(begin.ok, true, JSON.stringify(begin.errors));
   const run = (requestId, expectedRevision, commandKind, payload) => dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId, sessionId: "task2-session", expectedRevision, authorityEpoch: 0, commandKind, payload }, fx.context);
   return { fx, run };
 }
 
+test("M12 persisted station locks are included in the planning projection", async () => {
+  const { fx, run } = await task2Fixture();
+  const selected = await run("lock-projection-selection", 5, "station-selection", {
+    stationId: "captain", actionId: "captain-round-1-action-1", approachId: "captain-round-1-action-1-approach", riskBidId: null
+  });
+  assert.equal(selected.ok, true, JSON.stringify(selected.errors));
+  const locked = await run("lock-projection-lock", selected.revision, "station-lock", { stationId: "captain" });
+  assert.equal(locked.ok, true, JSON.stringify(locked.errors));
+  const planning = readVoyageEventSessionPlanning("task2-session", fx.context);
+  assert.equal(planning.ok, true, JSON.stringify(planning.errors));
+  assert.deepEqual(planning.projection.stationLocks, ["captain"]);
+  assert.equal(buildPlanningStations(planning.projection)[0].stationLocked, true);
+});
 test("M12 Task 2 planning read exposes only occupied canonical actions and is isolated", async () => {
   const { fx } = await task2Fixture();
   const first = readVoyageEventSessionPlanning("task2-session", fx.context);
@@ -1087,7 +1151,7 @@ test("M12 Task 2 planning read exposes only occupied canonical actions and is is
   first.projection.stations[0].actions[0].actionId = "forged";
   const second = readVoyageEventSessionPlanning("task2-session", fx.context);
   assert.equal(second.projection.stations[0].actions[0].actionId.includes("forged"), false);
-  assert.equal(fx.tracker.updates, 1);
+  assert.equal(fx.tracker.updates, 2);
 });
 
 test("M12 Task 2 planning read hydrates an existing Task 1 station shell without writing", async () => {
@@ -1215,7 +1279,7 @@ test("M12 Task 2 incomplete plan lock writes no checkpoint and complete lock is 
   const { fx, run } = await task2Fixture();
   const incomplete = await run("incomplete-lock", 5, "plan-lock", { phaseStartSnapshotId: "incomplete" });
   assert.equal(incomplete.ok, false);
-  assert.equal(fx.tracker.updates, 1);
+  assert.equal(fx.tracker.updates, 2);
   assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.checkpoints, []);
   await run("captain", 5, "station-selection", { stationId: "captain", actionId: "captain-round-1-action-1", approachId: "captain-round-1-action-1-approach", riskBidId: null });
   await run("engineer", 6, "station-selection", { stationId: "engineer", actionId: "engineer-round-1-action-1", approachId: "engineer-round-1-action-1-approach", riskBidId: null });
@@ -1233,6 +1297,8 @@ test("M12 Task 2 commits the trivial order for one occupied station before lock"
   const fx = fixture();
   const launch = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "single-launch", sessionId: "single-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain" } }, fx.context);
   assert.equal(launch.ok, true, JSON.stringify(launch.errors));
+  const begin = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "single-begin", sessionId: "single-session", expectedRevision: launch.revision, authorityEpoch: 0, commandKind: "begin-crew-planning", payload: { phaseStartSnapshotId: "single-begin-snapshot" } }, fx.context);
+  assert.equal(begin.ok, true, JSON.stringify(begin.errors));
   const run = (requestId, expectedRevision, commandKind, payload) => dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId, sessionId: "single-session", expectedRevision, authorityEpoch: 0, commandKind, payload }, fx.context);
   const selected = await run("single-selection", 5, "station-selection", { stationId: "captain", actionId: "captain-round-1-action-1", approachId: "captain-round-1-action-1-approach", riskBidId: null });
   assert.equal(selected.ok, true, JSON.stringify(selected.errors));
@@ -1247,7 +1313,7 @@ test("M12 launch evidence remains reloadable after later control-transfer histor
   const fx = fixture();
   const request = { kind: "voyage.m12-launch-event", requestId: "historical-launch", sessionId: "session-historical-launch", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: {} };
   assert.equal((await launchVoyageEventSession(request, fx.context)).ok, true);
-  const transfer = await transferVoyageEventSessionControl({ kind: "voyage.m11-transfer-control", requestId: "historical-transfer", sessionId: request.sessionId, expectedRevision: 5, authorityEpoch: 0, targetUserId: "gm-1", reason: "election" }, fx.context);
+  const transfer = await transferVoyageEventSessionControl({ kind: "voyage.m11-transfer-control", requestId: "historical-transfer", sessionId: request.sessionId, expectedRevision: 4, authorityEpoch: 0, targetUserId: "gm-1", reason: "election" }, fx.context);
   assert.equal(transfer.ok, true, JSON.stringify(transfer.errors));
   const reloaded = reloadVoyageEventSession(request.sessionId, fx.context);
   assert.equal(reloaded.ok, true, JSON.stringify(reloaded.errors));
@@ -1343,15 +1409,17 @@ test("public Foundry launch adapter snapshots User documents into trusted plain 
     const request = { kind: "voyage.m12-launch-event", requestId: "foundry-auth-launch", sessionId: "foundry-auth-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } };
     const result = await globalThis.game.arcflight.launchVoyageEventSession(request);
     assert.equal(result.ok, true, JSON.stringify(result.errors));
-    assert.equal(result.status, "crew-planning");
-    assert.equal(result.revision, 5);
+    assert.equal(result.status, "round-introduction");
+    assert.equal(result.revision, 4);
     assert.equal(fx.tracker.creates, 1);
     assert.equal(fx.tracker.actors, 0);
     assert.equal(fx.journals.length, 1);
-    assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.revision, 5);
+    assert.equal(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.revision, 4);
     assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.checkpoints, []);
     assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession.encounterState.stationAssignments.map((entry) => entry.stationId), ["captain", "engineer"]);
-    let revision = result.revision;
+    const planningStart = await globalThis.game.arcflight.dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "public-focus-begin-planning", sessionId: "foundry-auth-session", expectedRevision: result.revision, authorityEpoch: 0, commandKind: "begin-crew-planning", payload: { phaseStartSnapshotId: "public-focus-begin-planning" } });
+    assert.equal(planningStart.ok, true, JSON.stringify(planningStart.errors));
+    let revision = planningStart.revision;
     for (const [stationId, actionId] of [["captain", "captain-round-1-action-1"], ["engineer", "engineer-round-1-action-1"]]) {
       const selection = await globalThis.game.arcflight.dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: `public-focus-select-${stationId}`, sessionId: "foundry-auth-session", expectedRevision: revision, authorityEpoch: 0, commandKind: "station-selection", payload: { stationId, actionId, approachId: `${actionId}-approach`, riskBidId: null } });
       assert.equal(selection.ok, true, JSON.stringify(selection.errors)); revision = selection.revision;
@@ -1397,8 +1465,8 @@ test("M12 launch ignores unrelated JournalEntry source accessors", async () => {
   const request = { kind: "voyage.m12-launch-event", requestId: "accessor-launch", sessionId: "accessor-session", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } };
   const result = await launchVoyageEventSession(request, fx.context);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.status, "crew-planning");
-  assert.equal(result.revision, 5);
+  assert.equal(result.status, "round-introduction");
+  assert.equal(result.revision, 4);
   assert.equal(fx.tracker.creates, 1);
   assert.equal(fx.tracker.updates, 1);
   assert.equal(fx.journals.length, 1);
@@ -1506,16 +1574,80 @@ test("M12 HUD Pressure gauges follow capacity and danger state without writes", 
   const engineer = rail.pressureRows.find((row) => row.stationId === "engineer");
   assert.equal(captain.gaugeSegments.length, 2);
   assert.equal(captain.gaugeSegments.filter((segment) => segment.filled).length, 1);
-  assert.equal(captain.pressureState, "ELEVATED");
+  assert.equal(captain.pressureState, "STRAINED");
   assert.equal(engineer.gaugeSegments.length, 5);
   assert.equal(engineer.gaugeSegments.filter((segment) => segment.filled).length, 4);
-  assert.equal(engineer.pressureState, "ELEVATED");
+  assert.equal(engineer.pressureState, "STRAINED");
   const danger = buildEventManagerStatusRail({ pressureSystems: [{ pressureSystemId: "crew-morale", value: 2, capacity: 2 }] }).pressureRows.find((row) => row.stationId === "captain");
-  assert.equal(danger.pressureState, "DANGER");
+  assert.equal(danger.pressureState, "AT CAPACITY");
   const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
-  assert.match(template, /pressure-gauge__segments/);
+  assert.match(template, /status-pressure-items/);
   assert.match(template, /pressureState/);
 });
+
+test("M12 Pressure rail uses canonical station mapping, capacity labels, and non-breach capacity state", () => {
+  const rail = buildEventManagerStatusRail({ pressureSystems: [
+    { pressureSystemId: "crew-morale", value: 0, capacity: 2 },
+    { pressureSystemId: "arkengine", value: 1, capacity: 2 },
+    { pressureSystemId: "levstone-array", value: 2, capacity: 2 },
+    { pressureSystemId: "solar-sail-rig", value: 4, capacity: 5 },
+    { pressureSystemId: "lifeveil", value: 9, capacity: 9 }
+  ] });
+  assert.deepEqual(rail.pressureRows.map((row) => [row.stationId, row.pressureSystemId]), [
+    ["captain", "crew-morale"], ["engineer", "arkengine"], ["navigator", "levstone-array"], ["watchmaster", "solar-sail-rig"], ["veilwarden", "lifeveil"]
+  ]);
+  assert.deepEqual(rail.pressureRows.map((row) => row.pressureState), ["SAFE", "STRAINED", "AT CAPACITY", "STRAINED", "AT CAPACITY"]);
+  assert.equal(rail.pressureRows.find((row) => row.stationId === "navigator").danger, false);
+  assert.match(rail.pressureRows.find((row) => row.stationId === "captain").pressureDetail, /No immediate breach risk/);
+  assert.match(rail.pressureRows.find((row) => row.stationId === "navigator").pressureDetail, /next Pressure gain/);
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  const progress = template.indexOf('data-component="event-progress"');
+  const horizontal = template.indexOf('data-component="event-status-rail"');
+  assert.ok(horizontal > progress);
+  assert.match(template, /data-component="pressure-status-rail"/);
+  assert.match(template, /PRESSURE|pressureState/);
+});
+
+test("M12 Order and Plan Review expose authoritative Heroic Action dependency status", () => {
+  const stations = [
+    { stationId: "engineer", label: "Engineer", stationIconPath: "engineer.webp", selectedActionId: "brace", actions: [{ actionId: "brace", displayName: "Brace" }], riskBidOptions: [{ selected: true, displayName: "+5 Risk Bid", dcAdjustment: 5, heroicRiskLabel: "Risk +5", presentation: { mechanicalEffect: { effects: [{ targetStationIds: ["navigator"] }] } } }] },
+    { stationId: "navigator", label: "Navigator", stationIconPath: "navigator.webp", selectedActionId: "plot", actions: [{ actionId: "plot", displayName: "Plot" }], riskBidOptions: [] }
+  ];
+  const valid = buildVoyageRiskBidDependencies(stations, ["engineer", "navigator"]);
+  const blocked = buildVoyageRiskBidDependencies(stations, ["navigator", "engineer"]);
+  assert.equal(valid.length, 1);
+  assert.equal(valid[0].heroicActionLabel, "HEROIC ACTION");
+  assert.equal(valid[0].heroicRiskLabel, "Risk +5");
+  assert.equal(valid[0].targetSummary, "Navigator");
+  assert.equal(valid[0].sourceBeforeTarget, true);
+  assert.match(valid[0].status, /Heroic Benefit can activate/);
+  assert.equal(blocked[0].sourceBeforeTarget, false);
+  assert.match(blocked[0].status, /SOURCE MUST RESOLVE BEFORE TARGET/);
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /HEROIC ACTION ORDER/);
+  assert.match(template, /heroicRiskLabel/);
+  assert.match(template, /dependencyValid/);
+  assert.match(template, /class="event-context-rail"/);
+  assert.doesNotMatch(template, /<aside class="event-status-rail"/);
+  assert.match(template, /BASE ACTION/);
+});
+
+test("M12 Order handoff gates on complete order readiness and permits base actions", () => {
+  const stations = [
+    { stationId: "engineer", ready: true, selectedRiskBidId: "risk-5" },
+    { stationId: "captain", ready: true, selectedRiskBidId: "risk-8" }
+  ];
+  const blocked = buildVoyagePlanSummary({}, stations, ["captain", "engineer"], [{ sourceBeforeTarget: false, status: "SOURCE MUST RESOLVE BEFORE TARGET" }], false, "order", true, false);
+  assert.equal(blocked.orderReady, false);
+  assert.equal(blocked.heroicActionCount, 1);
+  assert.equal(blocked.heroicActionValidCount, 0);
+  assert.match(blocked.orderBlockers.join(" "), /SOURCE MUST RESOLVE BEFORE TARGET/);
+  const base = buildVoyagePlanSummary({}, stations.map((station) => ({ ...station, selectedRiskBidId: null })), ["captain", "engineer"], [], false, "order", true, true);
+  assert.equal(base.orderReady, true);
+  assert.equal(base.heroicActionCount, 0);
+  assert.equal(base.heroicActionValidCount, 0);
+});
+
 
 test("M12 HUD Hazard widget uses a 64px count socket and isolated inspection projection", () => {
   const source = { hazardId: "h1", name: "Arkengine Breach", pressureSystemId: "arkengine", timing: "Starts next round", description: "Visible effect", secretGMField: "must not leak" };
@@ -1684,7 +1816,7 @@ test("M12 Crew Planning selection payloads retain the rendered canonical action 
   assert.match(template, /data-m12-action-option="\{\{\.\.\/stationId\}\}"/);
   assert.match(template, /data-station-id="\{\{\.\.\/stationId\}\}"/);
   assert.match(template, /data-action-id="\{\{actionId\}\}"/);
-  assert.match(template, /data-approach-id="\{\{approaches\.\[0\]\.approachId\}\}"/);
+  assert.match(template, /data-approach-id="\{\{approaches\.0\.approachId\}\}"/);
   assert.match(template, /data-m12-approach="\{\{stationId\}\}"/);
   assert.match(template, /data-m12-risk-bid="\{\{stationId\}\}"/);
   assert.doesNotMatch(template, /data-m12-action-picker/);
@@ -1712,4 +1844,70 @@ test("M12 GM Tools owns Active GM and order controls use directional accessible 
   assert.match(template, /data-m12-scroll-region="main"/);
   assert.match(template, /data-m12-scroll-region="plan"/);
   assert.match(template, /data-m12-scroll-region="resolve"/);
+});
+
+test("M12 Crew Planning resolves PF2e Perception through canonical actor paths", () => {
+  const perceptionActor = { perception: { mod: 7 } };
+  assert.equal(readVoyageActorStatisticModifier(perceptionActor, "perception"), 7);
+  assert.equal(readVoyageActorStatisticModifier({ system: { attributes: { perception: { value: 5 } } } }, "perception"), 5);
+  assert.equal(readVoyageActorStatisticModifier({ perception: { mod: "7" } }, "perception"), null);
+  assert.equal(readVoyageActorStatisticModifier(perceptionActor, ""), null);
+});
+
+test("M12 station locks make planning read-only and advance the workspace tracker", () => {
+  const planning = {
+    stationAssignments: [{ stationId: "captain", operator: { id: "captain", uuid: "Actor.captain", name: "Captain" } }],
+    stations: [{ stationId: "captain", actions: [{ actionId: "command", name: "Command", approaches: [{ approachId: "diplomacy", name: "Diplomacy", statisticSlugOrAbilityId: "diplomacy" }], riskBidOptions: [] }] }],
+    selections: { captain: { actionId: "command", approachId: "diplomacy" } }, riskBids: {}, stationLocks: ["captain"]
+  };
+  const station = buildPlanningStations(planning, false, null, [])[0];
+  assert.equal(station.stationLocked, true);
+  assert.equal(station.ready, true);
+  assert.equal(station.canLockStation, false);
+  assert.equal(station.canUnlockStation, true);
+  assert.equal(isVoyagePlanReady(planning, [station], ["captain"]), true);
+  assert.equal(buildEventManagerProgressSegments({ sessionState: "crew-planning", phase: "crew-planning", allStationsLocked: true, planningWorkspace: "order" }).find((entry) => entry.active).id, "order");
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /data-m12-station-lock/);
+  assert.match(template, /data-m12-station-unlock/);
+  assert.match(template, /planningCrewWorkspace/);
+  assert.match(template, /planningOrderWorkspace/);
+  assert.match(template, /planningReviewWorkspace/);
+  assert.doesNotMatch(template, /\\.\\[0\\]/);
+});
+
+test("M12 all-locked Crew Plan exposes Order handoff before Plan Review", () => {
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+  const stations = stationIds.map((stationId) => ({ stationId, actions: [{ actionId: `${stationId}-action`, name: "Authored action", approaches: [{ approachId: `${stationId}-approach`, name: "Approach", statisticSlugOrAbilityId: "perception" }], riskBidOptions: [] }] }));
+  const planning = {
+    sessionState: "crew-planning",
+    stationAssignments: stationIds.map((stationId) => ({ stationId, operator: { id: `${stationId}-operator`, uuid: `Actor.${stationId}`, name: stationId } })),
+    stations,
+    selections: Object.fromEntries(stationIds.map((stationId) => [stationId, { actionId: `${stationId}-action`, approachId: `${stationId}-approach` }])),
+    riskBids: {},
+    stationLocks: stationIds
+  };
+  const planningStations = buildPlanningStations(planning);
+  const crewSummary = buildVoyagePlanSummary(planning, planningStations, stationIds, [], false, "crew", true, false);
+  assert.equal(crewSummary.stationsReady, 5);
+  assert.equal(crewSummary.readinessLabel, `CREW PLAN COMPLETE ${String.fromCharCode(0x2014)} Ready to set station order`);
+  assert.equal(crewSummary.planReady, false);
+  assert.equal(buildEventManagerProgressSegments({ sessionState: "crew-planning", phase: "crew-planning", allStationsLocked: true, planningWorkspace: "crew" }).find((segment) => segment.active).id, "crew-plan");
+  assert.equal(buildEventManagerProgressSegments({ sessionState: "crew-planning", phase: "crew-planning", allStationsLocked: true, planningWorkspace: "order" }).find((segment) => segment.active).id, "order");
+  const orderSummary = buildVoyagePlanSummary(planning, planningStations, stationIds, [], false, "order", true, true);
+  assert.equal(orderSummary.readinessLabel, `ORDER COMPLETE ${String.fromCharCode(0x2014)} Ready for Plan Review`);
+  assert.equal(orderSummary.orderReady, true);
+  assert.equal(orderSummary.heroicActionCount, 0);
+  assert.equal(orderSummary.heroicActionValidCount, 0);
+  assert.equal(orderSummary.planReady, false);
+  const reviewSummary = buildVoyagePlanSummary(planning, planningStations, stationIds, [], true, "review", true, true);
+  assert.equal(reviewSummary.readinessLabel, "READY FOR PLAN LOCK");
+  assert.equal(reviewSummary.planReady, true);
+  assert.equal(buildEventManagerProgressSegments({ sessionState: "crew-planning", phase: "crew-planning", allStationsLocked: true, planningWorkspace: "review" }).find((segment) => segment.active).id, "plan-review");
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /allStationsLocked[\s\S]*planningCrewWorkspace[\s\S]*data-m12-planning-workspace="order"/);
+  assert.match(template, /data-m12-planning-workspace="review"[\s\S]*orderReady/);
+  assert.match(template, /planningReviewWorkspace[\s\S]*data-m12-plan-lock/);
+  assert.match(template, /order-context-panel__footer[\s\S]*ORDER STATUS[\s\S]*CONTINUE TO PLAN REVIEW/);
+  assert.equal((template.match(/data-m12-planning-workspace="review"/g) ?? []).length, 1);
 });

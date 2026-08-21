@@ -260,7 +260,8 @@ const definition = {
   enhancements: [],
   misfortuneEnhancements: [],
   misfortunes: [],
-  nextSituations: [{ nextSituationId: "m12-next-situation", title: "Into the Cinderwake", summary: "The wreck's wake opens a dangerous route onward.", transitionKind: "authored" }]
+  nextSituations: [{ nextSituationId: "m12-next-situation", title: "Into the Cinderwake", summary: "The wreck's wake opens a dangerous route onward.", transitionKind: "authored" }],
+  breachDC: 21
 };
 
 export const M12_EVENT_PRESENTATION = Object.freeze({
@@ -281,6 +282,7 @@ export function validateM12EventDefinition(value) {
   try {
     const captured = structuredClone(value);
     const authoring = analyzeVoyageEventDefinitionRoundActionAuthoring(captured);
+    if (typeof captured.breachDC !== "number" || !Number.isFinite(captured.breachDC) || captured.breachDC <= 0) return { valid: false, errors: [{ code: "invalid-breach-dc", path: "breachDC", message: "Event breachDC must be a positive finite number.", severity: "error" }], warnings: [] };
     if (!authoring.structurallyValid || !authoring.authoringValid) return { valid: false, errors: authoring.errors, warnings: authoring.warnings };
     if (JSON.stringify(captured) !== JSON.stringify(definition)) return { valid: false, errors: [{ code: "m12-event-definition-mismatch", path: "eventDefinition", message: "The Milestone 12 event definition is not the registered immutable snapshot.", severity: "error" }], warnings: [] };
     const history = {

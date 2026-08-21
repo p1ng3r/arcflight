@@ -14,6 +14,8 @@ const TRANSITIONS = new Set(["retreat", "diversion", "emergency", "capture", "de
 const ROUND_RESULTS = new Set(["critical-round-success", "round-success", "round-failure", "critical-round-failure"]);
 const ROUND_COUNTS = new Set([3, 5, 7, 9, 11]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const EVENT_FIELDS_WITH_BREACH_DC = Object.freeze([...EVENT_FIELDS, "breachDC"]);
+function validEventDefinitionShape(value) { return exactKeys(value, EVENT_FIELDS) || (exactKeys(value, EVENT_FIELDS_WITH_BREACH_DC) && typeof value.breachDC === "number" && Number.isFinite(value.breachDC) && value.breachDC > 0); }
 
 const MESSAGES = Object.freeze({
   hostile: "Input contains inaccessible or unsafe data.",
@@ -223,7 +225,7 @@ function validateCatalog(rewards, enhancements, basePath = "eventDefinition") {
 
 function validateEventDefinition(definition) {
   const errors = [];
-  if (!exactKeys(definition, EVENT_FIELDS)) return [issue("m8-invalid-event-definition", "eventDefinition", MESSAGES.eventShape)];
+  if (!validEventDefinitionShape(definition)) return [issue("m8-invalid-event-definition", "eventDefinition", MESSAGES.eventShape)];
   if (definition.schemaVersion !== 1 || !nonblank(definition.eventId) || !nonblank(definition.definitionSnapshotId)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", MESSAGES.eventIdentity));
   if (!dense(definition.rounds)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", MESSAGES.roundsDense));
   else {

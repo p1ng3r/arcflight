@@ -8,6 +8,8 @@ const ROUND_RESULT_SET = new Set(Object.values(ROUND_RESULTS));
 const VALID_ROUND_COUNTS = new Set([3, 5, 7, 9, 11]);
 const TRANSITIONS = new Set(["retreat", "diversion", "emergency", "capture", "delay", "repair", "authored"]);
 const PROHIBITED = ["overallResult", "rewardAnalysis", "negativeAnalysis", "rewardSteps", "negativeSteps", "resultPackage", "allocationPlan", "nextState"];
+const EVENT_FIELDS = ["schemaVersion", "eventId", "definitionSnapshotId", "roundCount", "rounds", "rewards", "enhancements", "misfortuneEnhancements", "misfortunes", "nextSituations"];
+const EVENT_FIELDS_WITH_BREACH_DC = [...EVENT_FIELDS, "breachDC"];
 
 function issue(code, path, message, severity = "error") {
   return { code, path, message, severity };
@@ -64,7 +66,9 @@ function invalidEnvelope(errors) {
 }
 function validateDefinition(definition) {
   const errors = []; const root = "eventDefinition";
-  if (!exactKeys(definition, ["schemaVersion", "eventId", "definitionSnapshotId", "roundCount", "rounds", "rewards", "enhancements", "misfortuneEnhancements", "misfortunes", "nextSituations"])) { errors.push(issue("m8-invalid-event-definition", root, "Event Definition has an invalid exact shape.")); return errors; }
+  const exactShape = exactKeys(definition, EVENT_FIELDS) || exactKeys(definition, EVENT_FIELDS_WITH_BREACH_DC);
+  if (!exactShape) { errors.push(issue("m8-invalid-event-definition", root, "Event Definition has an invalid exact shape.")); return errors; }
+  if (Object.hasOwn(definition, "breachDC") && (typeof definition.breachDC !== "number" || !Number.isFinite(definition.breachDC) || definition.breachDC <= 0)) errors.push(issue("invalid-breach-dc", `${root}.breachDC`, "Event breachDC must be a positive finite number."));
   if (definition.schemaVersion !== 1 || !string(definition.eventId) || !string(definition.definitionSnapshotId)) errors.push(issue("m8-invalid-event-definition", root, "Event Definition identity or schema is invalid."));
   if (!Number.isSafeInteger(definition.roundCount) || !VALID_ROUND_COUNTS.has(definition.roundCount)) errors.push(issue("m8-invalid-round-count", `${root}.roundCount`, "Event Definition roundCount must be one of 3, 5, 7, 9, or 11."));
   if (!denseArray(definition.rounds)) errors.push(issue("m8-invalid-event-definition", root, "Event Definition rounds must be dense."));

@@ -112,6 +112,7 @@ const emptyBaseShipState = Object.freeze({
 
 const emptyDerivedShipState = Object.freeze({
   hullIntegrity: 0,
+  breachSaveModifier: 0,
   armorClass: 0,
   physicalResistances: Object.freeze({
     bludgeoning: 0,

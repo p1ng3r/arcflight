@@ -13,6 +13,8 @@ const KINDS = new Set(["travel-delay", "resource-cost", "operational-restriction
 const PERSISTENCE = new Set(["temporary", "persistent"]);
 const TRANSITIONS = new Set(["retreat", "diversion", "emergency", "capture", "delay", "repair", "authored"]);
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const EVENT_FIELDS_WITH_BREACH_DC = [...EVENT_FIELDS, "breachDC"];
+function validEventDefinitionShape(value) { return exact(value, EVENT_FIELDS) || (exact(value, EVENT_FIELDS_WITH_BREACH_DC) && typeof value.breachDC === "number" && Number.isFinite(value.breachDC) && value.breachDC > 0); }
 const M = Object.freeze({
   hostile: "Input contains inaccessible or unsafe data.",
   requestShape: "Request has an invalid exact shape.",
@@ -107,7 +109,7 @@ function validateMisfortuneCatalog(misfortunes, enhancements) {
 }
 function validateEventDefinition(definition) {
   const errors = [];
-  if (!exact(definition, EVENT_FIELDS)) return [issue("m8-invalid-event-definition", "eventDefinition", M.eventShape)];
+  if (!validEventDefinitionShape(definition)) return [issue("m8-invalid-event-definition", "eventDefinition", M.eventShape)];
   if (definition.schemaVersion !== 1 || !nonblank(definition.eventId) || !nonblank(definition.definitionSnapshotId)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.eventIdentity));
   if (!dense(definition.rounds)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.roundsDense));
   else { if (Number.isSafeInteger(definition.roundCount) && definition.rounds.length !== definition.roundCount) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.roundsCount)); const ids = new Set(); definition.rounds.forEach((round, i) => { if (!exact(round, ["roundId", "roundNumber"]) || !nonblank(round.roundId) || !Number.isSafeInteger(round.roundNumber) || round.roundNumber !== i + 1 || ids.has(round.roundId)) errors.push(issue("m8-invalid-event-definition", "eventDefinition", M.roundsOrder)); ids.add(round?.roundId); }); }

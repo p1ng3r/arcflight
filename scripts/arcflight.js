@@ -141,7 +141,7 @@ import { getM12EventDefinition, M12_EVENT_ID, M12_DEFINITION_SNAPSHOT_ID, M12_EV
 import { getFoundrySessionMutationCoordinator } from "./voyage/foundry/session-coordinator.js";
 import { executeVoyagePlayerIntent, registerVoyageGmCommandTransport, voyagePlayerIntentTransportState } from "./voyage/foundry/gm-command-transport.js";
 import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, authorizeVoyageEventSessionOperator, beginVoyageEventSessionResolution, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
-import { executeVoyagePf2ePendingCheckInFoundry } from "./voyage/pf2e/runtime-execution.js";
+import { executeVoyagePf2ePendingCheckInFoundry, executeVoyagePf2eBreachSaveInFoundry } from "./voyage/pf2e/runtime-execution.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
 
 function trustedFoundryUsers() {
@@ -201,6 +201,7 @@ function trustedLaunchContext() {
     focusAbilities: M12_FOCUS_ABILITIES,
     runExclusiveSessionMutation: getFoundrySessionMutationCoordinator(globalThis.game),
     executeVoyagePf2ePendingCheck: (pendingCheck) => executeVoyagePf2ePendingCheckInFoundry(pendingCheck, globalThis),
+    executeVoyagePf2eBreachSave: (pendingSave) => executeVoyagePf2eBreachSaveInFoundry(pendingSave, globalThis),
     applyVoyageEncounterAbortTransition
   };
 }

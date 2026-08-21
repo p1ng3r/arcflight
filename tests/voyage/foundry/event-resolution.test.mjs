@@ -39,6 +39,9 @@ async function launchAndLock(fixtureValue, sessionId = "resolution-session", ope
   const launched = await launchVoyageEventSession(request, fixtureValue.context); assert.equal(launched.ok, true, JSON.stringify(launched.errors));
   const send = (requestId, expectedRevision, commandKind, payload) => dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId, sessionId, expectedRevision, authorityEpoch: 0, commandKind, payload }, fixtureValue.context);
   let revision = launched.revision;
+  const planning = await send("begin-planning", revision, "begin-crew-planning", { phaseStartSnapshotId: "resolution-begin-planning" });
+  assert.equal(planning.ok, true, JSON.stringify(planning.errors));
+  revision = planning.revision;
   for (const stationId of stationOrder) {
     const actionId = stationId === "captain" && operatorSelections.navigator ? "captain-round-1-action-3" : `${stationId}-round-1-action-1`;
     const result = await send(`select-${stationId}`, revision, "station-selection", { stationId, actionId, approachId: `${actionId}-approach`, riskBidId: riskBidSelections[stationId] ?? null }); assert.equal(result.ok, true, JSON.stringify(result.errors)); revision = result.revision;
@@ -77,7 +80,7 @@ test("M12 Task 3 enters Resolution, persists pending checks, rolls once, and rel
   assert.equal(lockedProjection.projection.phase, "lock-readiness");
   assert.equal(lockedProjection.projection.stations.filter((station) => station.canRoll).length, 0);
   const direct = await resolveVoyageEventSessionStation({ kind: "voyage.m12-resolve-station", requestId: "direct-before-start", sessionId: "resolution-session", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
-  assert.equal(direct.ok, false); assert.equal(direct.errors[0].code, "m11-command-not-allowed"); assert.equal(fx.tracker.updates, 5);
+  assert.equal(direct.ok, false); assert.equal(direct.errors[0].code, "m11-command-not-allowed"); assert.equal(fx.tracker.updates, 6);
   const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "begin-resolution", sessionId: "resolution-session", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
   assert.equal(started.ok, true, JSON.stringify(started.errors));
   const startedProjection = readVoyageEventSessionResolution("resolution-session", fx.context); assert.equal(startedProjection.projection.phase, "resolution");
@@ -106,7 +109,7 @@ test("M12 Task 3 accepts a persisted resolution start after a distinct Foundry r
   assert.equal(started.ok, true, JSON.stringify(started.errors));
   assert.equal(started.status, "station-resolution");
   assert.equal(readVoyageEventSessionResolution("resolution-session", fx.context).projection.phase, "resolution");
-  assert.equal(fx.tracker.updates, 7);
+  assert.equal(fx.tracker.updates, 8);
 });
 
 test("M12 Task 3 recognizes a persisted-then-thrown resolution start without a second write", async () => {
@@ -114,7 +117,7 @@ test("M12 Task 3 recognizes a persisted-then-thrown resolution start without a s
   const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "begin-persisted-throw", sessionId: "resolution-session", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
   assert.equal(started.ok, true, JSON.stringify(started.errors));
   assert.equal(started.status, "station-resolution");
-  assert.equal(fx.tracker.updates, 7);
+  assert.equal(fx.tracker.updates, 8);
   assert.equal(readVoyageEventSessionResolution("resolution-session", fx.context).projection.phase, "resolution");
 });
 
@@ -161,7 +164,7 @@ test("M12 Slice F keeps Begin Resolution GM-authoritative and does not add playe
   const rejected = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-f-forged", sessionId: "slice-f-authority", expectedRevision: locked.revision, authorityEpoch: 0 }, nonGmContext);
   assert.equal(rejected.ok, false);
   assert.equal(rejected.errors[0].code, "m11-active-gm-required");
-  assert.equal(fx.tracker.updates, 5);
+  assert.equal(fx.tracker.updates, 6);
   const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-f-valid", sessionId: "slice-f-authority", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
   assert.equal(started.ok, true, JSON.stringify(started.errors));
   const replay = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-f-valid", sessionId: "slice-f-authority", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
@@ -543,9 +546,11 @@ test("M12 Slice F rejects every non-eligible Begin source state without a succes
 test("M12 Slice F rejects Begin while the session is still in crew planning", async () => {
   const fx = fixture();
   const launched = await launchVoyageEventSession({ kind: "voyage.m12-launch-event", requestId: "slice-f-crew-planning-launch", sessionId: "slice-f-crew-planning", expectedRevision: 0, authorityEpoch: 0, eventId: M12_EVENT_ID, definitionSnapshotId: M12_DEFINITION_SNAPSHOT_ID, shipId: "ship-1", operatorSelections: { captain: "captain", engineer: "engineer" } }, fx.context);
-  assert.equal(launched.ok, true, JSON.stringify(launched.errors)); assert.equal(launched.status, "crew-planning");
+  assert.equal(launched.ok, true, JSON.stringify(launched.errors));
+  const planning = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "slice-f-crew-planning-begin", sessionId: "slice-f-crew-planning", expectedRevision: launched.revision, authorityEpoch: 0, commandKind: "begin-crew-planning", payload: { phaseStartSnapshotId: "slice-f-crew-planning-begin" } }, fx.context);
+  assert.equal(planning.ok, true, JSON.stringify(planning.errors)); assert.equal(planning.status, "crew-planning");
   const writes = fx.tracker.updates; const before = structuredClone(fx.journals[0].__testSource.flags.arcflight.system.voyageSession);
-  const result = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-f-crew-planning-begin", sessionId: "slice-f-crew-planning", expectedRevision: launched.revision, authorityEpoch: 0 }, fx.context);
+  const result = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "slice-f-crew-planning-resolution-begin", sessionId: "slice-f-crew-planning", expectedRevision: planning.revision, authorityEpoch: 0 }, fx.context);
   assert.equal(result.ok, false); assert.equal(result.errors[0].code, "m11-command-not-allowed"); assert.equal(fx.tracker.updates, writes);
   assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession, before);
 });
@@ -695,10 +700,10 @@ test("M12 Task 4 persists Focus spend before execution, including a persisted-th
   const reactionId = readVoyageEventSessionResolution("resolution-session", fx.context).projection.reactionWindow.opportunities[0].reactionId;
   fx.tracker.throwUpdate = true; fx.tracker.persistThenThrow = true;
   const used = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "focus-prep-throw-use", sessionId: "resolution-session", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, fx.context);
-  assert.equal(used.ok, true, JSON.stringify(used.errors)); assert.equal(focusCalls, 1); assert.equal(fx.tracker.updates, 10);
+  assert.equal(used.ok, true, JSON.stringify(used.errors)); assert.equal(focusCalls, 1); assert.equal(fx.tracker.updates, 11);
   assert.equal(reloadVoyageEventSession("resolution-session", fx.context).ok, true);
   const replay = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "focus-prep-throw-use", sessionId: "resolution-session", expectedRevision: started.revision, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, fx.context);
-  assert.deepEqual(replay, used); assert.equal(focusCalls, 1); assert.equal(fx.tracker.updates, 10);
+  assert.deepEqual(replay, used); assert.equal(focusCalls, 1); assert.equal(fx.tracker.updates, 11);
 });
 
 test("M12 Task 4 resumes a Focus result after an uncertain result write without a second PF2e execution", async () => {
@@ -715,9 +720,9 @@ test("M12 Task 4 resumes a Focus result after an uncertain result write without 
   assert.equal(durablePending.executionReceipt.pendingCheckId, durablePending.pendingCheckId);
   entry.update = originalUpdate;
   const retry = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "focus-result-uncertain-use", sessionId: "resolution-session", expectedRevision: started.revision + 1, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, fx.context);
-  assert.equal(retry.ok, true, JSON.stringify(retry.errors)); assert.equal(focusCalls, 1); assert.equal(fx.tracker.updates, 11);
+  assert.equal(retry.ok, true, JSON.stringify(retry.errors)); assert.equal(focusCalls, 1); assert.equal(fx.tracker.updates, 12);
   const replay = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "focus-result-uncertain-use", sessionId: "resolution-session", expectedRevision: started.revision + 1, authorityEpoch: 0, commandKind: "focus-reaction-use", payload: { reactionId } }, fx.context);
-  assert.deepEqual(replay, retry); assert.equal(fx.tracker.updates, 11); assert.equal(reloadVoyageEventSession("resolution-session", fx.context).ok, true);
+  assert.deepEqual(replay, retry); assert.equal(fx.tracker.updates, 12); assert.equal(reloadVoyageEventSession("resolution-session", fx.context).ok, true);
 });
 
 test("M12 Task 4 retries an uncertain Focus result through a distinct JournalEntry instance", async () => {
@@ -1359,13 +1364,13 @@ test("M12 trusted Focus authoring rejects the legacy short schema", async () => 
   const started = await beginVoyageEventSessionResolution({ kind: "voyage.m12-begin-resolution", requestId: "legacy-focus-begin", sessionId: "legacy-focus-session", expectedRevision: locked.revision, authorityEpoch: 0 }, fx.context);
   assert.equal(started.ok, false);
   assert.equal(started.errors[0].code, "m11-command-payload-invalid");
-  assert.equal(fx.tracker.updates, 5);
+  assert.equal(fx.tracker.updates, 6);
 });
 
 test("M12 Task 3 rejects caller-authored calculated action results", async () => {
   const fx = fixture(); const locked = await launchAndLock(fx);
   const result = dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "forged", sessionId: "resolution-session", expectedRevision: locked.revision, authorityEpoch: 0, commandKind: "action-segment", payload: { executionResult: { result: { total: 999 } } } }, fx.context);
-  assert.equal(result.ok, false); assert.equal(result.errors[0].code, "m11-command-payload-invalid"); assert.equal(fx.tracker.updates, 5);
+  assert.equal(result.ok, false); assert.equal(result.errors[0].code, "m11-command-payload-invalid"); assert.equal(fx.tracker.updates, 6);
 });
 
 test("M12 Task 3 abandons an active session without deleting history or mutating Actors", async () => {
@@ -1386,14 +1391,14 @@ test("M12 Task 3 verifies distinct and persisted-then-thrown abandonment without
   const request = { kind: "voyage.m11-abort-session", requestId: "abandon-distinct", sessionId: "resolution-session", expectedRevision: locked.revision, authorityEpoch: 0, reason: "GM test abandon", confirmation: true };
   const first = await abortVoyageEventSession(request, fx.context);
   assert.equal(first.ok, true, JSON.stringify(first.errors));
-  assert.equal(fx.tracker.updates, 6);
+  assert.equal(fx.tracker.updates, 7);
   assert.equal(fx.journals.length, 1);
   assert.equal(reloadVoyageEventSession("resolution-session", fx.context).status, "aborted");
 
   const secondFx = fixture(); const secondLocked = await launchAndLock(secondFx); secondFx.tracker.throwUpdate = true; secondFx.tracker.persistThenThrow = true;
   const second = await abortVoyageEventSession({ ...request, requestId: "abandon-persisted-throw", expectedRevision: secondLocked.revision }, secondFx.context);
   assert.equal(second.ok, true, JSON.stringify(second.errors));
-  assert.equal(secondFx.tracker.updates, 6);
+  assert.equal(secondFx.tracker.updates, 7);
   assert.equal(secondFx.journals.length, 1);
   assert.equal(reloadVoyageEventSession("resolution-session", secondFx.context).status, "aborted");
 });
@@ -1424,7 +1429,7 @@ test("M12 Task 3 rejects stale resolution start before any write", async () => {
   }, fx.context);
   assert.equal(result.ok, false);
   assert.equal(result.errors[0].code, "m11-stale-session-revision");
-  assert.equal(fx.tracker.updates, 5);
+  assert.equal(fx.tracker.updates, 6);
 });
 
 test("M12 Task 3 resolution start replays exactly without a second write", async () => {
@@ -1453,7 +1458,7 @@ test("M12 Task 3 rejects caller-authored resolution-start snapshot evidence", as
   }, fx.context);
   assert.equal(result.ok, false);
   assert.equal(result.errors[0].code, "m11-command-payload-invalid");
-  assert.equal(fx.tracker.updates, 5);
+  assert.equal(fx.tracker.updates, 6);
 });
 
 test("M12 Slice I blocks broad Plan Unlock and persists an audited unresolved-order correction", async () => {
@@ -1520,11 +1525,11 @@ test("M12 Slice I rejects non-GM and pre-resolution recovery without writes", as
   const rejected = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-player", sessionId: "slice-i-authority", expectedRevision: locked.revision, authorityEpoch: 0, correctionKind: "operator-takeover", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain" }, reason: "forged player recovery", confirmation: true }, nonGm);
   assert.equal(rejected.ok, false);
   assert.equal(rejected.errors[0].code, "m11-active-gm-required");
-  assert.equal(fx.tracker.updates, 5);
+  assert.equal(fx.tracker.updates, 6);
   const preResolution = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: "slice-i-before-resolution", sessionId: "slice-i-authority", expectedRevision: locked.revision, authorityEpoch: 0, correctionKind: "remaining-order", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationOrder: ["engineer", "captain"] }, reason: "must be rejected before resolution", confirmation: true }, fx.context);
   assert.equal(preResolution.ok, false);
   assert.equal(preResolution.errors[0].code, "m11-command-not-allowed");
-  assert.equal(fx.tracker.updates, 5);
+  assert.equal(fx.tracker.updates, 6);
 });
 
 test("M12 Slice I defers target and recorded-result corrections before missing callbacks", async () => {
@@ -1548,7 +1553,7 @@ test("M12 Slice I defers target and recorded-result corrections before missing c
   assert.equal(recorded.errors[0].code, "m11-command-not-allowed");
   assert.equal(targetCalls, 0);
   assert.equal(recordedCalls, 0);
-  assert.equal(fx.tracker.updates, 7);
+  assert.equal(fx.tracker.updates, 8);
   assert.deepEqual(fx.journals[0].__testSource.flags.arcflight.system.voyageSession, before);
 });
 
@@ -1561,7 +1566,7 @@ test("M12 Slice I rejects active owners and unowned operators for takeover", asy
     const result = await correctVoyageEventSession({ kind: "voyage.m11-correct-session", requestId: `${requestId}-takeover`, sessionId: requestId, expectedRevision: started.revision, authorityEpoch: 0, correctionKind: "operator-takeover", targetRequestId: null, targetCheckpointId: null, replacementPayload: { stationId: "captain" }, reason: "takeover", confirmation: true }, context);
     assert.equal(result.ok, false);
     assert.equal(result.errors[0].code, "m11-correction-invalid");
-    assert.equal(fx.tracker.updates, 7);
+    assert.equal(fx.tracker.updates, 8);
   };
   await make([{ id: "gm-1", isGM: true, active: true }, { id: "captain-owner", isGM: false, active: true }], () => [{ kind: "actor", id: "captain", uuid: "Actor.captain", name: "captain" }], "slice-i-active-owner");
   await make([{ id: "gm-1", isGM: true, active: true }], () => [], "slice-i-no-owner");

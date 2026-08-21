@@ -663,7 +663,7 @@ Example:
 ```text
 Capacity 2
 Safe: 0, 1, 2
-Breach: an increase that would reach 3
+Breach: an increase that would exceed 2
 ```
 
 ### 12.2 Standard gain
@@ -709,7 +709,33 @@ domain plan contains exactly one effect, and its identity includes system,
 outcome, and expected revision in addition to encounter, stage, round, source,
 and Hazard identity.
 
-### 12.3 Pressure Breach
+### 12.3 Breach Save
+
+A Breach Save is required only when the authoritative, already-processed incoming
+Pressure would exceed the affected system's current capacity. Reaching capacity
+is legal and does not trigger a save. Prevention, reduction, and redirection are
+resolved by the existing Pressure effect order before this decision. One ordinary
+Pressure-gaining effect creates at most one pending Breach Save.
+
+The save is a universal hull-level check:
+
+- modifier: the installed hull-derived `breachSaveModifier`;
+- DC: the immutable Event Definition's optional positive finite `breachDC`;
+  Generic Event Definitions may omit this field; the registered M12 immutable snapshot intentionally authors and requires its own breachDC value.
+- fallback: when absent, the deterministic minimum authored action base `check.dcSource.value` in the Event Definition, or the fixed baseline 18 when no such authored source exists.
+
+A Risk Bid, Heroic Action, temporary reduction, operator statistic, or station result
+never changes the Breach Save DC. Pass 1 exposes only pure pending/resolution data;
+actual dice, PF2e execution, UI, and persistence belong to a later pass.
+
+For one pending save, the degree outcomes are:
+
+- Critical Success: prevent the Breach and reduce the threatened system by 1 from its current value; no Hazard or Void Scar proposal.
+- Success: prevent the Breach and hold Pressure at its current capacity; no Hazard or Void Scar proposal.
+- Failure: continue into the existing Pressure Breach transaction.
+- Critical Failure: continue into the same existing Pressure Breach transaction, with no additional universal punishment.
+
+### 12.4 Pressure Breach
 
 When a system would rise above its current capacity:
 
@@ -719,7 +745,7 @@ When a system would rise above its current capacity:
 
 A single pressure-gaining effect normally creates only one breach, even if it adds multiple Pressure. Additional breaches require explicit authored text.
 
-### 12.4 Closeout
+### 12.5 Closeout
 
 After all unresolved Hazard closeout consequences and resulting breaches are processed, all remaining ordinary Pressure resets to zero.
 

@@ -251,3 +251,18 @@ export async function executeVoyagePf2ePendingCheckInFoundry(
 
   return executeVoyagePf2ePendingCheck(pendingCheck, dependencies);
 }
+/** Execute the ship-owned Breach Save through Foundry's native d20 Roll API. */
+export async function executeVoyagePf2eBreachSaveInFoundry(pending, runtime = globalThis) {
+  try {
+    if (!pending || !Number.isSafeInteger(pending.breachSaveModifier)) return { ok: false, d20: null, total: null };
+    const RollCtor = runtime?.Roll ?? runtime?.foundry?.dice?.Roll;
+    if (typeof RollCtor !== "function") return { ok: false, d20: null, total: null };
+    const roll = new RollCtor(`1d20 + ${pending.breachSaveModifier}`);
+    if (typeof roll.evaluate === "function") await roll.evaluate({ async: true });
+    else if (typeof roll.roll === "function") await roll.roll({ async: true });
+    const die = roll?.dice?.[0]?.results?.[0]?.result;
+    const total = roll?.total;
+    if (!Number.isSafeInteger(die) || die < 1 || die > 20 || typeof total !== "number" || !Number.isFinite(total)) return { ok: false, d20: null, total: null };
+    return { ok: true, d20: die, total };
+  } catch { return { ok: false, d20: null, total: null }; }
+}
