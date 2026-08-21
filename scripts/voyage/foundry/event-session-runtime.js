@@ -25,7 +25,7 @@ import { applyVoyageEncounterCrewPlanningLock } from "../domain/crew-planning-lo
 import { prepareVoyageEncounterCrewPlanningReadiness } from "../domain/crew-planning-readiness.js";
 import { validateVoyageHazardRecord, VOYAGE_HAZARD_RECORD_FIELDS } from "../domain/hazard-schema.js";
 import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../domain/constants.js";
-import { analyzeVoyagePressureBreachCloseoutTransaction, applyVoyageEncounterPressureBreachPlan } from "../domain/pressure-breach.js";
+import { analyzeVoyagePressureBreachCloseoutTransaction } from "../domain/pressure-breach.js";
 import { analyzeVoyageEncounterPressurePlan } from "../domain/pressure.js";
 import {
   analyzeVoyageEncounterBreachSavePlan,
@@ -913,6 +913,7 @@ function closeoutLifecycleAllowed(session, commandKind) {
     const metadata = state?.metadata;
     const unresolvedReaction = metadata?.reactionWindow?.status === "open" && Array.isArray(metadata.reactionWindow.opportunities) && metadata.reactionWindow.opportunities.some((entry) => !(metadata.reactionWindow.resolved ?? []).includes(entry?.reactionId));
     const pendingFocus = metadata?.focusPendingCheck !== null && metadata?.focusPendingCheck !== undefined;
+    const pendingBreachSave = metadata?.pendingBreachSave !== null && metadata?.pendingBreachSave !== undefined;
     const unresolvedRecovery = session.recovery?.status !== "none" || metadata?.recoveryControl?.status === "required";
     const unresolvedRetryStatuses = new Set(["pending", "executing", "failed", "uncertain", "recovery-required", "invalid", "erroneous", "voidable"]);
     const pendingRetry = Array.isArray(metadata?.sliceIRecovery) && metadata.sliceIRecovery.some((entry) => entry?.kind === "retry-roll-integration" && (
@@ -922,7 +923,7 @@ function closeoutLifecycleAllowed(session, commandKind) {
     ));
     return session.sessionState === "station-resolution" && state?.lifecycleState === "active" && state?.phase === "resolution"
       && session.closeout.status === "none" && Array.isArray(state.pendingThresholdQueue) && state.pendingThresholdQueue.length === 0
-      && !unresolvedReaction && !pendingFocus && !unresolvedRecovery && !pendingRetry;
+      && !unresolvedReaction && !pendingFocus && !pendingBreachSave && !unresolvedRecovery && !pendingRetry;
   }
   if (commandKind === "closeout-review") return session.sessionState === "event-closeout-review" && session.closeout.status === "review-required";
   if (session.sessionState !== "persistent-application") return false;
@@ -2058,10 +2059,33 @@ async function dispatchBreachSaveCommand(value, identities, initialAuth, initial
     const classified = classifyVoyageBreachSaveRoll({ d20: roll.value.d20, total: roll.value.total, dc: pendingValidation.value.breachDC });
     if (!classified) return failure([diagnostic("m11-command-payload-invalid", "breachSave")], identities);
     let pressureBreachResult = null;
+    let pressureTransaction = null;
     if (classified.degreeOfSuccessSlug === "failure" || classified.degreeOfSuccessSlug === "critical-failure") {
-      const pressure = analyzeVoyagePressureBreachCloseoutTransaction(prior.encounterState);
-      if (!pressure?.ok && pressure?.breachRequired === false) return failure([diagnostic("m11-command-payload-invalid", "breachSave")], identities);
-      if (pressure?.ok && pressure?.pressureBreachResult) pressureBreachResult = pressure.pressureBreachResult;
+      const pendingBreach = pendingValidation.value.pressureBreach;
+      pressureTransaction = analyzeVoyagePressureBreachCloseoutTransaction({
+        expectedEncounterRevision: prior.encounterState.revision,
+        closeoutContext: {
+          eventId: prior.eventId,
+          sessionId: prior.sessionId,
+          stageId: pendingBreach.stageId,
+          roundNumber: pendingBreach.roundNumber,
+          phase: prior.encounterState.phase
+        },
+        pressureSystems: Object.values(prior.encounterState.pressureSystems ?? {}),
+        activeHazards: prior.encounterState.activeHazards,
+        pressureEffect: {
+          ...pendingBreach,
+          pressureEffectId: pendingValidation.value.originatingEffectId,
+          delta: pendingBreach.attemptedDelta
+        }
+      });
+      if (!pressureTransaction?.ok || !pressureTransaction.breachRequired || !equal(pressureTransaction.breach, pendingBreach)) return failure([diagnostic("m11-command-payload-invalid", "breachSave")], identities);
+      pressureBreachResult = {
+        ok: true,
+        breach: pressureTransaction.breach,
+        hazard: pressureTransaction.hazard,
+        ordinaryScarProposal: pressureTransaction.ordinaryScarProposal
+      };
     }
     const resolvedSave = resolveVoyageBreachSave(pendingValidation.value, classified.degreeOfSuccessSlug, { expectedSystemId: pendingValidation.value.systemId, expectedRoundId: pendingValidation.value.roundId, pressureBreachResult });
     if (!resolvedSave?.ok) return failure([diagnostic("m11-command-payload-invalid", "breachSave")], identities);
@@ -2070,9 +2094,11 @@ async function dispatchBreachSaveCommand(value, identities, initialAuth, initial
     nextState.metadata = isPlainObject(nextState.metadata) ? nextState.metadata : {};
     delete nextState.metadata.pendingBreachSave;
     if (resolvedSave.outcome === "breach") {
-      const applied = applyVoyageEncounterPressureBreachPlan(nextState);
-      if (!applied?.ok || !applied.nextState) return failure([diagnostic("m11-command-payload-invalid", "breachSave")], identities);
-      candidate.encounterState = capture(applied.nextState).value;
+      if (!pressureTransaction?.ok) return failure([diagnostic("m11-command-payload-invalid", "breachSave")], identities);
+      nextState.pressureSystems = Object.fromEntries(pressureTransaction.nextPressureSystems.map((entry) => [entry.pressureSystemId, entry]));
+      nextState.activeHazards = capture(pressureTransaction.nextActiveHazards).value;
+      nextState.revision = pressureTransaction.encounterRevision;
+      candidate.encounterState = nextState;
     } else {
       nextState.pressureSystems = capture(nextState.pressureSystems).value;
       if (nextState.pressureSystems?.[pendingValidation.value.systemId]) nextState.pressureSystems[pendingValidation.value.systemId].value = resolvedSave.pressureValue;
@@ -4935,6 +4961,7 @@ function resolutionProjection(session, context) {
       completed: stations.length > 0 && stations.every((entry) => entry.status === "resolved"),
       stations
       ,focusPools: capture(state.metadata?.focusPools ?? []).value
+      ,pendingBreachSave: capture(state.metadata?.pendingBreachSave ?? null).value
       ,reactionWindow: capture(state.metadata?.reactionWindow ?? null).value
       ,reactionWindowOpen: state.metadata?.reactionWindow?.status === "open"
       ,reactionWindowPending: capture((state.metadata?.reactionWindow?.opportunities ?? []).filter((entry) => !(state.metadata?.reactionWindow?.resolved ?? []).includes(entry.reactionId)).map((entry) => {

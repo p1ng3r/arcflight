@@ -2461,6 +2461,11 @@ test("M12 Task 5 persists a pending Breach Save, reloads, and resolves it exactl
   assert.equal(pendingResult.events.length, 1);
   const pending = fixtureSession(fixture).encounterState.metadata.pendingBreachSave;
   assert.equal(pending.status, "pending");
+  const aftermathRead = readVoyageEventSessionResolution("session-1", fixture.context);
+  assert.equal(aftermathRead.ok, true, JSON.stringify(aftermathRead.errors));
+  assert.equal(aftermathRead.projection.completed, true);
+  assert.equal(aftermathRead.projection.pendingBreachSave.saveId, pending.saveId);
+  assert.equal(aftermathRead.projection.roundCloseoutReady, false);
   assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
   let executorCalls = 0;
   fixture.context.executeVoyagePf2eBreachSave = async (value) => {
@@ -2675,4 +2680,59 @@ test("M12 Task 5 representative persisted history tampering fails closed without
     assertFailure(invalid, "m11-invalid-session-document", "flags.arcflight.system.voyageSession", "Stored Event Session is invalid.", undefined);
     assert.equal(fixture.tracker.updates, updates, label);
   }
+});
+
+test("M12 Task 5 resolves a failed Breach Save through the canonical Pressure Breach path", async () => {
+  const { fixture, revision } = await task5ReadyFixture({ degreeByStation: { captain: 1 } });
+  const stored = fixtureSession(fixture);
+  const morale = stored.encounterState.pressureSystems["crew-morale"];
+  morale.value = morale.capacity;
+  const pendingResult = await task5CloseRound(fixture, "task5-breach-save-failure", "m12-round-1", revision);
+  assert.equal(pendingResult.ok, true, JSON.stringify(pendingResult.errors));
+  const pending = fixtureSession(fixture).encounterState.metadata.pendingBreachSave;
+  let executorCalls = 0;
+  fixture.context.executeVoyagePf2eBreachSave = async (value) => {
+    executorCalls += 1;
+    assert.equal(value.saveId, pending.saveId);
+    return { ok: true, d20: 1, total: 1 };
+  };
+  const command = { kind: "voyage.m11-command", requestId: "task5-breach-save-failure-roll", sessionId: "session-1", expectedRevision: pendingResult.revision, authorityEpoch: 0, commandKind: "breach-save-roll", payload: { saveId: pending.saveId } };
+  const resolved = await dispatchVoyageEventSessionCommand(command, fixture.context);
+  assert.equal(resolved.ok, true, JSON.stringify(resolved.errors));
+  assert.equal(resolved.events[0].degreeOfSuccessSlug, "critical-failure");
+  assert.equal(resolved.events[0].outcome, "breach");
+  assert.equal(executorCalls, 1);
+  const after = fixtureSession(fixture);
+  assert.equal(after.encounterState.pressureSystems["crew-morale"].value, 0);
+  assert.equal(after.encounterState.activeHazards.length, 1);
+  assert.equal(after.encounterState.activeHazards[0].pressureBreachId, pending.pressureBreachId);
+  assert.equal(reloadVoyageEventSession("session-1", fixture.context).ok, true);
+  const updatesAfterResolution = fixture.tracker.updates;
+  const replay = await dispatchVoyageEventSessionCommand(command, fixture.context);
+  assert.deepEqual(replay, resolved);
+  assert.equal(executorCalls, 1);
+  assert.equal(fixture.tracker.updates, updatesAfterResolution);
+});
+test("M12 Task 5 resolves an ordinary Failure Breach Save through the canonical Pressure Breach path", async () => {
+  const { fixture, revision } = await task5ReadyFixture({ degreeByStation: { captain: 1 } });
+  const stored = fixtureSession(fixture);
+  const morale = stored.encounterState.pressureSystems["crew-morale"];
+  morale.value = morale.capacity;
+  const pendingResult = await task5CloseRound(fixture, "task5-breach-save-ordinary-failure", "m12-round-1", revision);
+  assert.equal(pendingResult.ok, true, JSON.stringify(pendingResult.errors));
+  const pending = fixtureSession(fixture).encounterState.metadata.pendingBreachSave;
+  let executorCalls = 0;
+  fixture.context.executeVoyagePf2eBreachSave = async () => {
+    executorCalls += 1;
+    return { ok: true, d20: 2, total: pending.breachDC - 1 };
+  };
+  const command = { kind: "voyage.m11-command", requestId: "task5-breach-save-ordinary-failure-roll", sessionId: "session-1", expectedRevision: pendingResult.revision, authorityEpoch: 0, commandKind: "breach-save-roll", payload: { saveId: pending.saveId } };
+  const resolved = await dispatchVoyageEventSessionCommand(command, fixture.context);
+  assert.equal(resolved.ok, true, JSON.stringify(resolved.errors));
+  assert.equal(resolved.events[0].degreeOfSuccessSlug, "failure");
+  assert.equal(resolved.events[0].outcome, "breach");
+  assert.equal(executorCalls, 1);
+  const after = fixtureSession(fixture);
+  assert.equal(after.encounterState.pressureSystems["crew-morale"].value, 0);
+  assert.equal(after.encounterState.activeHazards.length, 1);
 });

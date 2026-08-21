@@ -65,7 +65,19 @@
           <section id="tab-resolve" class="event-tab-content command-workspace-panel tab-resolve" data-component="resolve-workspace" data-m12-tab-content data-m12-scroll-region="resolve" data-tab-id="resolve" role="tabpanel">
             <div class="resolve-layout">
               <section class="resolve-main command-card">
-                <p class="arcflight-kicker">RESOLUTION</p>
+                <p class="arcflight-kicker">{{#if aftermathVisible}}AFTERMATH{{else}}RESOLUTION{{/if}}</p>
+                {{#if aftermathVisible}}
+                  <section class="aftermath-panel" data-component="aftermath-panel">
+                    <h2>{{aftermath.title}}</h2>
+                    <div class="aftermath-vignette">{{#each aftermath.sentences}}<p>{{this}}</p>{{/each}}</div>
+                  </section>
+                  {{#if pendingBreachSave}}
+                    <section class="command-card breach-save-panel" data-component="breach-save-panel"><p class="arcflight-kicker">PRESSURE BREACH THREATENED</p><h3>{{pendingBreachSave.systemLabel}}</h3><p>Pressure: {{pendingBreachSave.currentPressure}} / {{pendingBreachSave.capacity}} AT CAPACITY</p><p>Incoming Pressure: +{{pendingBreachSave.incomingPressure}}</p><p><strong>BREACH SAVE</strong> +{{pendingBreachSave.breachSaveModifier}} · DC {{pendingBreachSave.breachDC}}</p><p>Failure will cause the canonical Pressure Breach, matching Hazard, Void Scar proposal, and Pressure reset.</p>{{#if pendingBreachSave.status}}<p class="arcflight-status">BREACH SAVE {{pendingBreachSave.status}}</p>{{/if}}{{#if @root.liveMode}}{{#if @root.isGm}}<button type="button" data-m12-breach-save-roll>ROLL BREACH SAVE</button>{{/if}}{{/if}}</section>
+                  {{else}}
+                    <p class="aftermath-clear">No system save is pending.</p>
+                  {{/if}}
+                  {{#if roundCloseoutReady}}<button type="button" data-m12-round-closeout data-round-id="{{resolution.roundId}}">CLOSE ROUND</button>{{else}}{{#if pendingBreachSave}}<p class="arcflight-error">Resolve the pending system save before continuing.</p>{{/if}}{{/if}}
+                {{else}}
                 {{#if awaitingPlanLock}}
                   <p class="arcflight-error">PLAN MUST BE LOCKED BEFORE RESOLUTION</p>
                 {{else}}
@@ -87,12 +99,11 @@
                     <p class="arcflight-error">Resolution state could not be read.</p>
                   {{/if}}
                 {{/if}}
+                {{/if}}
               </section>
               <aside class="resolve-secondary">
-                <section class="command-card"><p class="arcflight-kicker">PREVIOUS</p>{{#if resolution}}{{#each resolution.stations}}{{#if result}}<div class="resolve-compact {{stationThemeClass}}"><img class="station-icon" src="{{stationIconPath}}" alt="{{stationIconTitle}}" title="{{stationIconTitle}}" aria-label="{{stationIconTitle}}"><span>{{stationDisplayName}}</span><span>{{result.degreeOfSuccessSlug}}</span></div>{{/if}}{{/each}}{{/if}}</section>
+                <section class="command-card"><p class="arcflight-kicker">PREVIOUS</p>{{#if resolution}}{{#each resolution.stations}}{{#if result}}<div class="resolve-compact {{stationThemeClass}}"><img class="station-icon" src="{{stationIconPath}}" alt="{{stationIconTitle}}" title="{{stationIconTitle}}" aria-label="{{stationIconTitle}}"><span>{{stationDisplayName}}</span><span>{{resultLabel}}</span></div>{{/if}}{{/each}}{{/if}}</section>
                 <section class="command-card"><p class="arcflight-kicker">UPCOMING</p>{{#if resolution}}{{#each resolution.stations}}{{#unless current}}{{#unless result}}<div class="resolve-compact {{stationThemeClass}}"><img class="station-icon" src="{{stationIconPath}}" alt="{{stationIconTitle}}" title="{{stationIconTitle}}" aria-label="{{stationIconTitle}}"><span>{{stationDisplayName}}</span><span>UPCOMING</span></div>{{/unless}}{{/unless}}{{/each}}{{/if}}</section>
-'                {{#if pendingBreachSave}}<section class="command-card breach-save-panel" data-component="breach-save-panel"><p class="arcflight-kicker">PRESSURE BREACH THREATENED</p><h3>{{pendingBreachSave.systemId}}</h3><p>Pressure: {{pendingBreachSave.currentPressure}} / {{pendingBreachSave.capacity}} AT CAPACITY</p><p>Incoming Pressure: +{{pendingBreachSave.incomingPressure}}</p><p><strong>BREACH SAVE</strong> +{{pendingBreachSave.breachSaveModifier}} · DC {{pendingBreachSave.breachDC}}</p><p>Failure will cause the canonical Pressure Breach, matching Hazard, Void Scar proposal, and Pressure reset.</p>{{#if pendingBreachSave.status}}<p class="arcflight-status">BREACH SAVE {{pendingBreachSave.status}}</p>{{/if}}{{#if @root.liveMode}}{{#if @root.isGm}}<button type="button" data-m12-breach-save-roll>ROLL BREACH SAVE</button>{{/if}}{{/if}}</section>{{/if}}
-'                {{#if roundCloseoutReady}}<button type="button" data-m12-round-closeout data-round-id="{{resolution.roundId}}">CLOSE ROUND</button>{{/if}}
                 {{#if resolutionReadyToStart}}<button type="button" data-m12-resolution-start>BEGIN RESOLUTION</button>{{/if}}
               </aside>
             </div>

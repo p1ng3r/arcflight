@@ -163,12 +163,13 @@ export function buildEventManagerProgressSegments({ sessionState = null, lifecyc
     ["order", "ORDER"],
     ["plan-review", "PLAN REVIEW"],
     ["resolution", "RESOLUTION"],
+    ["aftermath", "AFTERMATH"],
     ["round-outcome", "ROUND OUTCOME"]
   ];
   let currentId = "situation";
   if (sessionState === "crew-planning" || phase === "crew-planning") currentId = allStationsLocked ? (planningWorkspace === "review" ? "plan-review" : planningWorkspace === "order" ? "order" : "crew-plan") : "crew-plan";
   else if (sessionState === "plan-locked" || phase === "lock-readiness") currentId = "plan-review";
-  else if (sessionState === "station-resolution" || phase === "resolution") currentId = completed ? "round-outcome" : "resolution";
+  else if (sessionState === "station-resolution" || phase === "resolution") currentId = completed ? "aftermath" : "resolution";
   else if (completed || lifecycleState === "completed-success" || lifecycleState === "completed-failure") currentId = "round-outcome";
   const currentIndex = segments.findIndex(([id]) => id === currentId);
   return segments.map(([id, label], index) => ({ id, label, active: index === currentIndex, complete: index < currentIndex, upcoming: index > currentIndex }));
@@ -410,6 +411,70 @@ export function buildEventManagerResolutionPresentation({ planLocked = false, re
   };
 }
 
+const AFTERMATH_FORBIDDEN_AUTHORED_TEXT = /\b(?:critical[ -]success|critical[ -]failure|success|failure|dc|pressure|capacity|effect|check)\b/i;
+const AFTERMATH_RESULT_LABELS = Object.freeze({
+  captain: Object.freeze({ "critical-success": "Command held firm", success: "Course held", failure: "Turn came late", "critical-failure": "Helm lost the line" }),
+  engineer: Object.freeze({ "critical-success": "Drive surged cleanly", success: "Drive held steady", failure: "Drive slipped", "critical-failure": "Drive buckled" }),
+  navigator: Object.freeze({ "critical-success": "The route opened", success: "The course held", failure: "The wake shifted", "critical-failure": "The route collapsed" }),
+  watchmaster: Object.freeze({ "critical-success": "The sweep was mastered", success: "The watch held", failure: "The sweep broke through", "critical-failure": "The watch was overwhelmed" }),
+  veilwarden: Object.freeze({ "critical-success": "The veil brightened", success: "The veil held", failure: "The veil thinned", "critical-failure": "The veil tore" })
+});
+const AFTERMATH_STATION_PHRASES = Object.freeze({
+  captain: Object.freeze({ "critical-success": "cuts a commanding path through the wreck", success: "sets the helm on a steady line", failure: "calls the turn a breath too late", "critical-failure": "commits the helm to a lane that folds shut" }),
+  engineer: Object.freeze({ "critical-success": "locks the shaking braces back into alignment", success: "coaxes the trembling machinery into rhythm", failure: "reaches the braces as the frame slips out of true", "critical-failure": "loses the brace line as the housing lurches" }),
+  navigator: Object.freeze({ "critical-success": "threads the ship through a seam in the wake", success: "keeps the bow on a workable current", failure: "reads the wake a moment too late", "critical-failure": "follows a current that turns the ship toward ruin" }),
+  watchmaster: Object.freeze({ "critical-success": "catches the next sweep before it can foul the rig", success: "keeps the rig clear of the wreck's next reach", failure: "spots the sweep only after it has crossed the deck", "critical-failure": "lets the next sweep tear across the working deck" }),
+  veilwarden: Object.freeze({ "critical-success": "seals the thinning edge around the hull", success: "holds the dark beyond the ship's skin", failure: "feels the dark press through a weakening seam", "critical-failure": "loses the veil where the void presses closest" })
+});
+const AFTERMATH_SYSTEM_TAILS = Object.freeze({
+  captain: "the Crew Morale line steadies behind the helm",
+  engineer: "the Arkengine settles into a workable rhythm",
+  navigator: "the Levstone Array finds a quieter current",
+  watchmaster: "the Solar Sail Rig stays clear of the next sweep",
+  veilwarden: "the Lifeveil keeps the dark beyond the hull"
+});
+
+function safeAftermathAuthoredText(value) {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  return text.length > 0 && !AFTERMATH_FORBIDDEN_AUTHORED_TEXT.test(text) ? text : null;
+}
+
+function lowerAftermathText(value) {
+  return typeof value === "string" && value.length > 0 ? value.charAt(0).toLowerCase() + value.slice(1) : value;
+}
+
+export function buildEventManagerResultLabel({ stationId = null, degreeOfSuccessSlug = null } = {}) {
+  return AFTERMATH_RESULT_LABELS[stationId]?.[degreeOfSuccessSlug] ?? "Outcome recorded";
+}
+
+export function buildEventManagerAftermathPresentation({ resolution = null, currentRoundDefinition = null } = {}) {
+  const reactionPending = resolution?.reactionWindowOpen === true && Array.isArray(resolution?.reactionWindowPending) && resolution.reactionWindowPending.length > 0;
+  const visible = resolution?.completed === true && !reactionPending;
+  if (!visible) return { visible: false, title: "AFTERMATH", sentences: [] };
+  const authoredStations = new Map((currentRoundDefinition?.availableStations ?? []).map((entry) => [entry.stationId, entry]));
+  const roundContext = safeAftermathAuthoredText(currentRoundDefinition?.title ?? currentRoundDefinition?.name);
+  const sentences = (resolution.stations ?? []).filter((station) => station?.result).slice(0, 5).map((station) => {
+    const authoredStation = authoredStations.get(station.stationId);
+    const action = authoredStation?.actions?.find((entry) => entry.actionId === station.actionId);
+    const presentation = stationPresentation(station.stationId);
+    const stationName = station.stationDisplayName ?? presentation.stationDisplayName ?? "The crew";
+    const operatorName = station.operator?.name ?? station.operatorName ?? station.operatorDisplayName ?? stationName;
+    const actionName = safeAftermathAuthoredText(action?.name ?? station.actionName);
+    const objective = safeAftermathAuthoredText(action?.objective ?? action?.intent);
+    const description = safeAftermathAuthoredText(action?.description);
+    const degree = station.result.degreeOfSuccessSlug;
+    const phrase = AFTERMATH_STATION_PHRASES[station.stationId]?.[degree] ?? "changes the ship's course through the wreck";
+    const systemTail = AFTERMATH_SYSTEM_TAILS[station.stationId];
+    const actionClause = actionName ? " uses " + actionName : " takes the chosen line";
+    const contextClause = roundContext ? " as " + lowerAftermathText(roundContext) + " unfolds" : " as the round's passage unfolds";
+    const authoredDetail = objective ? "; the aim is " + lowerAftermathText(objective) : description ? "; " + description.replace(/[.!?]+$/, "") : "";
+    return operatorName + " at the " + stationName + actionClause + "; " + phrase + contextClause + "; " + (systemTail ?? "the ship finds a moment of balance") + authoredDetail + ".";
+  });
+  const recap = sentences.length > 0 ? [...sentences] : [];
+  while (recap.length < 3) recap.push(recap.length === 0 ? "The crew gathers itself as the Glassback's wake rolls past the ship." : "The next decision waits beyond the wreck.");
+  return { visible: true, title: "AFTERMATH", sentences: recap.slice(0, 6) };
+}
 export function buildEventManagerRoundCloseoutPresentation({ resolution = null, isGM = false, activeGmUserId = null, userId = null } = {}) {
   const authorized = isGM === true && typeof userId === "string" && userId.length > 0 && userId === activeGmUserId;
   const ready = resolution?.roundCloseoutReady === true && resolution?.completed === true && typeof resolution?.roundId === "string" && resolution.roundId.length > 0;
@@ -614,6 +679,7 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
         return {
           ...station,
           ...stationPresentation(station.stationId),
+          resultLabel: buildEventManagerResultLabel({ stationId: station.stationId, degreeOfSuccessSlug: station.result?.degreeOfSuccessSlug }),
           operator,
           actionName: authoredAction?.name ?? station.actionId ?? "Selected action",
           actionDescription: authoredAction?.description ?? "",
@@ -637,7 +703,9 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     const roundCloseoutPresentation = buildEventManagerRoundCloseoutPresentation({ resolution: resolutionProjection, isGM: game.user?.isGM === true, activeGmUserId: activeGmId(), userId: game.user?.id ?? null });
     const pendingBreachSave = resolutionProjection?.pendingBreachSave ?? null;
     this.#breachSavePending = pendingBreachSave;
-    const progressSegments = buildEventManagerProgressSegments({ sessionState: dashboard?.sessionState ?? planningProjection?.sessionState, lifecycleState: dashboard?.lifecycleState, phase: resolutionProjection?.phase ?? planningProjection?.phase ?? dashboard?.phase, completed: resolutionProjection?.completed === true, allStationsLocked, planningWorkspace });
+    const pendingBreachSavePresentation = pendingBreachSave ? { ...pendingBreachSave, systemLabel: formatStatusLabel(pendingBreachSave.systemId) } : null;
+    const aftermath = buildEventManagerAftermathPresentation({ resolution: resolutionProjection, currentRoundDefinition });
+    const progressSegments = buildEventManagerProgressSegments({ sessionState: dashboard?.sessionState ?? planningProjection?.sessionState, lifecycleState: dashboard?.lifecycleState, phase: resolutionProjection?.phase ?? planningProjection?.phase ?? dashboard?.phase, completed: aftermath.visible, allStationsLocked, planningWorkspace });
     const statusRail = buildEventManagerStatusRail(dashboard);
     this.#statusRail = statusRail;
     const resolutionStations = resolutionProjection?.stations ?? [];
@@ -664,7 +732,9 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
       planningOrderWorkspace: planningWorkspace === "order",
       planningReviewWorkspace: planningWorkspace === "review",
       resolution: resolutionProjection,
-      pendingBreachSave,
+      pendingBreachSave: pendingBreachSavePresentation,
+      aftermath,
+      aftermathVisible: aftermath.visible,
       planningStations,
       proposedOrder,
       riskBidDependencies,
@@ -816,7 +886,6 @@ export class ArcflightEventManager extends HandlebarsApplicationMixin(Applicatio
     this.element.querySelector("[data-m12-go-resolution]")?.addEventListener("click", () => this.#navigateToTab("resolve"));
     this.element.querySelector("[data-m12-resolution-start]")?.addEventListener("click", () => this.#beginResolution());
     this.element.querySelector("[data-m12-round-closeout]")?.addEventListener("click", () => this.#closeRound());
-    this.element.querySelector("[data-m12-breach-save-roll]")?.addEventListener("click", () => this.#rollBreachSave());
     this.element.querySelector("[data-m12-breach-save-roll]")?.addEventListener("click", () => this.#rollBreachSave());
     this.element.querySelector("[data-m12-roll-check]")?.addEventListener("click", () => this.#resolveStation());
     this.element.querySelectorAll("[data-m12-focus-pass]").forEach((button) => button.addEventListener("click", () => this.#focusReaction("focus-reaction-pass", button.dataset.reactionId)));

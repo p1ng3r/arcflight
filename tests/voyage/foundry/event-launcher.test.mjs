@@ -8,7 +8,7 @@ import { analyzeVoyageEventDefinitionRoundActionAuthoring } from "../../../scrip
 import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, reloadVoyageEventSession, transferVoyageEventSessionControl } from "../../../scripts/voyage/foundry/event-session-runtime.js";
 
 globalThis.foundry ??= { applications: { api: { HandlebarsApplicationMixin: (base) => base, ApplicationV2: class {} } } };
-const { buildEventManagerResolutionPresentation, buildEventManagerRoundCloseoutPresentation, buildEventManagerRoundCloseoutCommand, buildPlanningStations, buildVoyagePlanReview, buildVoyagePlanningOrder, buildVoyageRiskBidDependencies, buildVoyageStationSelectionClearCommand, buildEventManagerProgressSegments, buildEventManagerStatusRail, buildVoyagePlanSummary, readVoyageActorStatisticModifier, isVoyagePlanReady, reorderVoyagePlanningOrder, EVENT_MANAGER_TAB_IDS, normalizeEventManagerTab, captureEventManagerViewState, restoreEventManagerViewState, buildVoyageStationSelectionPayload } = await import("../../../scripts/voyage/apps/event-manager.js");
+const { buildEventManagerResolutionPresentation, buildEventManagerAftermathPresentation, buildEventManagerResultLabel, buildEventManagerRoundCloseoutPresentation, buildEventManagerRoundCloseoutCommand, buildPlanningStations, buildVoyagePlanReview, buildVoyagePlanningOrder, buildVoyageRiskBidDependencies, buildVoyageStationSelectionClearCommand, buildEventManagerProgressSegments, buildEventManagerStatusRail, buildVoyagePlanSummary, readVoyageActorStatisticModifier, isVoyagePlanReady, reorderVoyagePlanningOrder, EVENT_MANAGER_TAB_IDS, normalizeEventManagerTab, captureEventManagerViewState, restoreEventManagerViewState, buildVoyageStationSelectionPayload } = await import("../../../scripts/voyage/apps/event-manager.js");
 const { VOYAGE_STATION_ICON_REGISTRY, stationPresentation } = await import("../../../scripts/voyage/apps/station-icons.js");
 const { VOYAGE_RESOURCE_ICON_REGISTRY, resourcePresentation } = await import("../../../scripts/voyage/apps/resource-icons.js");
 
@@ -657,7 +657,7 @@ test("M12 choice transparency names authored Risk Bid and Focus consequences", (
 });
 
 test("M12 Event Manager progress tracker maps canonical states without inventing phases", () => {
-  const labels = ["SITUATION", "CREW PLAN", "ORDER", "PLAN REVIEW", "RESOLUTION", "ROUND OUTCOME"];
+  const labels = ["SITUATION", "CREW PLAN", "ORDER", "PLAN REVIEW", "RESOLUTION", "AFTERMATH", "ROUND OUTCOME"];
   assert.deepEqual(buildEventManagerProgressSegments({ sessionState: "crew-planning", phase: "crew-planning" }).map((segment) => segment.label), labels);
   assert.equal(buildEventManagerProgressSegments({ sessionState: "crew-planning", phase: "crew-planning" }).find((segment) => segment.active).id, "crew-plan");
   assert.equal(buildEventManagerProgressSegments({ sessionState: "plan-locked", phase: "lock-readiness" }).find((segment) => segment.active).id, "plan-review");
@@ -1910,4 +1910,34 @@ test("M12 all-locked Crew Plan exposes Order handoff before Plan Review", () => 
   assert.match(template, /planningReviewWorkspace[\s\S]*data-m12-plan-lock/);
   assert.match(template, /order-context-panel__footer[\s\S]*ORDER STATUS[\s\S]*CONTINUE TO PLAN REVIEW/);
   assert.equal((template.match(/data-m12-planning-workspace="review"/g) ?? []).length, 1);
+});
+test("M12 aftermath presentation is deterministic, authored, and hidden before completion", () => {
+  const definition = {
+    title: "The Wreck's Ember Wake",
+    availableStations: [{ stationId: "captain", actions: [{ actionId: "captain-action", name: "Hold the Line", description: "Keep the crew together." }] }]
+  };
+  const hidden = buildEventManagerAftermathPresentation({ resolution: { completed: false }, currentRoundDefinition: definition });
+  assert.equal(hidden.visible, false);
+  assert.equal(buildEventManagerAftermathPresentation({ resolution: { completed: true, reactionWindowOpen: true, reactionWindowPending: [{ reactionId: "reaction-1" }] }, currentRoundDefinition: definition }).visible, false);
+  const shown = buildEventManagerAftermathPresentation({
+    resolution: { completed: true, stations: [{ stationId: "captain", stationDisplayName: "Captain", operator: { name: "Kadrin Forgehand" }, actionId: "captain-action", result: { degreeOfSuccessSlug: "success" } }] },
+    currentRoundDefinition: definition
+  });
+  assert.equal(shown.visible, true);
+  assert.equal(shown.title, "AFTERMATH");
+  assert.ok(shown.sentences.length >= 3 && shown.sentences.length <= 6);
+  assert.match(shown.sentences[0], /Kadrin Forgehand at the Captain uses Hold the Line/);
+  assert.match(shown.sentences[0], /ember wake/i);
+  assert.match(shown.sentences[0], /Crew Morale/);
+  assert.doesNotMatch(shown.sentences.join(" "), /Critical Success|Critical Failure|\bSuccess\b|\bFailure\b|\bDC\b|\bPressure\b|\bcapacity\b|\beffect\b|\bcheck\b/i);
+});
+
+test("M12 PREVIOUS aftermath results use fictional labels and never expose degree slugs", () => {
+  assert.equal(buildEventManagerResultLabel({ stationId: "captain", degreeOfSuccessSlug: "critical-success" }), "Command held firm");
+  assert.equal(buildEventManagerResultLabel({ stationId: "engineer", degreeOfSuccessSlug: "success" }), "Drive held steady");
+  assert.equal(buildEventManagerResultLabel({ stationId: "navigator", degreeOfSuccessSlug: "failure" }), "The wake shifted");
+  assert.equal(buildEventManagerResultLabel({ stationId: "veilwarden", degreeOfSuccessSlug: "critical-failure" }), "The veil tore");
+  const template = readFileSync(new URL("../../../templates/voyage/event-manager.hbs", import.meta.url), "utf8");
+  assert.match(template, /\{\{resultLabel\}\}/);
+  assert.doesNotMatch(template, /\{\{result\.degreeOfSuccessSlug\}\}/);
 });
