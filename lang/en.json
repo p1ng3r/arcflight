@@ -7,5 +7,15 @@
   "ARCFLIGHT.Component.ShipUpgrade": "Ship Upgrade",
   "ARCFLIGHT.Component.Cargo": "Cargo",
   "ARCFLIGHT.Component.CrewAsset": "Crew Asset",
-  "ARCFLIGHT.Ship": "Arcflight Ship"
+  "ARCFLIGHT.Ship": "Arcflight Ship",
+  "ARCFLIGHT.TestLab.Title": "Arcflight Test Lab",
+  "ARCFLIGHT.TestLab.Shell": "Arcflight Test Lab",
+  "ARCFLIGHT.TestLab.Header": "Test Lab environment",
+  "ARCFLIGHT.TestLab.Lanes": "Test Lab lanes",
+  "ARCFLIGHT.TestLab.Suites": "Test Lab suites",
+  "ARCFLIGHT.TestLab.Workspace": "Test Lab workspace",
+  "ARCFLIGHT.TestLab.Selectors": "Quick Check selectors",
+  "ARCFLIGHT.TestLab.Summary": "Test Lab summary",
+  "ARCFLIGHT.TestLab.Timeline": "Test Lab timeline",
+  "ARCFLIGHT.TestLab.Evidence": "Test Lab evidence"
 }

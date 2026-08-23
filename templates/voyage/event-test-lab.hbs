@@ -1,0 +1,71 @@
+<div id="arcflight-test-lab-shell" class="arcflight-test-lab-shell" data-component="event-test-lab-shell" data-localization-key="ARCFLIGHT.TestLab.Shell" data-data-path="testLab">
+  <header id="arcflight-test-lab-header" class="arcflight-test-lab-header" data-localization-key="ARCFLIGHT.TestLab.Header" data-data-path="environment">
+    <div><p class="arcflight-kicker">ARCFLIGHT TEST LAB</p><h1>ARCFLIGHT TEST LAB</h1></div>
+    <div class="arcflight-test-lab-meta"><span>Module: {{environment.moduleVersion}}</span><span>Foundry: {{environment.foundryVersion}}</span><span>PF2e: {{environment.pf2eVersion}}</span><span>Build: {{environment.buildIdentifier}}</span><span>GM: {{environment.activeGm}}</span></div>
+  </header>
+
+  <nav id="arcflight-test-lab-lanes" class="arcflight-test-lab-lanes" aria-label="Test Lab lanes" data-component="test-lab-lanes" data-localization-key="ARCFLIGHT.TestLab.Lanes" data-data-path="lanes">
+    <button type="button" class="lane-button is-active" data-lane="ENGINE">ENGINE · ACTIVE</button>
+    <button type="button" class="lane-button" data-lane="GM FLOW" disabled>GM FLOW · FUTURE</button>
+    <button type="button" class="lane-button" data-lane="PLAYER VIEW" disabled>PLAYER VIEW · FUTURE</button>
+  </nav>
+
+  <div id="arcflight-test-lab-body" class="arcflight-test-lab-body">
+    <aside id="arcflight-test-lab-suite-panel" class="arcflight-test-lab-suites" data-component="test-lab-suite-panel" data-localization-key="ARCFLIGHT.TestLab.Suites" data-data-path="suiteRegistry">
+      <h2>Suites</h2>
+      {{#each suiteRegistry}}
+        <button type="button" class="suite-button {{#if (eq this.id ../selectedSuiteId)}}is-selected{{/if}}" data-suite-id="{{this.id}}" {{#unless this.enabled}}disabled{{/unless}}><strong>{{this.label}}</strong><small>{{#if this.enabled}}READY{{else}}NOT IMPLEMENTED / FUTURE{{/if}}</small></button>
+      {{/each}}
+    </aside>
+
+    <section id="arcflight-test-lab-workspace" class="arcflight-test-lab-main" data-component="test-lab-workspace" data-localization-key="ARCFLIGHT.TestLab.Workspace" data-data-path="selectedSuite">
+      <section id="arcflight-test-lab-selection" class="arcflight-test-lab-selection" aria-label="Quick Check selectors" data-component="test-lab-selectors" data-localization-key="ARCFLIGHT.TestLab.Selectors" data-data-path="eventOptions,shipOptions">
+        <label for="arcflight-test-lab-event">EVENT</label>
+        <select id="arcflight-test-lab-event" class="test-lab-event-selector" data-selector="event" {{#unless eventOptions.length}}disabled{{/unless}}>
+          {{#if eventOptions.length}}{{#each eventOptions}}<option value="{{this.eventId}}" {{#if (eq this.eventId ../selectedEventId)}}selected{{/if}}>{{this.label}}</option>{{/each}}{{else}}<option>No discoverable event definitions</option>{{/if}}
+        </select>
+        {{#if eventDiscoveryError}}<small class="test-lab-selector-error">{{eventDiscoveryError.code}}: {{eventDiscoveryError.message}}</small>{{/if}}
+
+        <label for="arcflight-test-lab-ship">SHIP</label>
+        <select id="arcflight-test-lab-ship" class="test-lab-ship-selector" data-selector="ship" {{#unless shipOptions.length}}disabled{{/unless}}>
+          {{#if shipOptions.length}}{{#each shipOptions}}<option value="{{this.id}}" {{#if (eq this.id ../selectedShipId)}}selected{{/if}}>{{this.label}}</option>{{/each}}{{else}}<option>No launchable Arcflight ships</option>{{/if}}
+        </select>
+        {{#if shipDiscoveryError}}<small class="test-lab-selector-error">{{shipDiscoveryError.code}}: {{shipDiscoveryError.message}}</small>{{/if}}
+      </section>
+
+      <div id="arcflight-test-lab-controls" class="arcflight-test-lab-controls">
+        <button type="button" class="test-lab-action test-lab-action-primary" data-action="runTest" {{#unless selectorReady}}disabled{{/unless}}{{#if isRunning}}disabled{{/if}}>RUN TEST</button>
+        <button type="button" data-action="runSuite" disabled>RUN SUITE · FUTURE</button>
+        <button type="button" data-action="cancelRun" disabled>CANCEL · FUTURE</button>
+        <button type="button" class="test-lab-action test-lab-action-secondary" data-action="clearResults">CLEAR RESULTS</button>
+        {{#if run.retainedSessionId}}<button type="button" data-action="cleanupRetainedFixture">CLEAN UP RETAINED TEST SESSION</button>{{/if}}
+      </div>
+
+      {{#if forcePostLaunchFailureAvailable}}<label class="test-lab-retention-toggle"><input type="checkbox" data-action="toggleForcedFailure" {{#if forcePostLaunchFailure}}checked{{/if}} {{#if isRunning}}disabled{{/if}}> <span>FORCE POST-LAUNCH FAILURE <small>TEST ONLY</small></span></label>{{/if}}
+
+      <section id="arcflight-test-lab-summary" class="arcflight-test-lab-summary" aria-label="Test Lab summary" aria-live="polite" data-component="test-lab-summary" data-localization-key="ARCFLIGHT.TestLab.Summary" data-data-path="summary">
+        <div class="summary-card summary-pass"><span>PASS</span><strong>{{summary.passed}}</strong></div><div class="summary-card summary-fail"><span>FAIL</span><strong>{{summary.failed}}</strong></div><div class="summary-card summary-skip"><span>SKIP</span><strong>{{summary.skipped}}</strong></div><div class="summary-card summary-warning"><span>WARNING</span><strong>{{summary.warnings}}</strong></div><div class="summary-card summary-total"><span>TOTAL</span><strong>{{summary.total}}</strong></div><div class="summary-card summary-status"><span>Status</span><strong>{{summary.status}}</strong></div>
+      </section>
+
+      <div id="arcflight-test-lab-panels" class="arcflight-test-lab-panels">
+        <section id="arcflight-test-lab-timeline" class="timeline-panel" data-component="test-lab-timeline" data-localization-key="ARCFLIGHT.TestLab.Timeline" data-data-path="timeline">
+          <h3>Timeline</h3>
+          {{#if timeline.length}}<ol>{{#each timeline}}<li class="timeline-item {{this.status}} {{#if (eq this.stepId ../selectedStepId)}}is-selected{{/if}}"><button type="button" data-step-id="{{this.stepId}}" {{#if (eq this.stepId ../selectedStepId)}}aria-current="step"{{/if}}><span>{{this.label}}</span><strong>{{this.status}}</strong></button></li>{{/each}}</ol>{{else}}<p class="test-lab-empty-state">No run started.</p>{{/if}}
+        </section>
+
+        <section id="arcflight-test-lab-evidence" class="evidence-panel" data-component="test-lab-evidence" data-localization-key="ARCFLIGHT.TestLab.Evidence" data-data-path="evidence">
+          <h3>Evidence</h3>
+          {{#if evidence}}
+            <dl><dt>STEP</dt><dd>{{evidence.label}}</dd><dt>STATUS</dt><dd>{{evidence.status}}</dd><dt>EXPECTED</dt><dd>{{evidence.expectedText}}</dd><dt>ACTUAL</dt><dd>{{evidence.actualText}}</dd><dt>ERROR CODE</dt><dd>{{evidence.errorCode}}</dd><dt>ERROR PATH</dt><dd>{{evidence.errorPath}}</dd><dt>ERROR MESSAGE</dt><dd>{{evidence.errorMessage}}</dd><dt>REVISION BEFORE</dt><dd>{{evidence.revisionBefore}}</dd><dt>REVISION AFTER</dt><dd>{{evidence.revisionAfter}}</dd><dt>DURATION</dt><dd>{{evidence.durationMs}}ms</dd><dt>COMMAND</dt><dd>{{evidence.commandSummary}}</dd><dt>WRITES</dt><dd>{{evidence.writes}}</dd><dt>RETAINED SESSION</dt><dd>{{evidence.retainedSessionId}}</dd></dl>
+            <details><summary>Snapshots</summary><h4>Before</h4><pre>{{evidence.beforeSnapshotText}}</pre><h4>After</h4><pre>{{evidence.afterSnapshotText}}</pre></details>
+            <details><summary>Normalized diff</summary>{{#if evidence.diff.length}}<ul>{{#each evidence.diff}}<li>{{this.kind}} · {{this.path}}</li>{{/each}}</ul>{{else}}<p>No diff recorded.</p>{{/if}}</details>
+            <details><summary>Invariant results</summary>{{#if evidence.invariantResults.length}}<ul>{{#each evidence.invariantResults}}<li>{{this.status}} · {{this.label}} · {{this.message}}</li>{{/each}}</ul>{{else}}<p>No invariant results recorded.</p>{{/if}}</details>
+            {{#if run.retainedSessionId}}<p class="test-lab-retained-fixture">Retained failed fixture: <code>{{run.retainedSessionId}}</code></p>{{/if}}
+            {{#if run.cleanup}}<p class="test-lab-cleanup-result">Retained test session cleaned safely: <code>{{run.cleanup.sessionId}}</code></p>{{/if}}
+            {{#if run.cleanupError}}<p class="test-lab-selector-error">{{run.cleanupError.code}}: {{run.cleanupError.message}}</p>{{/if}}
+          {{else}}<p>Select a timeline step to inspect evidence.</p>{{/if}}
+        </section>
+      </div>
+    </section>
+  </div>
+</div>

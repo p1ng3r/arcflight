@@ -143,6 +143,9 @@ import { executeVoyagePlayerIntent, registerVoyageGmCommandTransport, voyagePlay
 import { abortVoyageEventSession, applyVoyageEncounterAbortTransition, authorizeVoyageEventSessionOperator, beginVoyageEventSessionResolution, correctVoyageEventSession, dispatchVoyageEventSessionCommand, readVoyageEventSessionMultiplayerProjection, readVoyageEventSessionPlanning, readVoyageEventSessionProjection, readVoyageEventSessionResolution, resolveVoyageEventSessionStation } from "./voyage/foundry/event-session-runtime.js";
 import { executeVoyagePf2ePendingCheckInFoundry, executeVoyagePf2eBreachSaveInFoundry } from "./voyage/pf2e/runtime-execution.js";
 import { getInstallValidationWarnings, previewComponentInstall, previewInstallValidation, shouldBlockInstall } from "./helpers/install-validation-preview.js";
+import { createVoyageEventTestNamespace } from './voyage/testing/event-test-engine.js';
+import { openArcflightTestLab } from './voyage/testing/event-test-lab.js';
+import { registerTestLabSceneControl } from './voyage/testing/event-test-lab-entry.js';
 
 function trustedFoundryUsers() {
   try {
@@ -197,6 +200,8 @@ function trustedLaunchContext() {
     isJournalEntryDocument: (document) => document?.documentName === "JournalEntry" || document?.constructor?.name === "JournalEntry",
     createDocumentId: () => globalThis.foundry?.utils?.randomID?.(),
     resolveEventDefinitionSnapshot: (eventId, definitionSnapshotId) => getM12EventDefinition(eventId, definitionSnapshotId),
+    listEventDefinitions: () => [getM12EventDefinition()],
+    eventDefinitions: [getM12EventDefinition()],
     resolveVoyageOperatorForPrincipal: (userId) => trustedOwnedVoyageOperators(userId),
     focusAbilities: M12_FOCUS_ABILITIES,
     runExclusiveSessionMutation: getFoundrySessionMutationCoordinator(globalThis.game),
@@ -205,6 +210,11 @@ function trustedLaunchContext() {
     applyVoyageEncounterAbortTransition
   };
 }
+
+const eventTestNamespace = createVoyageEventTestNamespace({
+  getContext: () => trustedLaunchContext(),
+  getGame: () => globalThis.game
+});
 
 function trustedRemotePlayerContext(originatingUserId) {
   const base = trustedLaunchContext();
@@ -227,6 +237,12 @@ async function handleVoyagePlayerIntent(request, { originatingUserId } = {}) {
   if (request.kind === "voyage.m12-resolve-station") return resolveVoyageEventSessionStation(request, context);
   return dispatchVoyageEventSessionCommand(request, context);
 }
+
+function registerArcflightTestLabControl(controls) {
+  registerTestLabSceneControl(controls, { gameValue: globalThis.game, open: () => openArcflightTestLab() });
+}
+
+if (typeof globalThis.Hooks?.on === "function") globalThis.Hooks.on("getSceneControlButtons", registerArcflightTestLabControl);
 
 Hooks.once("socketlib.ready", () => {
   const registered = registerVoyageGmCommandTransport({ onIntent: handleVoyagePlayerIntent });
@@ -534,6 +550,11 @@ Hooks.once("init", () => {
     resolveVoyageEventSessionStation: resolveVoyageEventSessionStationFromPublicBoundary,
     abortVoyageEventSession: abortVoyageEventSessionFromPublicBoundary,
     correctVoyageEventSession: correctVoyageEventSessionFromPublicBoundary,
+    eventTest: eventTestNamespace,
+    testLab: {
+      open: openArcflightTestLab,
+      app: null
+    },
     listVoyageEventLaunchShips,
     normalizeVoyageEventOperatorSelections,
     buildVoyageEventManagerDashboardModel,
