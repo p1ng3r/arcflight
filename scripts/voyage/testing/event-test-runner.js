@@ -13,8 +13,12 @@ function statusFromSummary(summary) {
   return "IDLE";
 }
 
+function snapshotClone(value) {
+  try { return value === null || value === undefined ? value : structuredClone(value); } catch { return value; }
+}
+
 export function createTestRunner({ registry = createSuiteRegistry(), context = {} } = {}) {
-  async function run({ suiteId = QUICK_CHECK_SUITE_ID, lane = "ENGINE", selectedTestId = null, stopCondition = "fatal", eventId = null, shipId = null, forcePostLaunchFailure = false, onProgress = null } = {}) {
+  async function run({ suiteId = QUICK_CHECK_SUITE_ID, lane = "ENGINE", selectedTestId = null, stopCondition = "fatal", eventId = null, shipId = null, forcePostLaunchFailure = false, fixtureSessionId = null, fixture = null, degreeProfile = "all-success", customDegrees = null, reactionMode = "pass", onProgress = null } = {}) {
     const suite = registry.find((entry) => entry.id === suiteId) ?? registry[0];
     const runId = makeRunId();
     const startedTime = Date.now();
@@ -29,9 +33,13 @@ export function createTestRunner({ registry = createSuiteRegistry(), context = {
       operatorMapping: null,
       requestedOutcomes: null,
       pressureSetup: null,
-      reactionMode: null,
+      degreeProfile,
+      customDegrees: customDegrees ? structuredClone(customDegrees) : null,
+      reactionMode,
       stopCondition,
-      forcePostLaunchFailure: forcePostLaunchFailure === true
+      forcePostLaunchFailure: forcePostLaunchFailure === true,
+      sessionId: fixtureSessionId ?? null,
+      fixture: fixture ? structuredClone(fixture) : null
     };
 
     const steps = [];
@@ -57,10 +65,11 @@ export function createTestRunner({ registry = createSuiteRegistry(), context = {
       },
       retainedSessionId: null
     };
+    runRecord.retainedSessionId = profile.sessionId ?? null;
 
     const emitProgress = async () => {
       if (typeof onProgress !== "function") return;
-      await Promise.resolve(onProgress({ ok: false, runId, suiteId: profile.suiteId, lane: profile.lane, summary: { ...runRecord.summary, status: runRecord.summary.status === "IDLE" ? "RUNNING" : runRecord.summary.status }, steps: [...steps], profile: { ...profile }, retainedSessionId: profile.sessionId ?? null }));
+      await Promise.resolve(onProgress({ ok: false, runId, suiteId: profile.suiteId, lane: profile.lane, summary: { ...runRecord.summary, status: runRecord.summary.status === "IDLE" ? "RUNNING" : runRecord.summary.status }, steps: structuredClone(steps), profile: { ...profile }, fixture: profile.fixture ?? null, retainedSessionId: profile.sessionId ?? null }));
     };
 
     const authorityCheck = context?.game?.user?.isGM === true || context?.authenticatedUserId === context?.activeGmUserId;
@@ -131,8 +140,8 @@ export function createTestRunner({ registry = createSuiteRegistry(), context = {
         step.writes = Number.isSafeInteger(outcome?.writes) ? outcome.writes : 0;
         step.status = ["PASS", "FAIL", "SKIPPED", "WARNING"].includes(outcome?.status) ? outcome.status : (outcome && outcome.ok === true ? "PASS" : "FAIL");
         step.commandSummary = outcome?.message ?? null;
-        step.beforeSnapshot = outcome?.beforeSnapshot ?? null;
-        step.afterSnapshot = outcome?.afterSnapshot ?? null;
+        step.beforeSnapshot = snapshotClone(outcome?.beforeSnapshot ?? null);
+        step.afterSnapshot = snapshotClone(outcome?.afterSnapshot ?? null);
         const hasSnapshots = outcome?.beforeSnapshot !== null && outcome?.beforeSnapshot !== undefined
           && outcome?.afterSnapshot !== null && outcome?.afterSnapshot !== undefined;
         step.diff = Array.isArray(outcome?.diff)
@@ -140,7 +149,9 @@ export function createTestRunner({ registry = createSuiteRegistry(), context = {
           : hasSnapshots
             ? buildStructuralDiff(outcome.beforeSnapshot, outcome.afterSnapshot)
             : [];
-        step.invariantResults = Array.isArray(outcome?.invariantResults) ? outcome.invariantResults : [];
+         step.invariantResults = Array.isArray(outcome?.invariantResults) ? outcome.invariantResults : [];
+        step.runtimeTrace = Array.isArray(outcome?.trace) ? structuredClone(outcome.trace) : [];
+        step.runtimeResult = outcome?.runtimeResult ?? outcome?.snapshot ?? null;
         if (outcome?.retainedSessionId) profile.sessionId = outcome.retainedSessionId;
         if (step.status === "PASS") {
           runRecord.summary.passed += 1;

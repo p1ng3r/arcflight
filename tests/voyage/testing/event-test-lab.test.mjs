@@ -2,11 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { createSuiteRegistry, QUICK_CHECK_SUITE_ID } from "../../../scripts/voyage/testing/event-test-suite-registry.js";
+import { createSuiteRegistry, QUICK_CHECK_SUITE_ID, RESOLUTION_SUITE_IDS } from "../../../scripts/voyage/testing/event-test-suite-registry.js";
 import { createTestRunner } from "../../../scripts/voyage/testing/event-test-runner.js";
 import { buildStructuralDiff } from "../../../scripts/voyage/testing/event-test-diff.js";
 import { createInvariantEngine } from "../../../scripts/voyage/testing/event-test-invariants.js";
-import { copyTestLabText, formatTestLabAllResults, formatTestLabPreparedFixture, formatTestLabRunSummary, formatTestLabStepEvidence, normalizeTestLabEvents, normalizeTestLabShips, testLabCopyAvailability } from "../../../scripts/voyage/testing/event-test-lab.js";
+import { copyTestLabText, formatTestLabAllResults, formatTestLabFailureBundle, formatTestLabPreparedFixture, formatTestLabRunSummary, formatTestLabStepEvidence, normalizeTestLabEvents, normalizeTestLabShips, resolutionControlAvailability, testLabCopyAvailability } from "../../../scripts/voyage/testing/event-test-lab.js";
 
 const fakeContext = {
   authenticatedUserId: "gm-1",
@@ -34,6 +34,19 @@ test("suite registry loads Quick Check and future disabled suites", () => {
   const future = registry.find((entry) => entry.id === "pressure");
   assert.ok(future);
   assert.equal(future.enabled, false);
+});
+
+test("Pass 3 resolution suites are enabled and expose canonical execution controls", () => {
+  const registry = createSuiteRegistry();
+  const suites = RESOLUTION_SUITE_IDS.map((id) => registry.find((entry) => entry.id === id));
+  assert.equal(suites.every((suite) => suite?.enabled === true && suite?.lane === "ENGINE"), true);
+  assert.deepEqual(suites.map((suite) => suite.id), RESOLUTION_SUITE_IDS);
+  assert.equal(suites.every((suite) => suite.tests[0]?.id === "prepared-fixture" && suite.tests[1]?.id === "start-resolution"), true);
+  const planLocked = { session: { sessionState: "plan-locked", phase: "lock-readiness" } };
+  const active = { session: { sessionState: "station-resolution", phase: "resolution" }, planning: { committedStationOrder: ["captain"] }, resolution: { pendingChecks: [{ stationId: "captain", status: "pending" }] } };
+  assert.equal(resolutionControlAvailability({ retainedSessionId: "fixture-1", steps: [{ afterSnapshot: planLocked }] }, { sessionId: "fixture-1" }).startResolution, true);
+  assert.equal(resolutionControlAvailability({ retainedSessionId: "fixture-1", steps: [{ afterSnapshot: active }] }, { sessionId: "fixture-1" }).runCurrentStation, true);
+  assert.equal(resolutionControlAvailability({ retainedSessionId: "fixture-1", steps: [{ afterSnapshot: active }] }, { sessionId: "fixture-1" }).runAllStations, true);
 });
 
 test("runner creates runId and returns PASS for a successful suite", async () => {
@@ -178,8 +191,8 @@ test("copy actions handle clipboard failure safely and perform no gameplay write
 });
 
 test("copy availability disables actions when corresponding Test Lab data is absent", () => {
-  assert.deepEqual(testLabCopyAvailability(), { stepEvidence: false, runSummary: false, preparedFixture: false, allResults: false });
-  assert.deepEqual(testLabCopyAvailability({ run: { steps: [] }, evidence: { stepId: "authority" }, fixture: { sessionId: "session-1" } }), { stepEvidence: true, runSummary: true, preparedFixture: true, allResults: true });
+  assert.deepEqual(testLabCopyAvailability(), { stepEvidence: false, runSummary: false, preparedFixture: false, allResults: false, failureBundle: false });
+  assert.deepEqual(testLabCopyAvailability({ run: { steps: [] }, evidence: { stepId: "authority" }, fixture: { sessionId: "session-1" } }), { stepEvidence: true, runSummary: true, preparedFixture: true, allResults: true, failureBundle: false });
   assert.match(formatTestLabAllResults({ suiteId: "quick-check", summary: { status: "IDLE", passed: 0, failed: 0, skipped: 0, warnings: 0, total: 0 }, steps: [] }), /ARCFLIGHT TEST LAB — RUN SUMMARY/);
 });
 
@@ -200,4 +213,25 @@ test("prepared fixture copy control renders in the retained-session action row",
   assert.equal(availability.preparedFixture, true);
   assert.match(template, /\{\{#if copyAvailability\.preparedFixture\}\}[\s\S]*data-action="copyPreparedFixture"[\s\S]*COPY PREPARED FIXTURE[\s\S]*\{\{\/if\}\}/);
   assert.match(template, /data-action="cleanupRetainedFixture"/);
+});
+
+test("Pass 3 failure bundle preserves retained checkpoint and canonical error evidence", () => {
+  const step = { stepId: "resolution-run", label: "RUN CURRENT STATION", status: "FAIL", expected: "station resolution", actual: "reaction-required", errorCode: "m11-command-not-allowed", errorPath: "reactionWindow", errorMessage: "An open reaction window must be handled first.", afterSnapshot: { session: { sessionState: "station-resolution", phase: "resolution", revision: 12 } } };
+  const run = { ok: false, retainedSessionId: "fixture-1", profile: { sessionId: "fixture-1" }, summary: { failed: 1 }, steps: [step] };
+  const output = formatTestLabFailureBundle(run, { sessionId: "fixture-1", sessionState: "station-resolution" }, step);
+  assert.match(output, /ARCFLIGHT TEST LAB \u2014 FAILURE BUNDLE/);
+  assert.match(output, /Session: fixture-1/);
+  assert.match(output, /Error Code: m11-command-not-allowed/);
+  assert.match(output, /Error Path: reactionWindow/);
+  assert.match(output, /Error Message: An open reaction window must be handled first./);
+  assert.equal(output, formatTestLabFailureBundle(structuredClone(run), structuredClone({ sessionId: "fixture-1", sessionState: "station-resolution" }), structuredClone(step)));
+});
+
+test("Pass 3 resolution controls are present in the Test Lab template", () => {
+  const template = readFileSync(new URL("../../../templates/voyage/event-test-lab.hbs", import.meta.url), "utf8");
+  for (const action of ["start-resolution", "run-current-station", "pass-current-reaction", "run-next-station", "run-all-stations"]) assert.match(template, new RegExp(`data-resolution-action="${action}"`));
+  assert.match(template, /data-selector="degree-profile"/);
+  assert.match(template, /data-selector="reaction-mode"/);
+  assert.match(template, /REACTION BEFORE/);
+  assert.match(template, /REACTION AFTER/);
 });

@@ -213,3 +213,36 @@ test("Fixture Prep is an enabled ENGINE suite and retains the canonical pre-reso
   assert.equal(run.fixture.phase, "lock-readiness");
   assert.equal(calls.abandons, 0);
 });
+
+test("Pass 3 resolution suites validate the retained checkpoint before starting canonical resolution", async () => {
+  const calls = [];
+  let snapshot = {
+    session: { sessionId: "prepared-session", eventId: "fixture-event", shipId: "fixture-ship", revision: 17, authorityEpoch: 1, sessionState: "plan-locked", phase: "lock-readiness", testOrigin: { kind: "arcflight-event-test" } },
+    planning: { committedStationOrder: ["captain"] },
+    resolution: { pendingChecks: [{ stationId: "captain", status: "pending" }] },
+    ship: { activeHazards: [], voidScarEvidence: null }
+  };
+  const context = runnerContext({ eventTest: {
+    inspect: async () => { calls.push({ command: "inspect", revision: snapshot.session.revision, writes: 0 }); return { ok: true, snapshot: structuredClone(snapshot) }; },
+    startResolution: async ({ sessionId, expectedRevision }) => {
+      calls.push({ command: "start-resolution", sessionId, expectedRevision, writes: 2 });
+      snapshot = { ...snapshot, session: { ...snapshot.session, revision: 19, sessionState: "station-resolution", phase: "resolution" } };
+      return { ok: true, sessionId, revision: 19, snapshot: structuredClone(snapshot), beforeSnapshot: structuredClone({ ...snapshot, session: { ...snapshot.session, revision: 17, sessionState: "plan-locked", phase: "lock-readiness" } }), afterSnapshot: structuredClone(snapshot), trace: [{ writes: 2 }] };
+    },
+    runCurrentStation: async ({ sessionId }) => {
+      calls.push({ command: "run-current-station", sessionId, writes: 1 });
+      snapshot = { ...snapshot, session: { ...snapshot.session, revision: 20 } };
+      return { ok: true, sessionId, resolvedStationId: "captain", snapshot: structuredClone(snapshot), beforeSnapshot: structuredClone(snapshot), afterSnapshot: structuredClone(snapshot), trace: [{ writes: 1 }] };
+    }
+  } });
+  const run = await createTestRunner({ registry: createSuiteRegistry(), context }).run({ suiteId: "resolution-one-station-success", eventId: "fixture-event", shipId: "fixture-ship", fixtureSessionId: "prepared-session", fixture: { sessionId: "prepared-session", profileId: "canonical-first-valid" } });
+  assert.equal(run.ok, true, JSON.stringify(run.steps));
+  assert.deepEqual(run.steps.map((step) => step.stepId), ["prepared-fixture", "start-resolution", "run-current-station"]);
+  assert.equal(run.steps[0].status, "PASS");
+  assert.equal(run.steps[0].writes, 0);
+  assert.deepEqual(calls.map((entry) => entry.command), ["inspect", "start-resolution", "run-current-station"]);
+  assert.equal(calls[0].revision, 17);
+  assert.equal(calls[0].writes, 0);
+  assert.equal(calls[1].expectedRevision, 17);
+  assert.equal(calls[1].writes, 2);
+});

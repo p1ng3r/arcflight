@@ -913,3 +913,16 @@
 .test-lab-fixture-summary li { display: grid; grid-template-columns: minmax(8rem,.45fr) minmax(9rem,.65fr) minmax(8rem,1fr); gap: .6rem; padding: .35rem .45rem; border: 1px solid #4f3d2d; background: rgba(23,20,18,.55); }
 .test-lab-fixture-summary code { color: #eadfce; overflow-wrap: anywhere; }
 @media (max-width: 900px) { .test-lab-fixture-summary dl { grid-template-columns: minmax(6rem,.35fr) minmax(0,1fr); } .test-lab-fixture-summary li { grid-template-columns: 1fr; gap: .15rem; } }
+.test-lab-resolution-controls { display: grid; gap: .7rem; padding: .9rem; border: 1px solid #a47c45; background: linear-gradient(145deg, rgba(69,49,29,.62), rgba(35,26,20,.92)); }
+.test-lab-resolution-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; }
+.test-lab-resolution-heading h3 { margin: 0; color: #fff3db; font-size: 1.05rem; letter-spacing: .06em; }
+.test-lab-resolution-heading span { color: #a9d5ad; font-size: .76rem; font-weight: 700; letter-spacing: .08em; }
+.test-lab-resolution-profile, .test-lab-custom-degrees, .test-lab-resolution-actions { display: flex; flex-wrap: wrap; gap: .55rem .8rem; align-items: end; }
+.test-lab-resolution-profile label, .test-lab-custom-degrees label { display: grid; gap: .25rem; color: #f0c878; font-size: .78rem; font-weight: 700; letter-spacing: .08em; }
+.test-lab-resolution-profile select, .test-lab-custom-degrees select { min-height: 2.25rem; padding: .35rem .5rem; border-color: #80633f; background: #171412; color: #fff3db; font-size: .88rem; }
+.test-lab-resolution-actions button { min-height: 2.55rem; padding: .55rem .8rem; border-color: #80633f; background: #30241b; color: #f4e6d1; font-size: .82rem; font-weight: 700; letter-spacing: .035em; }
+.test-lab-resolution-actions .test-lab-action-primary { border-color: #f0c878; background: linear-gradient(145deg,#71502a,#4a301b); color: #fff8e8; }
+.test-lab-resolution-actions button:disabled { opacity: .58; cursor: not-allowed; }
+.test-lab-action-danger { border-color: #a25e4f !important; background: #3a211d !important; color: #f0a18e !important; }
+.timeline-item[class*="resolution-"] button { background: #30241b; }
+.timeline-item[class*="resolution-"] span { font-family: var(--font-mono, monospace); font-size: .82rem; }

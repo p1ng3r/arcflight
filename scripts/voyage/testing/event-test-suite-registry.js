@@ -3,6 +3,14 @@ export const FIXTURE_PREP_SUITE_ID = "fixture-prep";
 export const TEST_LANE_ENGINE = "ENGINE";
 export const TEST_LANE_GM_FLOW = "GM FLOW";
 export const TEST_LANE_PLAYER_VIEW = "PLAYER VIEW";
+export const RESOLUTION_SUITE_IDS = Object.freeze([
+  "resolution-one-station-success",
+  "resolution-one-station-failure",
+  "resolution-all-success",
+  "resolution-mixed-degrees",
+  "resolution-reaction-handling",
+  "resolution-replay-guard"
+]);
 
 import { createInvariantEngine } from "./event-test-invariants.js";
 
@@ -20,6 +28,74 @@ function firstError(result, fallbackCode, fallbackPath, fallbackMessage) {
     path: result?.errors?.[0]?.path ?? fallbackPath,
     message: result?.errors?.[0]?.message ?? fallbackMessage
   };
+}
+
+function resolutionError(result, fallbackCode, fallbackPath, fallbackMessage) {
+  const error = firstError(result, fallbackCode, fallbackPath, fallbackMessage);
+  return { ok: false, ...error, actual: result ?? null, writes: 0 };
+}
+
+function resolutionFixtureStep() {
+  return makeTest("prepared-fixture", "Use prepared fixture", "Use the retained marked Pass 2 fixture without creating or mutating an ordinary session.", "error", async (context, profile) => {
+    if (!profile.sessionId) return resolutionError(null, "m12-test-fixture-required", "profile.sessionId", "A retained marked Fixture Prep session is required before resolution.");
+    const result = await context?.eventTest?.inspect?.({ sessionId: profile.sessionId });
+    if (!result?.ok) return resolutionError(result, "m12-test-fixture-inspect-failed", "eventTest.inspect", "The retained Fixture Prep session could not be inspected.");
+    const session = result.snapshot?.session;
+    if (session?.eventId !== profile.eventId || session?.shipId !== profile.shipId) return resolutionError(result, "m12-test-fixture-identity-mismatch", "session", "The retained fixture does not match the selected event and ship.");
+    if (session?.testOrigin?.kind !== "arcflight-event-test") return resolutionError(result, "m12-test-fixture-origin-required", "session.testOrigin", "Resolution suites require a marked Event Test session.");
+    if (session.sessionState !== "plan-locked" || session.phase !== "lock-readiness") return resolutionError(result, "m12-test-fixture-not-plan-locked", "sessionState", "Resolution suites require the exact retained plan-locked fixture.");
+    profile.fixture = profile.fixture ?? { sessionId: profile.sessionId, eventId: profile.eventId, shipId: profile.shipId, sessionState: session.sessionState, phase: session.phase, revision: session.revision };
+    const checkpoint = structuredClone(result.snapshot);
+    profile.fixtureCheckpoint = checkpoint;
+    profile.fixtureValidated = { sessionId: profile.sessionId, revision: session.revision, sessionState: session.sessionState, phase: session.phase };
+    return { ok: true, expected: "retained marked plan-locked fixture", actual: { sessionId: profile.sessionId, sessionState: session.sessionState, phase: session.phase, revision: session.revision }, message: "Prepared fixture selected without a new session write.", beforeSnapshot: structuredClone(checkpoint), afterSnapshot: structuredClone(checkpoint), writes: 0 };
+  });
+}
+
+function startResolutionStep() {
+  return makeTest("start-resolution", "Start resolution", "Enter station resolution through the canonical runtime command.", "error", async (context, profile) => {
+    if (profile.fixtureValidated?.sessionId !== profile.sessionId || !Number.isSafeInteger(profile.fixtureValidated?.revision)) return resolutionError(null, "m12-test-fixture-validation-required", "profile.fixtureValidated", "Resolution cannot start before the retained fixture has passed validation.");
+    const result = await context?.eventTest?.startResolution?.({ sessionId: profile.sessionId, expectedRevision: profile.fixtureValidated.revision });
+    if (!result?.ok) return resolutionError(result, "m12-test-resolution-start-failed", "eventTest.startResolution", "Canonical station resolution could not be started.");
+    profile.resolutionStart = result;
+    return { ok: true, expected: "station-resolution / resolution", actual: { sessionState: result.snapshot?.session?.sessionState, phase: result.snapshot?.session?.phase }, message: "Canonical station resolution started.", beforeSnapshot: result.beforeSnapshot, afterSnapshot: result.afterSnapshot ?? result.snapshot, writes: traceWrites(result.trace), trace: result.trace, invariantResults: result.trace?.flatMap((entry) => entry.invariantResults ?? []) ?? [] };
+  });
+}
+
+function runCurrentResolutionStep(id, label, description, degreeProfile, customDegrees = null) {
+  return makeTest(id, label, description, "error", async (context, profile) => {
+    const result = await context?.eventTest?.runCurrentStation?.({ sessionId: profile.sessionId, degreeProfile, customDegrees });
+    if (!result?.ok) return { ...resolutionError(result, "m12-test-resolution-station-failed", "eventTest.runCurrentStation", "The current station could not be resolved canonically."), beforeSnapshot: result?.beforeSnapshot ?? null, afterSnapshot: result?.afterSnapshot ?? null, trace: result?.trace ?? [] };
+    profile.lastResolution = result;
+    return { ok: true, expected: "one canonical station resolved", actual: result.resolvedStationId ?? result.snapshot?.resolution?.currentStationId, message: `Canonical ${result.resolvedStationId ?? "current"} station resolution completed.`, beforeSnapshot: result.beforeSnapshot, afterSnapshot: result.afterSnapshot ?? result.snapshot, writes: traceWrites(result.trace), trace: result.trace, invariantResults: result.trace?.flatMap((entry) => entry.invariantResults ?? []) ?? [] };
+  });
+}
+
+function runAllResolutionStep(id, label, description, degreeProfile, customDegrees = null, reactionMode = "pass") {
+  return makeTest(id, label, description, "error", async (context, profile) => {
+    const result = await context?.eventTest?.runAllStations?.({ sessionId: profile.sessionId, degreeProfile, customDegrees, reactionMode });
+    if (!result?.ok) return { ...resolutionError(result, "m12-test-resolution-run-failed", "eventTest.runAllStations", "Deterministic station resolution did not complete."), beforeSnapshot: profile.resolutionStart?.afterSnapshot ?? null, afterSnapshot: result?.snapshot ?? null, trace: result?.trace ?? [], invariantResults: result?.trace?.flatMap((entry) => entry.invariantResults ?? []) ?? [] };
+    profile.lastResolution = result;
+    return { ok: true, expected: "all stations resolved through canonical runtime", actual: result.checkpoint, message: "All stations resolved through the canonical runtime.", beforeSnapshot: profile.resolutionStart?.afterSnapshot ?? null, afterSnapshot: result.snapshot, writes: traceWrites(result.trace), trace: result.trace, invariantResults: result.trace?.flatMap((entry) => entry.invariantResults ?? []) ?? [] };
+  });
+}
+
+function resolutionReplayGuardStep() {
+  return makeTest("replay-guard", "Replay guard", "Verify an already-resolved station cannot be resolved again or create another write.", "error", async (context, profile) => {
+    const first = profile.lastResolution;
+    const firstStationId = first?.resolvedStationId ?? first?.trace?.find((entry) => entry.command === "action-segment")?.stationId ?? null;
+    if (!firstStationId) return resolutionError(null, "m12-test-resolution-replay-fixture-missing", "profile.lastResolution", "No resolved station was available for replay validation.");
+    const before = await context?.eventTest?.inspect?.({ sessionId: profile.sessionId });
+    const result = await context?.eventTest?.runCurrentStation?.({ sessionId: profile.sessionId, stationId: firstStationId, degree: "success" });
+    const after = await context?.eventTest?.inspect?.({ sessionId: profile.sessionId });
+    const writes = before?.snapshot?.session?.revision !== after?.snapshot?.session?.revision ? 1 : 0;
+    const ok = result?.ok === false && writes === 0;
+    return { ok, code: ok ? null : "m12-test-resolution-replay-guard-failed", path: "eventTest.runCurrentStation", expected: "replay rejected with zero writes", actual: { result, writes }, message: ok ? "Resolved station replay was rejected without another runtime write." : "Resolved station replay guard failed.", beforeSnapshot: before?.snapshot ?? null, afterSnapshot: after?.snapshot ?? null, writes, trace: result?.trace ?? [] };
+  });
+}
+
+function resolutionSuite(id, label, description, steps) {
+  return Object.freeze({ id, label, lane: TEST_LANE_ENGINE, description, enabled: true, tests: steps });
 }
 
 export function createSuiteRegistry() {
@@ -248,6 +324,12 @@ export function createSuiteRegistry() {
       enabled: true,
       tests: fixturePrepSteps
     }),
+    resolutionSuite("resolution-one-station-success", "ONE STATION · SUCCESS", "Resolve exactly the current station with a deterministic Success input.", [resolutionFixtureStep(), startResolutionStep(), runCurrentResolutionStep("run-current-station", "Run current station", "Resolve the current station through the canonical runtime.", "all-success")]),
+    resolutionSuite("resolution-one-station-failure", "ONE STATION · FAILURE", "Resolve exactly the current station with a deterministic Failure input.", [resolutionFixtureStep(), startResolutionStep(), runCurrentResolutionStep("run-current-station", "Run current station", "Resolve the current station through the canonical runtime.", "all-failure")]),
+    resolutionSuite("resolution-all-success", "ALL STATIONS · SUCCESS", "Resolve every station with deterministic Success inputs and retain the canonical completed checkpoint.", [resolutionFixtureStep(), startResolutionStep(), runAllResolutionStep("run-all-stations", "Run all stations", "Resolve every station through the canonical runtime.", "all-success")]),
+    resolutionSuite("resolution-mixed-degrees", "MIXED DEGREES", "Resolve every station with one deterministic degree per station.", [resolutionFixtureStep(), startResolutionStep(), runAllResolutionStep("run-all-stations", "Run all stations", "Resolve every station through the canonical runtime using a custom degree profile.", "custom", { captain: "success", engineer: "failure", navigator: "critical-success", watchmaster: "critical-failure", veilwarden: "success" })]),
+    resolutionSuite("resolution-reaction-handling", "REACTION HANDLING", "Pass canonical reaction windows through the existing runtime before continuing station resolution.", [resolutionFixtureStep(), startResolutionStep(), runAllResolutionStep("run-all-stations", "Run all stations", "Resolve every station while passing each required reaction through the canonical reaction command.", "all-success", null, "pass")]),
+    resolutionSuite("resolution-replay-guard", "REPLAY GUARD", "Resolve one station, then verify a replay attempt is rejected without another write.", [resolutionFixtureStep(), startResolutionStep(), runCurrentResolutionStep("run-current-station", "Run current station", "Resolve the first station through the canonical runtime.", "all-success"), resolutionReplayGuardStep()]),
     Object.freeze({
       id: "pressure",
       label: "Pressure",

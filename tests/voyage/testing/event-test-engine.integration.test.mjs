@@ -99,6 +99,123 @@ test("Fixture Prep discovers canonical requirements and stops at Plan Locked bef
   assert.ok(planned.trace.every((entry) => ["begin-crew-planning", "station-selection", "station-lock", "station-order", "plan-lock"].includes(entry.command)));
   assert.equal(fx.tracker.updates > 0, true);
 });
+
+async function preparedResolutionFixture(input = {}) {
+  const fx = await startedFixture(input);
+  const prepared = await fx.api.rapidPlan({ sessionId: fx.started.sessionId, stopAt: "plan-locked", mode: "canonical-first-valid" });
+  assert.equal(prepared.ok, true, JSON.stringify(prepared.errors));
+  assert.equal(prepared.snapshot.session.sessionState, "plan-locked");
+  assert.equal(prepared.snapshot.session.phase, "lock-readiness");
+  return { ...fx, prepared };
+}
+
+test("Pass 3 starts and resolves all stations through canonical runtime with deterministic Success inputs", async () => {
+  const { fx, api, started, document } = await preparedResolutionFixture();
+  let realPf2eCalls = 0;
+  fx.context.executeVoyagePf2ePendingCheck = async () => { realPf2eCalls += 1; throw new Error("must not call real executor"); };
+  const startedResolution = await api.startResolution({ sessionId: started.sessionId });
+  assert.equal(startedResolution.ok, true, JSON.stringify(startedResolution.errors));
+  assert.equal(startedResolution.snapshot.session.sessionState, "station-resolution");
+  assert.equal(startedResolution.snapshot.session.phase, "resolution");
+  const completed = await api.runAllStations({ sessionId: started.sessionId, degreeProfile: "all-success", reactionMode: "pass" });
+  assert.equal(completed.ok, true, JSON.stringify({ errors: completed.errors, snapshot: completed.snapshot, trace: completed.trace }));
+  assert.equal(completed.checkpoint, "station-resolution-complete");
+  assert.equal(completed.snapshot.resolution.pendingChecks.every((entry) => entry.status === "resolved"), true);
+  assert.equal(completed.trace.filter((entry) => entry.command === "action-segment").length, 5);
+  assert.ok(completed.trace.every((entry) => entry.runtimeSource === "canonical-runtime"));
+  assert.ok(completed.trace.flatMap((entry) => entry.invariantResults).every((entry) => entry.status !== "FAIL"), JSON.stringify(completed.trace.flatMap((entry) => entry.invariantResults).filter((entry) => entry.status === "FAIL")));
+  assert.equal(realPf2eCalls, 0);
+  assert.equal(fx.tracker.updates > 0, true);
+  const stored = document.toObject().flags.arcflight.system.voyageSession;
+  assert.equal(stored.encounterState.pendingChecks.filter((entry) => entry.status === "resolved").length, 5);
+  assert.equal(stored.encounterState.metadata.pendingBreachSave ?? null, null);
+  assert.deepEqual(stored.encounterState.activeHazards, []);
+});
+
+test("Pass 3 resolution start rejects a changed retained revision without a write", async () => {
+  const { fx, api, started, prepared } = await preparedResolutionFixture();
+  const before = fx.tracker.updates;
+  const stale = await api.startResolution({ sessionId: started.sessionId, expectedRevision: prepared.revision - 1 });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.errors[0].code, "m11-stale-session-revision");
+  assert.equal(fx.tracker.updates, before);
+  const valid = await api.startResolution({ sessionId: started.sessionId, expectedRevision: prepared.revision });
+  assert.equal(valid.ok, true, JSON.stringify(valid.errors));
+});
+
+test("Pass 3 custom degrees preserve station order and canonical runtime result inputs", async () => {
+  const { api, started } = await preparedResolutionFixture();
+  const startedResolution = await api.startResolution({ sessionId: started.sessionId });
+  assert.equal(startedResolution.ok, true, JSON.stringify(startedResolution.errors));
+  const degrees = { captain: "success", engineer: "failure", navigator: "critical-success", watchmaster: "critical-failure", veilwarden: "success" };
+  const completed = await api.runAllStations({ sessionId: started.sessionId, degreeProfile: "custom", customDegrees: degrees, reactionMode: "pass" });
+  assert.equal(completed.ok, true, JSON.stringify({ errors: completed.errors, snapshot: completed.snapshot, trace: completed.trace }));
+  assert.deepEqual(completed.trace.filter((entry) => entry.command === "action-segment").map((entry) => entry.degreeInput), ["success", "failure", "critical-success", "critical-failure", "success"]);
+  assert.deepEqual(completed.snapshot.planning.committedStationOrder, ["captain", "engineer", "navigator", "watchmaster", "veilwarden"]);
+  assert.deepEqual(completed.snapshot.resolution.pendingChecks.map((entry) => entry.result?.degreeOfSuccessSlug), ["success", "failure", "critical-success", "critical-failure", "success"]);
+});
+
+test("Pass 3 run-all passes live reaction windows through the canonical reaction command", async () => {
+  const { fx, api, started } = await startedFixture();
+  fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const startedResolution = await api.rapidPlan({ sessionId: started.sessionId, mode: "canonical-first-valid" });
+  assert.equal(startedResolution.ok, true, JSON.stringify(startedResolution.errors));
+  assert.equal(startedResolution.snapshot.resolution.currentReaction.length > 0, true);
+  const completed = await api.runAllStations({ sessionId: started.sessionId, degreeProfile: "all-success", reactionMode: "pass" });
+  assert.equal(completed.ok, true, JSON.stringify({ errors: completed.errors, trace: completed.trace }));
+  assert.equal(completed.trace.some((entry) => entry.command === "focus-reaction-pass"), true);
+  assert.equal(completed.trace.filter((entry) => entry.command === "action-segment").length, 5);
+  assert.equal(completed.trace.flatMap((entry) => entry.invariantResults ?? []).some((entry) => entry.status === "FAIL"), false);
+  assert.equal(fx.tracker.updates > 0, true);
+});
+
+test("Pass 3 one-station execution passes the canonical current reaction before resolving captain", async () => {
+  const { fx, api, started } = await startedFixture();
+  fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const planned = await api.rapidPlan({ sessionId: started.sessionId, mode: "canonical-first-valid" });
+  assert.equal(planned.ok, true, JSON.stringify(planned.errors));
+  assert.equal(planned.snapshot.resolution.currentReaction.length > 0, true);
+  const result = await api.runCurrentStation({ sessionId: started.sessionId, degreeProfile: "all-success", reactionMode: "pass" });
+  assert.equal(result.ok, true, JSON.stringify({ errors: result.errors, trace: result.trace }));
+  assert.deepEqual(result.trace.map((entry) => entry.command), ["focus-reaction-pass", "action-segment"]);
+  assert.equal(result.trace[0].beforeEvidence.currentReaction[0].reactionId.length > 0, true);
+  assert.equal(result.trace[0].afterEvidence.currentReaction.length, 0);
+  assert.equal(result.trace[0].writes > 0, true);
+  assert.equal(result.trace[1].stationId, "captain");
+  assert.equal(result.trace[1].runtimeResult.ok, true);
+  assert.equal(result.writes, result.trace[0].writes + result.trace[1].writes);
+  assert.equal(result.afterSnapshot.resolution.pendingChecks.find((entry) => entry.stationId === "captain").status, "resolved");
+});
+
+test("Pass 3 one-station block mode refuses a pending reaction without station writes", async () => {
+  const { fx, api, started } = await startedFixture();
+  fx.context.focusAbilities = [...M12_FOCUS_ABILITIES];
+  const planned = await api.rapidPlan({ sessionId: started.sessionId, mode: "canonical-first-valid" });
+  assert.equal(planned.ok, true, JSON.stringify(planned.errors));
+  const before = fx.tracker.updates;
+  const result = await api.runCurrentStation({ sessionId: started.sessionId, degreeProfile: "all-success", reactionMode: "block" });
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].path, "reactionWindow");
+  assert.equal(result.writes, 0);
+  assert.deepEqual(result.trace.map((entry) => entry.command), ["reaction-gate"]);
+  assert.equal(result.trace[0].status, "FAIL");
+  assert.equal(result.trace[0].beforeEvidence.currentReaction.length > 0, true);
+  assert.equal(result.trace[0].afterEvidence.currentReaction.length > 0, true);
+  assert.equal(result.trace[0].writes, 0);
+  assert.equal(fx.tracker.updates, before);
+});
+
+test("Pass 3 resolution controls reject ordinary sessions before any write", async () => {
+  const { fx, api, started, document } = await startedFixture();
+  const begun = await dispatchVoyageEventSessionCommand({ kind: "voyage.m11-command", requestId: "pass3-ordinary-begin", sessionId: started.sessionId, expectedRevision: started.revision, authorityEpoch: started.authorityEpoch, commandKind: "begin-crew-planning", payload: { phaseStartSnapshotId: "pass3-ordinary-planning" } }, fx.context);
+  assert.equal(begun.ok, true, JSON.stringify(begun.errors));
+  delete document.__testSource.flags.arcflight.system.voyageSession.encounterState.metadata.testOrigin;
+  const before = fx.tracker.updates;
+  const result = await api.startResolution({ sessionId: started.sessionId });
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, "m12-test-session-origin-required");
+  assert.equal(fx.tracker.updates, before);
+});
 async function startedFixture(input = {}) {
   const fx = fixture();
   const api = createVoyageEventTestNamespace({ getContext: () => fx.context, getGame: () => fx.game });

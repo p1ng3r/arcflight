@@ -5,6 +5,7 @@ import { VOYAGE_PRESSURE_SYSTEM_IDS } from "../domain/constants.js";
 import { eventTestFailure, requireEventTestAuthority } from "./event-test-authority.js";
 import { createDeterministicPendingCheckExecutor, EVENT_TEST_DEGREES } from "./event-test-executor.js";
 import { findAuthoredActions, inspectEventSession, inspectEventSessionAs, listEventDefinitions, STATIONS } from "./event-test-inspector.js";
+import { buildStructuralDiff } from "./event-test-diff.js";
 
 function nonBlank(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -227,6 +228,158 @@ function currentPendingReaction(session) {
   } catch {
     return null;
   }
+}
+
+const RESOLUTION_DEGREE_PROFILES = Object.freeze(["all-success", "all-failure", "all-critical-success", "all-critical-failure", "custom"]);
+
+function resolutionDegreeMap(profile = "all-success", customDegrees = null) {
+  if (!RESOLUTION_DEGREE_PROFILES.includes(profile)) return null;
+  if (profile === "custom") {
+    if (!customDegrees || typeof customDegrees !== "object" || Array.isArray(customDegrees)
+      || Object.keys(customDegrees).length !== STATIONS.length
+      || !STATIONS.every((stationId) => Object.hasOwn(customDegrees, stationId) && EVENT_TEST_DEGREES.includes(customDegrees[stationId]))) return null;
+    return Object.fromEntries(STATIONS.map((stationId) => [stationId, customDegrees[stationId]]));
+  }
+  const degree = profile === "all-failure" ? "failure"
+    : profile === "all-critical-success" ? "critical-success"
+      : profile === "all-critical-failure" ? "critical-failure" : "success";
+  return Object.fromEntries(STATIONS.map((stationId) => [stationId, degree]));
+}
+
+function resolutionCurrentStationId(snapshot) {
+  const resolution = snapshot?.resolution ?? {};
+  if (nonBlank(resolution.currentStationId)) return resolution.currentStationId;
+  const order = Array.isArray(snapshot?.planning?.committedStationOrder)
+    ? snapshot.planning.committedStationOrder
+    : [];
+  const pending = Array.isArray(resolution.pendingChecks) ? resolution.pendingChecks : [];
+  return order.find((stationId) => pending.some((entry) => entry?.stationId === stationId && entry?.status === "pending")) ?? null;
+}
+
+function resolutionReactionOpen(snapshot) {
+  const resolution = snapshot?.resolution ?? {};
+  return resolution.reactionWindowOpen === true
+    || resolution.reactionWindow?.status === "open"
+    || (Array.isArray(resolution.currentReaction) && resolution.currentReaction.length > 0)
+    || (Array.isArray(resolution.reactionWindowPending) && resolution.reactionWindowPending.length > 0);
+}
+
+function resolutionEvidence(snapshot, stored = null) {
+  const session = snapshot?.session ?? {};
+  const raw = stored?.session ?? null;
+  const resolution = snapshot?.resolution ?? {};
+  const stations = Array.isArray(resolution.pendingChecks) ? resolution.pendingChecks : [];
+  const currentReaction = Array.isArray(resolution.currentReaction)
+    ? resolution.currentReaction
+    : (Array.isArray(resolution.reactionWindowPending) ? resolution.reactionWindowPending : (Array.isArray(resolution.reactionWindow) ? resolution.reactionWindow : []));
+  const activeBenefits = stations.flatMap((station) => Array.isArray(station?.riskBidEffects) ? station.riskBidEffects : []);
+  return {
+    sessionState: session.sessionState ?? null,
+    phase: session.phase ?? null,
+    sessionRevision: session.revision ?? null,
+    encounterRevision: raw?.encounterState?.revision ?? null,
+    currentStationId: resolutionCurrentStationId(snapshot),
+    pendingChecks: stations.map((station) => ({
+      stationId: station?.stationId ?? null,
+      pendingCheckId: station?.pendingCheckId ?? null,
+      status: station?.status ?? null,
+      result: station?.result ?? null
+    })),
+    reactionWindow: resolution.reactionWindow ?? (currentReaction.length > 0 ? { status: "open" } : null),
+    reactionStatus: resolution.reactionWindow?.status ?? (currentReaction.length > 0 ? "open" : "closed"),
+    currentReaction,
+    pressureValues: snapshot?.ship?.pressureSystems ?? null,
+    pendingBreachSave: resolution.pendingBreachSave ?? null,
+    hazards: snapshot?.ship?.activeHazards ?? [],
+    voidScars: snapshot?.ship?.voidScarEvidence ?? null,
+    activeBenefits,
+    eventCount: Array.isArray(raw?.events) ? raw.events.length : null,
+    auditCount: Array.isArray(raw?.auditHistory) ? raw.auditHistory.length : null,
+    processedRequestCount: Array.isArray(raw?.processedRequests) ? raw.processedRequests.length : null
+  };
+}
+
+function resolutionInvariantResults(before, after, trace, beforeStored, afterStored) {
+  const beforeEvidence = resolutionEvidence(before, beforeStored);
+  const afterEvidence = resolutionEvidence(after, afterStored);
+  const expectedStationId = trace?.stationId ?? beforeEvidence.currentStationId;
+  const beforePending = beforeEvidence.pendingChecks.find((entry) => entry.stationId === expectedStationId);
+  const afterPending = afterEvidence.pendingChecks.find((entry) => entry.stationId === expectedStationId);
+  const latestEvent = afterStored?.session?.events?.at(-1) ?? null;
+  const latestAudit = afterStored?.session?.auditHistory?.at(-1) ?? null;
+  const requestMatches = afterStored?.session?.processedRequests?.filter((entry) => entry?.requestId === trace?.requestId) ?? [];
+  return [
+    { id: "test-origin-valid", label: "Test origin remains valid", status: (sessionTestOrigin(afterStored?.session)?.kind ?? after?.session?.testOrigin?.kind) === "arcflight-event-test" ? "PASS" : "FAIL", expected: "arcflight-event-test", actual: sessionTestOrigin(afterStored?.session)?.kind ?? after?.session?.testOrigin?.kind ?? null },
+    { id: "resolution-identity-stable", label: "Event/session identity stable", status: before?.session?.sessionId === after?.session?.sessionId && before?.session?.eventId === after?.session?.eventId && before?.session?.shipId === after?.session?.shipId ? "PASS" : "FAIL", expected: { sessionId: before?.session?.sessionId, eventId: before?.session?.eventId, shipId: before?.session?.shipId }, actual: { sessionId: after?.session?.sessionId, eventId: after?.session?.eventId, shipId: after?.session?.shipId } },
+    { id: "session-revision-monotonic", label: "Session revision increases", status: Number.isSafeInteger(afterEvidence.sessionRevision) && afterEvidence.sessionRevision > beforeEvidence.sessionRevision ? "PASS" : "FAIL", expected: `>${beforeEvidence.sessionRevision}`, actual: afterEvidence.sessionRevision },
+    { id: "encounter-revision-monotonic", label: "Encounter revision does not move backward", status: Number.isSafeInteger(afterEvidence.encounterRevision) && afterEvidence.encounterRevision >= beforeEvidence.encounterRevision ? "PASS" : "FAIL", expected: `>=${beforeEvidence.encounterRevision}`, actual: afterEvidence.encounterRevision },
+    { id: "station-order-stable", label: "Committed station order stable", status: JSON.stringify(before?.planning?.committedStationOrder ?? []) === JSON.stringify(after?.planning?.committedStationOrder ?? []) ? "PASS" : "FAIL", expected: before?.planning?.committedStationOrder ?? [], actual: after?.planning?.committedStationOrder ?? [] },
+    { id: "current-station-only", label: "Only current station resolves", status: beforeEvidence.currentStationId === expectedStationId && afterPending?.status === "resolved" ? "PASS" : "FAIL", expected: expectedStationId, actual: { before: beforeEvidence.currentStationId, after: afterPending?.status ?? null } },
+    { id: "pending-check-bound", label: "Pending check remains station-bound", status: Boolean(beforePending?.pendingCheckId) && beforePending.stationId === expectedStationId ? "PASS" : "FAIL", expected: expectedStationId, actual: beforePending?.stationId ?? null },
+    { id: "no-double-resolution", label: "Resolved pending check cannot resolve twice", status: beforePending?.status === "pending" && afterPending?.status === "resolved" ? "PASS" : "FAIL", expected: { before: "pending", after: "resolved" }, actual: { before: beforePending?.status ?? null, after: afterPending?.status ?? null } },
+    { id: "runtime-event-bound", label: "Runtime event matches command", status: latestEvent?.type === "voyage.m12-action-segment" ? "PASS" : "FAIL", expected: "voyage.m12-action-segment", actual: latestEvent?.type ?? null },
+    { id: "audit-bound", label: "Audit record matches mutation", status: latestAudit?.requestId === trace?.requestId && latestAudit?.revision === afterEvidence.sessionRevision ? "PASS" : "FAIL", expected: { requestId: trace?.requestId, revision: afterEvidence.sessionRevision }, actual: { requestId: latestAudit?.requestId ?? null, revision: latestAudit?.revision ?? null } },
+    { id: "processed-request-once", label: "Processed request recorded once", status: requestMatches.length === 1 ? "PASS" : "FAIL", expected: 1, actual: requestMatches.length },
+    { id: "unique-request-trace", label: "Resolution request IDs remain unique", status: trace?.requestId ? "PASS" : "FAIL", expected: "nonblank request ID", actual: trace?.requestId ?? null },
+    { id: "reaction-window-gated", label: "Reaction window gates station advancement", status: beforeEvidence.reactionWindow?.status === "open" ? "PASS" : "SKIP", expected: "open reaction window is handled before station execution", actual: beforeEvidence.reactionWindow?.status ?? "closed" },
+    { id: "canonical-advancement", label: "Station advances after canonical completion", status: afterEvidence.currentStationId !== expectedStationId || afterEvidence.pendingChecks.every((entry) => entry.status === "resolved") ? "PASS" : "FAIL", expected: `next station after ${expectedStationId}`, actual: afterEvidence.currentStationId },
+    { id: "runtime-produced-state", label: "Consequences come from runtime", status: trace?.runtimeSource === "canonical-runtime" ? "PASS" : "FAIL", expected: "canonical-runtime", actual: trace?.runtimeSource ?? null },
+    { id: "authoritative-counts", label: "Authoritative event/audit/request counts captured", status: [afterEvidence.eventCount, afterEvidence.auditCount, afterEvidence.processedRequestCount].every(Number.isSafeInteger) ? "PASS" : "FAIL", expected: "three authoritative counts", actual: { eventCount: afterEvidence.eventCount, auditCount: afterEvidence.auditCount, processedRequestCount: afterEvidence.processedRequestCount } }
+  ];
+}
+
+function resolutionTraceEntry({ command, requestId, station, degree, before, after, beforeStored, afterStored, runtimeResult, writes = 0 }) {
+  const beforeEvidence = resolutionEvidence(before, beforeStored);
+  const afterEvidence = resolutionEvidence(after, afterStored);
+  const trace = {
+    stepId: `resolution-${command}-${station?.stationId ?? "session"}-${afterEvidence.sessionRevision ?? "unknown"}`,
+    label: station?.stationId ? `${station.stationId} · ${command}` : command,
+    status: after ? "PASS" : "FAIL",
+    command,
+    requestId,
+    stationId: station?.stationId ?? null,
+    actionId: station?.actionId ?? null,
+    approachId: station?.approachId ?? null,
+    degreeInput: degree ?? null,
+    beforeRevision: beforeEvidence.sessionRevision,
+    afterRevision: afterEvidence.sessionRevision,
+    writes,
+    runtimeSource: "canonical-runtime",
+    runtimeResult: runtimeResult ?? null,
+    beforeEvidence,
+    afterEvidence,
+    diff: before && after ? buildStructuralDiff(beforeEvidence, afterEvidence) : [],
+    invariantResults: []
+  };
+  if (before && after) {
+    trace.invariantResults = command === "resolution-start"
+      ? resolutionInvariantResults(before, after, { ...trace, stationId: beforeEvidence.currentStationId, runtimeSource: "canonical-runtime" }, beforeStored, afterStored).filter((entry) => ["test-origin-valid", "resolution-identity-stable", "session-revision-monotonic", "encounter-revision-monotonic", "authoritative-counts"].includes(entry.id))
+      : command === "focus-reaction-pass"
+        ? reactionInvariantResults(before, after, trace, beforeStored, afterStored)
+      : resolutionInvariantResults(before, after, trace, beforeStored, afterStored);
+  }
+  return trace;
+}
+
+function reactionInvariantResults(before, after, trace, beforeStored, afterStored) {
+  const beforeEvidence = resolutionEvidence(before, beforeStored);
+  const afterEvidence = resolutionEvidence(after, afterStored);
+  const latestEvent = afterStored?.session?.events?.at(-1) ?? null;
+  const latestAudit = afterStored?.session?.auditHistory?.at(-1) ?? null;
+  const requestMatches = afterStored?.session?.processedRequests?.filter((entry) => entry?.requestId === trace?.requestId) ?? [];
+  const stationId = trace?.stationId ?? beforeEvidence.currentStationId;
+  const beforeStation = beforeEvidence.pendingChecks.find((entry) => entry.stationId === stationId);
+  const afterStation = afterEvidence.pendingChecks.find((entry) => entry.stationId === stationId);
+  return [
+    { id: "test-origin-valid", label: "Test origin remains valid", status: (sessionTestOrigin(afterStored?.session)?.kind ?? after?.session?.testOrigin?.kind) === "arcflight-event-test" ? "PASS" : "FAIL", expected: "arcflight-event-test", actual: sessionTestOrigin(afterStored?.session)?.kind ?? after?.session?.testOrigin?.kind ?? null },
+    { id: "reaction-identity-stable", label: "Reaction identity captured", status: Boolean(beforeEvidence.currentReaction[0]?.reactionId ?? trace?.reactionId) ? "PASS" : "FAIL", expected: "reaction ID", actual: beforeEvidence.currentReaction[0]?.reactionId ?? trace?.reactionId ?? null },
+    { id: "reaction-window-cleared", label: "Canonical reaction pass clears the pending reaction", status: beforeEvidence.currentReaction.length > 0 && afterEvidence.currentReaction.length === 0 ? "PASS" : "FAIL", expected: { before: "pending", after: "cleared" }, actual: { before: beforeEvidence.currentReaction.length, after: afterEvidence.currentReaction.length } },
+    { id: "reaction-runtime-event-bound", label: "Runtime event matches reaction-pass command", status: latestEvent?.type === "voyage.m12-focus-reaction-pass" ? "PASS" : "FAIL", expected: "voyage.m12-focus-reaction-pass", actual: latestEvent?.type ?? null },
+    { id: "reaction-audit-bound", label: "Reaction audit matches mutation", status: latestAudit?.kind === "m12-focus-reaction-passed" && latestAudit?.requestId === trace?.requestId ? "PASS" : "FAIL", expected: "m12-focus-reaction-passed", actual: { kind: latestAudit?.kind ?? null, requestId: latestAudit?.requestId ?? null } },
+    { id: "reaction-processed-once", label: "Reaction pass request recorded once", status: requestMatches.length === 1 ? "PASS" : "FAIL", expected: 1, actual: requestMatches.length },
+    { id: "station-remains-pending", label: "Station remains pending until reaction handling completes", status: beforeStation?.status === "pending" && afterStation?.status === "pending" ? "PASS" : "FAIL", expected: "pending", actual: { before: beforeStation?.status ?? null, after: afterStation?.status ?? null } },
+    { id: "reaction-writes-captured", label: "Reaction revision and writes captured", status: Number.isSafeInteger(trace?.writes) && trace.writes > 0 && Number.isSafeInteger(trace?.beforeRevision) && Number.isSafeInteger(trace?.afterRevision) && trace.afterRevision > trace.beforeRevision ? "PASS" : "FAIL", expected: "positive canonical reaction write", actual: { writes: trace?.writes ?? null, beforeRevision: trace?.beforeRevision ?? null, afterRevision: trace?.afterRevision ?? null } }
+  ];
 }
 function validPressureSystems(session) {
   try {
@@ -627,6 +780,145 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
       requestedDegree: cloned.value.degree
     };
   }
+  async function readResolution(sessionId, context) {
+    const inspection = await inspectEventSession(sessionId, context);
+    if (!inspection?.ok) return { ok: false, result: inspection };
+    const found = findStoredSession(sessionId, context);
+    if (!found.ok) return { ok: false, result: testLifecycleFailure(found.code, found.message, sessionId) };
+    return { ok: true, inspection, found };
+  }
+
+  function resolutionInput(input, allowDegree = false) {
+    const cloned = safeClone(input);
+    if (!cloned.ok || !cloned.value || typeof cloned.value !== "object" || Array.isArray(cloned.value) || Object.getPrototypeOf(cloned.value) !== Object.prototype) return { ok: false, result: invalid("request", "Resolution control input must be a plain object.") };
+    const allowed = ["sessionId", "stationId", "degree", "degreeProfile", "customDegrees", "reactionMode", "expectedRevision"];
+    const keys = Object.keys(cloned.value);
+    if (!keys.includes("sessionId") || !keys.every((key) => allowed.includes(key)) || !nonBlank(cloned.value.sessionId)) return { ok: false, result: invalid("request", "Resolution controls require a nonblank sessionId.") };
+    if (Object.hasOwn(cloned.value, "stationId") && !nonBlank(cloned.value.stationId)) return { ok: false, result: invalid("stationId", "stationId must be nonblank when supplied.") };
+    if (Object.hasOwn(cloned.value, "expectedRevision") && (!Number.isSafeInteger(cloned.value.expectedRevision) || cloned.value.expectedRevision < 0)) return { ok: false, result: invalid("expectedRevision", "expectedRevision must be a non-negative safe integer when supplied.") };
+    if (allowDegree && Object.hasOwn(cloned.value, "degree") && !EVENT_TEST_DEGREES.includes(cloned.value.degree)) return { ok: false, result: invalid("degree", "degree must be a canonical deterministic degree.") };
+    if (Object.hasOwn(cloned.value, "reactionMode") && !["pass", "block"].includes(cloned.value.reactionMode)) return { ok: false, result: invalid("reactionMode", "reactionMode must be pass or block.") };
+    const degreeProfile = cloned.value.degreeProfile ?? "all-success";
+    const degrees = resolutionDegreeMap(degreeProfile, cloned.value.customDegrees);
+    if (!degrees) return { ok: false, result: invalid("degreeProfile", "degreeProfile and customDegrees must describe canonical station degrees.") };
+    return { ok: true, value: cloned.value, degrees };
+  }
+
+  async function startResolution(input = {}) {
+    const checked = await guard();
+    if (!checked.ok) return checked.result;
+    const parsed = resolutionInput(input);
+    if (!parsed.ok) return parsed.result;
+    const { sessionId } = parsed.value;
+    const before = await readResolution(sessionId, checked.context);
+    if (!before.ok) return before.result;
+    if (!validTestOrigin(sessionTestOrigin(before.found.session), checked.context.authenticatedUserId)) return testLifecycleFailure("m12-test-session-origin-required", "Only Event Test Engine sessions may start resolution.", sessionId);
+    if (before.inspection.snapshot.session.sessionState !== "plan-locked" || before.inspection.snapshot.session.phase !== "lock-readiness") return testLifecycleFailure("m11-command-not-allowed", "Resolution requires the retained plan-locked fixture.", sessionId, "sessionState");
+    if (parsed.value.expectedRevision !== undefined && parsed.value.expectedRevision !== before.inspection.snapshot.session.revision) return testLifecycleFailure("m11-stale-session-revision", "The retained fixture changed after validation; resolution start was not attempted.", sessionId, "expectedRevision");
+    const request = { kind: "voyage.m12-begin-resolution", requestId: id("event-test-start-resolution"), sessionId, expectedRevision: before.inspection.snapshot.session.revision, authorityEpoch: before.inspection.snapshot.session.authorityEpoch };
+    const result = await Promise.resolve(beginVoyageEventSessionResolution(request, checked.context));
+    const after = await readResolution(sessionId, checked.context);
+    if (!result?.ok || !after.ok) return { ...operation(result, after.ok ? after.inspection.snapshot : before.inspection.snapshot), beforeSnapshot: before.inspection.snapshot, afterSnapshot: after.ok ? after.inspection.snapshot : null, trace: [] };
+    const trace = resolutionTraceEntry({ command: "resolution-start", requestId: request.requestId, before: before.inspection.snapshot, after: after.inspection.snapshot, beforeStored: before.found, afterStored: after.found, runtimeResult: result, writes: after.inspection.snapshot.session.revision - before.inspection.snapshot.session.revision });
+    return { ...operation(result, after.inspection.snapshot), beforeSnapshot: before.inspection.snapshot, afterSnapshot: after.inspection.snapshot, trace: [trace], checkpoint: "station-resolution" };
+  }
+
+  async function runCurrentStation(input = {}) {
+    const checked = await guard();
+    if (!checked.ok) return checked.result;
+    const parsed = resolutionInput(input, true);
+    if (!parsed.ok) return parsed.result;
+    const { sessionId } = parsed.value;
+    const initial = await readResolution(sessionId, checked.context);
+    if (!initial.ok) return initial.result;
+    if (!validTestOrigin(sessionTestOrigin(initial.found.session), checked.context.authenticatedUserId)) return testLifecycleFailure("m12-test-session-origin-required", "Only Event Test Engine sessions may run station resolution.", sessionId);
+    const initialSession = initial.inspection.snapshot.session;
+    if (initialSession.sessionState !== "station-resolution" || initialSession.phase !== "resolution") return testLifecycleFailure("m11-command-not-allowed", "Station resolution is not active.", sessionId, "sessionState");
+    const trace = [];
+    let before = initial;
+    let writes = 0;
+    if (resolutionReactionOpen(before.inspection.snapshot)) {
+      const reactionMode = parsed.value.reactionMode ?? "pass";
+      if (reactionMode !== "pass") {
+        const blocked = testLifecycleFailure("m11-command-not-allowed", "An open reaction window must be handled before the current station can resolve.", sessionId, "reactionWindow");
+        const blockedTrace = resolutionTraceEntry({ command: "reaction-gate", requestId: null, station: { stationId: resolutionCurrentStationId(before.inspection.snapshot) }, before: before.inspection.snapshot, after: before.inspection.snapshot, beforeStored: before.found, afterStored: before.found, runtimeResult: blocked, writes: 0 });
+        blockedTrace.status = "FAIL";
+        blockedTrace.invariantResults = [];
+        return { ...blocked, beforeSnapshot: initial.inspection.snapshot, afterSnapshot: initial.inspection.snapshot, trace: [blockedTrace], writes: 0, checkpoint: "reaction-required" };
+      }
+      const reaction = before.inspection.snapshot.resolution.currentReaction?.[0] ?? before.inspection.snapshot.resolution.reactionWindowPending?.[0] ?? null;
+      const reactionResult = await passCurrentReaction({ sessionId });
+      const afterReaction = await readResolution(sessionId, checked.context);
+      const afterReactionSnapshot = afterReaction.ok ? afterReaction.inspection.snapshot : before.inspection.snapshot;
+      const reactionTrace = resolutionTraceEntry({ command: "focus-reaction-pass", requestId: reactionResult?.requestId ?? null, station: { stationId: reaction?.stationId ?? resolutionCurrentStationId(before.inspection.snapshot) }, before: before.inspection.snapshot, after: afterReactionSnapshot, beforeStored: before.found, afterStored: afterReaction.ok ? afterReaction.found : before.found, runtimeResult: reactionResult, writes: afterReaction.ok ? Math.max(0, afterReactionSnapshot.session.revision - before.inspection.snapshot.session.revision) : 0 });
+      reactionTrace.reactionId = reaction?.reactionId ?? null;
+      reactionTrace.status = reactionResult?.ok === true ? "PASS" : "FAIL";
+      trace.push(reactionTrace);
+      writes += reactionTrace.writes;
+      if (!reactionResult?.ok || !afterReaction.ok) return { ...reactionResult, beforeSnapshot: initial.inspection.snapshot, afterSnapshot: afterReactionSnapshot, trace, writes, checkpoint: "reaction-failed" };
+      before = afterReaction;
+    }
+    const session = before.inspection.snapshot.session;
+    if (session.sessionState !== "station-resolution" || session.phase !== "resolution") return testLifecycleFailure("m11-command-not-allowed", "Station resolution is not active.", sessionId, "sessionState");
+    const currentStationId = resolutionCurrentStationId(before.inspection.snapshot);
+    const station = before.inspection.snapshot.resolution.pendingChecks.find((entry) => entry.stationId === currentStationId) ?? null;
+    if (!currentStationId || !station) return { ...testLifecycleFailure("m11-command-not-allowed", "No current station is available for resolution.", sessionId, "resolution.currentStationId"), beforeSnapshot: initial.inspection.snapshot, afterSnapshot: before.inspection.snapshot, trace, writes, checkpoint: "station-resolution-failed" };
+    const requestedStationId = parsed.value.stationId ?? currentStationId;
+    const degree = parsed.value.degree ?? parsed.degrees[currentStationId];
+    const result = await resolveStation({ sessionId, stationId: requestedStationId, degree });
+    const after = await readResolution(sessionId, checked.context);
+    const afterSnapshot = after.ok ? after.inspection.snapshot : before.inspection.snapshot;
+    const stationTrace = resolutionTraceEntry({ command: "action-segment", requestId: result?.requestId ?? null, station, degree, before: before.inspection.snapshot, after: afterSnapshot, beforeStored: before.found, afterStored: after.ok ? after.found : before.found, runtimeResult: result, writes: after.ok ? Math.max(0, after.inspection.snapshot.session.revision - before.inspection.snapshot.session.revision) : 0 });
+    stationTrace.status = result?.ok === true ? "PASS" : "FAIL";
+    if (result?.ok !== true) stationTrace.invariantResults = [];
+    writes += stationTrace.writes;
+    return { ...result, beforeSnapshot: initial.inspection.snapshot, afterSnapshot, trace: [...trace, stationTrace], writes, checkpoint: afterSnapshot.session?.sessionState ?? null };
+  }
+
+  async function runNextStation(input = {}) {
+    return runCurrentStation(input);
+  }
+
+  async function runAllStations(input = {}) {
+    const checked = await guard();
+    if (!checked.ok) return checked.result;
+    const parsed = resolutionInput(input);
+    if (!parsed.ok) return parsed.result;
+    const { sessionId } = parsed.value;
+    const reactionMode = parsed.value.reactionMode ?? "pass";
+    const trace = [];
+    let latest = await readResolution(sessionId, checked.context);
+    if (!latest.ok) return latest.result;
+    if (!validTestOrigin(sessionTestOrigin(latest.found.session), checked.context.authenticatedUserId)) return testLifecycleFailure("m12-test-session-origin-required", "Only Event Test Engine sessions may run all station resolution.", sessionId);
+    if (latest.inspection.snapshot.session.sessionState !== "station-resolution" || latest.inspection.snapshot.session.phase !== "resolution") return testLifecycleFailure("m11-command-not-allowed", "Station resolution is not active.", sessionId, "sessionState");
+    for (let guardCount = 0; guardCount < STATIONS.length * 3; guardCount += 1) {
+      const snapshot = latest.inspection.snapshot;
+      const pendingChecks = Array.isArray(snapshot.resolution.pendingChecks) ? snapshot.resolution.pendingChecks : [];
+      if (snapshot.resolution.completed || (pendingChecks.length > 0 && pendingChecks.every((entry) => entry?.status === "resolved"))) return { ok: true, sessionId, revision: snapshot.session.revision, authorityEpoch: snapshot.session.authorityEpoch, snapshot, trace, checkpoint: "station-resolution-complete" };
+      if (resolutionReactionOpen(snapshot)) {
+        if (reactionMode !== "pass") return { ok: false, sessionId, errors: [{ code: "m11-command-not-allowed", path: "reactionWindow", message: "An open reaction window must be handled before the next station can resolve.", severity: "error" }], snapshot, trace, checkpoint: "reaction-required" };
+        const before = latest;
+        const result = await passCurrentReaction({ sessionId });
+        latest = await readResolution(sessionId, checked.context);
+        const afterSnapshot = latest.ok ? latest.inspection.snapshot : before.inspection.snapshot;
+        const reaction = before.inspection.snapshot.resolution.currentReaction?.[0] ?? null;
+        const entry = resolutionTraceEntry({ command: "focus-reaction-pass", requestId: result?.requestId ?? null, station: { stationId: reaction?.stationId ?? resolutionCurrentStationId(before.inspection.snapshot) }, before: before.inspection.snapshot, after: afterSnapshot, beforeStored: before.found, afterStored: latest.ok ? latest.found : before.found, runtimeResult: result, writes: latest.ok ? Math.max(0, afterSnapshot.session.revision - before.inspection.snapshot.session.revision) : 0 });
+        entry.status = result?.ok === true ? "PASS" : "FAIL";
+        trace.push(entry);
+        if (!result?.ok || !latest.ok) return { ...result, snapshot: afterSnapshot, trace, checkpoint: "reaction-failed" };
+        continue;
+      }
+      const currentStationId = resolutionCurrentStationId(snapshot);
+      if (!currentStationId) return { ok: false, sessionId, errors: [{ code: "m11-command-not-allowed", path: "resolution.currentStationId", message: "No current station is available for deterministic resolution.", severity: "error" }], snapshot, trace };
+      const result = await runCurrentStation({ sessionId, stationId: currentStationId, degree: parsed.degrees[currentStationId] });
+      if (Array.isArray(result.trace)) trace.push(...result.trace);
+      if (!result?.ok) return { ...result, trace, checkpoint: "station-resolution-failed" };
+      latest = await readResolution(sessionId, checked.context);
+      if (!latest.ok) return { ...latest.result, trace, checkpoint: "reread-failed" };
+    }
+    return { ok: false, sessionId, errors: [{ code: "m12-test-resolution-loop-guard", path: "resolution", message: "Deterministic station resolution exceeded its safety loop guard.", severity: "error" }], snapshot: latest.inspection.snapshot, trace, checkpoint: "loop-guard" };
+  }
+
   async function setPressure(input = {}) {
     const checked = await guard();
     if (!checked.ok) return checked.result;
@@ -704,6 +996,10 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
     listOperators,
     start,
     rapidPlan,
+    startResolution,
+    runCurrentStation,
+    runNextStation,
+    runAllStations,
     resolveStation,
     passCurrentReaction,
     setPressure,

@@ -73,6 +73,49 @@ function diffLines(diff) {
   return diff.map((entry) => `- ${entry?.kind ?? "changed"} — ${entry?.path ?? "unknown path"}`);
 }
 
+export function testLabTimeline(steps) {
+  return (Array.isArray(steps) ? steps : []).flatMap((step) => [step, ...(Array.isArray(step?.runtimeTrace) ? step.runtimeTrace : [])]);
+}
+
+function latestTestLabSnapshot(run) {
+  const steps = Array.isArray(run?.steps) ? [...run.steps].reverse() : [];
+  return steps.find((step) => step?.afterSnapshot)?.afterSnapshot ?? null;
+}
+
+function resolutionCurrentStationId(snapshot) {
+  const resolution = snapshot?.resolution ?? {};
+  if (resolution.currentStationId) return resolution.currentStationId;
+  const order = Array.isArray(snapshot?.planning?.committedStationOrder) ? snapshot.planning.committedStationOrder : [];
+  const pending = Array.isArray(resolution.pendingChecks) ? resolution.pendingChecks : [];
+  return order.find((stationId) => pending.some((entry) => entry?.stationId === stationId && entry?.status === "pending")) ?? null;
+}
+
+function resolutionReactionOpen(snapshot) {
+  const resolution = snapshot?.resolution ?? {};
+  return resolution.reactionWindowOpen === true
+    || resolution.reactionWindow?.status === "open"
+    || (Array.isArray(resolution.currentReaction) && resolution.currentReaction.length > 0)
+    || (Array.isArray(resolution.reactionWindowPending) && resolution.reactionWindowPending.length > 0);
+}
+
+export function resolutionControlAvailability(run = null, fixture = null) {
+  const snapshot = latestTestLabSnapshot(run) ?? fixture;
+  const session = snapshot?.session ?? snapshot ?? {};
+  const resolution = snapshot?.resolution ?? {};
+  const hasFixture = Boolean(fixture?.sessionId ?? run?.retainedSessionId);
+  const planLocked = session.sessionState === "plan-locked" && session.phase === "lock-readiness";
+  const active = session.sessionState === "station-resolution" && session.phase === "resolution";
+  const currentStationId = resolutionCurrentStationId(snapshot);
+  return {
+    startResolution: hasFixture && planLocked,
+    runCurrentStation: active && !resolutionReactionOpen(snapshot) && Boolean(currentStationId),
+    passCurrentReaction: active && resolutionReactionOpen(snapshot),
+    runNextStation: active && !resolutionReactionOpen(snapshot) && Boolean(currentStationId),
+    runAllStations: active && Boolean(currentStationId),
+    fixtureAvailable: hasFixture
+  };
+}
+
 export function formatTestLabStepEvidence(step) {
   const value = step ?? {};
   const lines = ["ARCFLIGHT TEST LAB — STEP EVIDENCE"];
@@ -95,6 +138,13 @@ export function formatTestLabStepEvidence(step) {
   addCopyField(lines, "COMMAND", value.commandSummary);
   addCopyField(lines, "WRITES", value.writes);
   addCopyField(lines, "RETAINED SESSION", value.retainedSessionId);
+  addCopyField(lines, "STATION", value.stationId);
+  addCopyField(lines, "ACTION", value.actionId);
+  addCopyField(lines, "APPROACH", value.approachId);
+  addCopyField(lines, "DETERMINISTIC DEGREE", value.degreeInput);
+  addCopyField(lines, "RUNTIME RESULT", value.runtimeResult);
+  addCopyField(lines, "BEFORE RESOLUTION EVIDENCE", value.beforeEvidence);
+  addCopyField(lines, "AFTER RESOLUTION EVIDENCE", value.afterEvidence);
   const snapshot = value.afterSnapshot ?? {};
   const assignments = value.assignments ?? snapshot?.planning?.assignments ?? snapshot?.session?.encounterState?.stationAssignments;
   const selections = value.selectedActions ?? snapshot?.planning?.selections;
@@ -170,8 +220,23 @@ export function formatTestLabAllResults(run, fixture = null, selectedStep = null
   return sections.join("\n\n");
 }
 
+export function formatTestLabFailureBundle(run, fixture = null, selectedStep = null) {
+  const value = run ?? {};
+  const step = selectedStep ?? [...(value.steps ?? [])].reverse().find((entry) => entry.status === "FAIL") ?? null;
+  const lines = ["ARCFLIGHT TEST LAB — FAILURE BUNDLE"];
+  addCopyField(lines, "Session", value.retainedSessionId ?? value.profile?.sessionId ?? fixture?.sessionId);
+  addCopyField(lines, "Last Valid Checkpoint", step?.afterSnapshot?.session ?? step?.afterSnapshot ?? fixture);
+  addCopyField(lines, "Expected", step?.expected);
+  addCopyField(lines, "Actual", step?.actual);
+  addCopyField(lines, "Error Code", step?.errorCode);
+  addCopyField(lines, "Error Path", step?.errorPath);
+  addCopyField(lines, "Error Message", step?.errorMessage ?? step?.message);
+  if (step) lines.push("", formatTestLabStepEvidence(step));
+  return lines.join("\n");
+}
+
 export function testLabCopyAvailability({ run = null, evidence = null, fixture = null } = {}) {
-  return { stepEvidence: Boolean(evidence), runSummary: Boolean(run), preparedFixture: Boolean(fixture), allResults: Boolean(run) };
+  return { stepEvidence: Boolean(evidence), runSummary: Boolean(run), preparedFixture: Boolean(fixture), allResults: Boolean(run), failureBundle: Boolean(run && (run.ok === false || run.summary?.failed > 0)) };
 }
 
 async function fallbackCopy(text, documentValue) {
@@ -235,7 +300,7 @@ export function normalizeTestLabShips(result) {
 }
 
 export function selectTestLabEvidence(steps, selectedStepId = null) {
-  const list = Array.isArray(steps) ? steps : [];
+  const list = testLabTimeline(steps);
   return list.find((step) => step.stepId === selectedStepId) ?? list[0] ?? null;
 }
 
@@ -278,8 +343,11 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     app._selectedEventId = selectedEventId;
     app._selectedShipId = selectedShipId;
     const forcePostLaunchFailure = app._forcePostLaunchFailure === true && suiteId === "quick-check";
+    const resolutionSuite = suiteId.startsWith("resolution-");
+    const fixture = resolutionSuite ? (app._lastRun?.fixture ?? app._lastRun?.profile?.fixture ?? null) : null;
+    const fixtureSessionId = fixture?.sessionId ?? null;
     app._isRunning = true;
-    app._lastRun = { ok: false, summary: { total: 0, passed: 0, failed: 0, skipped: 0, warnings: 0, status: "RUNNING" }, steps: [], profile: { suiteId, eventId: selectedEventId, shipId: selectedShipId, forcePostLaunchFailure }, retainedSessionId: null };
+    app._lastRun = { ok: false, summary: { total: 0, passed: 0, failed: 0, skipped: 0, warnings: 0, status: "RUNNING" }, steps: [], profile: { suiteId, eventId: selectedEventId, shipId: selectedShipId, forcePostLaunchFailure, sessionId: fixtureSessionId }, retainedSessionId: fixtureSessionId, fixture };
     app._selectedStepId = null;
     await app.render();
     const registry = createSuiteRegistry();
@@ -287,7 +355,7 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     const context = { game: gameValue, eventTest: gameValue?.arcflight?.eventTest, authenticatedUserId: gameValue?.user?.id ?? null, authenticatedConnectionId: gameValue?.socket?.id ?? null, activeGmUserId: gameValue?.users?.activeGM?.id ?? null, users: valuesFromCollection(gameValue?.users), eventDefinitions: app._eventOptions, ships: app._shipOptions };
     const runner = createTestRunner({ registry, context });
     try {
-      const result = await runner.run({ suiteId, lane: "ENGINE", eventId: selectedEventId, shipId: selectedShipId, forcePostLaunchFailure, onProgress: (progress) => { app._lastRun = progress; app._selectedStepId = progress.steps.at(-1)?.stepId ?? app._selectedStepId; void app.render(); } });
+      const result = await runner.run({ suiteId, lane: "ENGINE", eventId: selectedEventId, shipId: selectedShipId, forcePostLaunchFailure, fixtureSessionId, fixture, degreeProfile: app._degreeProfile ?? "all-success", customDegrees: app._customDegrees ?? null, reactionMode: app._reactionMode ?? "pass", onProgress: (progress) => { app._lastRun = progress; app._selectedStepId = progress.steps.at(-1)?.stepId ?? app._selectedStepId; void app.render(); } });
       app._lastRun = result;
       app._selectedStepId = result.steps.at(-1)?.stepId ?? null;
     } catch (error) {
@@ -305,6 +373,31 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     app._lastRun = null;
     app._selectedStepId = null;
     app.render();
+  }
+
+  static async runResolutionControl(event, target) {
+    const app = appFromTarget(target);
+    if (!app || app._isRunning || !isActiveGm()) return;
+    const action = target?.dataset?.resolutionAction;
+    const fixture = app._lastRun?.fixture ?? app._lastRun?.profile?.fixture ?? null;
+    const sessionId = fixture?.sessionId ?? app._lastRun?.retainedSessionId ?? null;
+    if (!sessionId) return;
+    app._isRunning = true;
+    const api = globalThis.game?.arcflight?.eventTest;
+    const input = { sessionId, degreeProfile: app._degreeProfile ?? "all-success", customDegrees: app._customDegrees ?? null, reactionMode: app._reactionMode ?? "pass" };
+    const result = action === "start-resolution" ? await api?.startResolution?.({ sessionId })
+      : action === "run-current-station" ? await api?.runCurrentStation?.(input)
+        : action === "pass-current-reaction" ? await api?.passCurrentReaction?.({ sessionId })
+          : action === "run-next-station" ? await api?.runNextStation?.(input)
+            : await api?.runAllStations?.(input);
+    const previous = app._lastRun ?? { runId: null, profile: { suiteId: "resolution-controls", eventId: app._selectedEventId, shipId: app._selectedShipId }, steps: [], summary: { total: 0, passed: 0, failed: 0, skipped: 0, warnings: 0, status: "IDLE" } };
+    const step = { stepId: `resolution-control-${action}-${Date.now()}`, label: action.replaceAll("-", " ").toUpperCase(), status: result?.ok === true ? "PASS" : "FAIL", expected: action, actual: result?.checkpoint ?? result?.snapshot?.resolution?.currentStationId ?? null, errorCode: result?.errors?.[0]?.code ?? null, errorPath: result?.errors?.[0]?.path ?? null, errorMessage: result?.errors?.[0]?.message ?? null, message: result?.ok === true ? "Canonical resolution control completed." : null, beforeSnapshot: result?.beforeSnapshot ?? null, afterSnapshot: result?.afterSnapshot ?? result?.snapshot ?? null, writes: Array.isArray(result?.trace) ? result.trace.reduce((total, entry) => total + (Number.isSafeInteger(entry?.writes) ? entry.writes : 0), 0) : 0, diff: [], invariantResults: result?.trace?.flatMap((entry) => entry.invariantResults ?? []) ?? [], runtimeTrace: result?.trace ?? [], commandSummary: result?.ok === true ? "Canonical runtime mutation completed." : "Canonical runtime mutation failed." };
+    const steps = [...(previous.steps ?? []), step];
+    const summary = { total: steps.length, passed: steps.filter((entry) => entry.status === "PASS").length, failed: steps.filter((entry) => entry.status === "FAIL").length, skipped: steps.filter((entry) => entry.status === "SKIPPED").length, warnings: steps.filter((entry) => entry.status === "WARNING").length, status: result?.ok === true ? "PASSED" : "FAILED" };
+    app._lastRun = { ...previous, ok: result?.ok === true, suiteId: "resolution-controls", summary, steps, retainedSessionId: sessionId, fixture, profile: { ...(previous.profile ?? {}), suiteId: "resolution-controls", sessionId, degreeProfile: app._degreeProfile ?? "all-success", customDegrees: app._customDegrees ?? null, reactionMode: app._reactionMode ?? "pass" } };
+    app._selectedStepId = step.stepId;
+    app._isRunning = false;
+    await app.render();
   }
 
   static async copyStepEvidence(event, target) {
@@ -337,6 +430,14 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     const step = selectTestLabEvidence(run.steps, app?._selectedStepId);
     const fixture = run.fixture ?? run.profile?.fixture;
     await copyTestLabText(formatTestLabAllResults(run, fixture, step));
+  }
+
+  static async copyFailureBundle(event, target) {
+    const app = appFromTarget(target);
+    const run = app?._lastRun;
+    if (!run) return;
+    const step = selectTestLabEvidence(run.steps, app?._selectedStepId);
+    await copyTestLabText(formatTestLabFailureBundle(run, run.fixture ?? run.profile?.fixture, step));
   }
 
   static selectStep(event, target) {
@@ -383,6 +484,7 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     const steps = run?.steps ?? [];
     const evidence = selectTestLabEvidence(steps, this._selectedStepId);
     const copyAvailability = testLabCopyAvailability({ run, evidence, fixture });
+    const resolutionAvailability = resolutionControlAvailability(run, fixture);
     const gameValue = globalThis.game;
     const environment = { moduleVersion: gameValue?.modules?.get?.("arcflight")?.version ?? "0.0.0", foundryVersion: gameValue?.version ?? "unknown", pf2eVersion: gameValue?.system?.version ?? "unknown", buildIdentifier: globalThis.__arcflightBuildId ?? "local", activeGm: activeGmDisplayName(gameValue), activeGmId: gameValue?.users?.activeGM?.id ?? null };
     return {
@@ -395,10 +497,15 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
       fixture,
       isFixturePrep: selectedSuite.id === "fixture-prep",
       selectedSuite,
-      timeline: steps,
+      timeline: testLabTimeline(steps),
       selectedStepId: evidence?.stepId ?? null,
       copyAvailability,
-      evidence: evidence ? { ...evidence, retainedSessionId: run?.retainedSessionId ?? null, expectedText: safeText(evidence.expected), actualText: safeText(evidence.actual), beforeSnapshotText: safeText(evidence.beforeSnapshot), afterSnapshotText: safeText(evidence.afterSnapshot) } : null,
+      resolutionAvailability,
+      degreeProfiles: ["all-success", "all-failure", "all-critical-success", "all-critical-failure", "custom"],
+      selectedDegreeProfile: this._degreeProfile ?? "all-success",
+      customDegrees: this._customDegrees ?? { captain: "success", engineer: "success", navigator: "success", watchmaster: "success", veilwarden: "success" },
+      degreeStations: ["captain", "engineer", "navigator", "watchmaster", "veilwarden"].map((stationId) => ({ stationId, degree: (this._customDegrees ?? { captain: "success", engineer: "success", navigator: "success", watchmaster: "success", veilwarden: "success" })[stationId] ?? "success" })),
+      evidence: evidence ? { ...evidence, retainedSessionId: run?.retainedSessionId ?? null, expectedText: safeText(evidence.expected), actualText: safeText(evidence.actual), beforeSnapshotText: safeText(evidence.beforeSnapshot), afterSnapshotText: safeText(evidence.afterSnapshot), beforeResolutionEvidenceText: safeText(evidence.beforeEvidence), afterResolutionEvidenceText: safeText(evidence.afterEvidence) } : null,
       eventOptions: this._eventOptions ?? [],
       shipOptions: this._shipOptions ?? [],
       selectedEventId: this._selectedEventId,
@@ -431,7 +538,12 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     root.querySelector("[data-action='copyAllResults']")?.addEventListener("click", (event) => this.constructor.copyAllResults(event, event.currentTarget));
     root.querySelector("[data-action='copyStepEvidence']")?.addEventListener("click", (event) => this.constructor.copyStepEvidence(event, event.currentTarget));
     root.querySelector("[data-action='copyPreparedFixture']")?.addEventListener("click", (event) => this.constructor.copyPreparedFixture(event, event.currentTarget));
+    root.querySelector("[data-action='copyFailureBundle']")?.addEventListener("click", (event) => this.constructor.copyFailureBundle(event, event.currentTarget));
     root.querySelector("[data-action='cleanupRetainedFixture']")?.addEventListener("click", (event) => this.constructor.cleanupRetainedFixture(event, event.currentTarget));
+    root.querySelectorAll("[data-resolution-action]").forEach((button) => button.addEventListener("click", (event) => this.constructor.runResolutionControl(event, event.currentTarget)));
+    root.querySelector("[data-selector='degree-profile']")?.addEventListener("change", (event) => { this._degreeProfile = event.target.value; this.render(); });
+    root.querySelector("[data-selector='reaction-mode']")?.addEventListener("change", (event) => { this._reactionMode = event.target.value; this.render(); });
+    root.querySelectorAll("[data-degree-station]").forEach((select) => select.addEventListener("change", (event) => { this._customDegrees = { ...(this._customDegrees ?? {}), [event.currentTarget.dataset.degreeStation]: event.currentTarget.value }; this.render(); }));
     root.querySelector("[data-action='toggleForcedFailure']")?.addEventListener("change", (event) => { this._forcePostLaunchFailure = event.currentTarget.checked === true; this.render(); });
   }
 }
