@@ -34,6 +34,180 @@ function safeText(value, empty = "Unavailable") {
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
 
+function copyValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  return safeText(value, null);
+}
+
+function addCopyField(lines, label, value) {
+  const text = copyValue(value);
+  if (text !== null && text !== "null" && text !== "[]" && text !== "{}") lines.push(`${label}: ${text}`);
+}
+
+function assignmentLines(assignments) {
+  if (!Array.isArray(assignments)) return [];
+  return assignments.map((assignment) => {
+    const station = assignment?.stationLabel ?? assignment?.stationId ?? "station";
+    const operator = assignment?.operatorName ?? assignment?.operator?.name ?? assignment?.operatorId ?? assignment?.operator?.id ?? "operator";
+    return `- ${station} — ${operator}`;
+  });
+}
+
+function selectionLines(selections) {
+  if (!selections || typeof selections !== "object" || Array.isArray(selections)) return [];
+  return Object.entries(selections).map(([stationId, selection]) => {
+    const action = selection?.actionName ?? selection?.actionId ?? "action unavailable";
+    const approach = selection?.approachName ?? selection?.approachId;
+    return `- ${stationId} — ${action}${approach ? ` / ${approach}` : ""}`;
+  });
+}
+
+function invariantLines(results) {
+  if (!Array.isArray(results)) return [];
+  return results.map((result) => `- ${result?.status ?? "UNKNOWN"} — ${result?.label ?? result?.id ?? "Invariant"}`);
+}
+
+function diffLines(diff) {
+  if (!Array.isArray(diff)) return [];
+  return diff.map((entry) => `- ${entry?.kind ?? "changed"} — ${entry?.path ?? "unknown path"}`);
+}
+
+export function formatTestLabStepEvidence(step) {
+  const value = step ?? {};
+  const lines = ["ARCFLIGHT TEST LAB — STEP EVIDENCE"];
+  const status = String(value.status ?? "").toUpperCase();
+  const isFailure = status === "FAIL" || status === "ERROR";
+  addCopyField(lines, "STEP", value.label ?? value.stepId);
+  addCopyField(lines, "STATUS", value.status);
+  addCopyField(lines, "EXPECTED", value.expected);
+  addCopyField(lines, "ACTUAL", value.actual);
+  if (isFailure) {
+    addCopyField(lines, "ERROR CODE", value.errorCode);
+    addCopyField(lines, "ERROR PATH", value.errorPath);
+    addCopyField(lines, "ERROR MESSAGE", value.errorMessage ?? value.message ?? value.commandSummary);
+  } else {
+    addCopyField(lines, "MESSAGE", value.message ?? value.commandSummary ?? value.errorMessage);
+  }
+  addCopyField(lines, "REVISION BEFORE", value.revisionBefore);
+  addCopyField(lines, "REVISION AFTER", value.revisionAfter);
+  addCopyField(lines, "DURATION", value.durationMs === undefined ? null : `${value.durationMs}ms`);
+  addCopyField(lines, "COMMAND", value.commandSummary);
+  addCopyField(lines, "WRITES", value.writes);
+  addCopyField(lines, "RETAINED SESSION", value.retainedSessionId);
+  const snapshot = value.afterSnapshot ?? {};
+  const assignments = value.assignments ?? snapshot?.planning?.assignments ?? snapshot?.session?.encounterState?.stationAssignments;
+  const selections = value.selectedActions ?? snapshot?.planning?.selections;
+  const stages = [value.stageBefore ?? value.beforeSnapshot?.session?.sessionState, value.stageAfter ?? snapshot?.session?.sessionState];
+  const assignmentsText = assignmentLines(assignments);
+  const selectionsText = selectionLines(selections);
+  const invariantsText = invariantLines(value.invariantResults);
+  const diffText = diffLines(value.diff);
+  if (assignmentsText.length) lines.push("", "ASSIGNMENTS:", ...assignmentsText);
+  if (selectionsText.length) lines.push("", "SELECTED ACTIONS:", ...selectionsText);
+  addCopyField(lines, "STAGE BEFORE", stages[0]);
+  addCopyField(lines, "STAGE AFTER", stages[1]);
+  if (invariantsText.length) lines.push("", "INVARIANTS:", ...invariantsText);
+  if (diffText.length) lines.push("", "NORMALIZED DIFF:", ...diffText);
+  return lines.join("\n");
+}
+
+function fixtureInvariantResults(fixture, run) {
+  if (Array.isArray(fixture?.invariantResults)) return fixture.invariantResults;
+  return (run?.steps ?? []).find((step) => step.stepId === "fixture-invariants")?.invariantResults ?? [];
+}
+
+export function formatTestLabRunSummary(run) {
+  const value = run ?? {};
+  const profile = value.profile ?? {};
+  const lines = ["ARCFLIGHT TEST LAB — RUN SUMMARY"];
+  addCopyField(lines, "Suite", value.suiteId ?? profile.suiteId);
+  const fixturePolicy = value.fixture?.profileId ?? profile.fixture?.profileId ?? profile.profileId;
+  addCopyField(lines, "Fixture Policy", fixturePolicy);
+  addCopyField(lines, "Run ID", value.runId ?? profile.runId);
+  addCopyField(lines, "Event", profile.eventId);
+  addCopyField(lines, "Ship", profile.shipId);
+  addCopyField(lines, "Status", value.summary?.status);
+  addCopyField(lines, "Pass", value.summary?.passed);
+  addCopyField(lines, "Fail", value.summary?.failed);
+  addCopyField(lines, "Skip", value.summary?.skipped);
+  addCopyField(lines, "Warning", value.summary?.warnings);
+  addCopyField(lines, "Total", value.summary?.total);
+  addCopyField(lines, "Retained Session", value.retainedSessionId);
+  const timeline = (value.steps ?? []).map((step, index) => `${index + 1}. ${step?.label ?? step?.stepId ?? "Step"} — ${step?.status ?? "UNKNOWN"}`);
+  if (timeline.length) lines.push("", "Timeline:", ...timeline);
+  return lines.join("\n");
+}
+
+export function formatTestLabPreparedFixture(fixture, run = null) {
+  const value = fixture ?? {};
+  const lines = ["ARCFLIGHT TEST LAB — PREPARED FIXTURE"];
+  addCopyField(lines, "Event", value.eventId);
+  addCopyField(lines, "Ship", value.shipName ?? value.shipId);
+  addCopyField(lines, "Session", value.sessionId);
+  addCopyField(lines, "Round", value.roundId);
+  addCopyField(lines, "Session State", value.sessionState);
+  addCopyField(lines, "Phase", value.phase);
+  addCopyField(lines, "Revision", value.revision);
+  addCopyField(lines, "Fixture Policy", value.profileId ?? run?.fixture?.profileId ?? run?.profile?.fixture?.profileId ?? run?.profile?.profileId);
+  addCopyField(lines, "Run ID", value.runId ?? run?.runId ?? run?.profile?.runId);
+  const origin = value.testOrigin;
+  addCopyField(lines, "Test Origin", origin?.kind ?? origin);
+  const assignmentsText = assignmentLines(value.assignments);
+  const selectionsText = selectionLines(value.selections);
+  const invariantResults = fixtureInvariantResults(value, run);
+  const invariantText = invariantLines(invariantResults);
+  if (assignmentsText.length) lines.push("", "Assignments:", ...assignmentsText);
+  if (selectionsText.length) lines.push("", "Selected Actions:", ...selectionsText);
+  if (invariantText.length) lines.push("", "Invariant Summary:", ...invariantText);
+  return lines.join("\n");
+}
+
+export function formatTestLabAllResults(run, fixture = null, selectedStep = null) {
+  const sections = [formatTestLabRunSummary(run)];
+  if (selectedStep) sections.push(formatTestLabStepEvidence(selectedStep));
+  if (fixture) sections.push(formatTestLabPreparedFixture(fixture, run));
+  return sections.join("\n\n");
+}
+
+export function testLabCopyAvailability({ run = null, evidence = null, fixture = null } = {}) {
+  return { stepEvidence: Boolean(evidence), runSummary: Boolean(run), preparedFixture: Boolean(fixture), allResults: Boolean(run) };
+}
+
+async function fallbackCopy(text, documentValue) {
+  if (!documentValue?.createElement || !documentValue?.body || typeof documentValue.execCommand !== "function") return false;
+  const textarea = documentValue.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  documentValue.body.appendChild(textarea);
+  try {
+    textarea.select();
+    return documentValue.execCommand("copy") === true;
+  } finally {
+    textarea.remove?.();
+  }
+}
+
+export async function copyTestLabText(text, { navigatorValue = globalThis.navigator, documentValue = globalThis.document, gameValue = globalThis.game } = {}) {
+  try {
+    const value = String(text ?? "");
+    let copied = false;
+    if (navigatorValue?.clipboard?.writeText) {
+      try {
+        await navigatorValue.clipboard.writeText(value);
+        copied = true;
+      } catch {}
+    }
+    if (!copied) copied = await fallbackCopy(value, documentValue);
+    if (!copied) throw new Error("clipboard unavailable");
+    gameValue?.ui?.notifications?.info?.("Arcflight Test Lab evidence copied to clipboard.");
+    return true;
+  } catch {
+    gameValue?.ui?.notifications?.warn?.("Arcflight Test Lab could not copy to clipboard.");
+    return false;
+  }
+}
+
 export function normalizeTestLabEvents(result) {
   if (result?.ok !== true || !Array.isArray(result.events)) return [];
   const seen = new Set();
@@ -133,6 +307,38 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     app.render();
   }
 
+  static async copyStepEvidence(event, target) {
+    const app = appFromTarget(target);
+    const run = app?._lastRun;
+    const step = selectTestLabEvidence(run?.steps, app?._selectedStepId);
+    if (!step) return;
+    await copyTestLabText(formatTestLabStepEvidence(step));
+  }
+
+  static async copyRunSummary(event, target) {
+    const app = appFromTarget(target);
+    const run = app?._lastRun;
+    if (!run) return;
+    await copyTestLabText(formatTestLabRunSummary(run));
+  }
+
+  static async copyPreparedFixture(event, target) {
+    const app = appFromTarget(target);
+    const run = app?._lastRun;
+    const fixture = run?.fixture ?? run?.profile?.fixture;
+    if (!fixture) return;
+    await copyTestLabText(formatTestLabPreparedFixture(fixture, run));
+  }
+
+  static async copyAllResults(event, target) {
+    const app = appFromTarget(target);
+    const run = app?._lastRun;
+    if (!run) return;
+    const step = selectTestLabEvidence(run.steps, app?._selectedStepId);
+    const fixture = run.fixture ?? run.profile?.fixture;
+    await copyTestLabText(formatTestLabAllResults(run, fixture, step));
+  }
+
   static selectStep(event, target) {
     const app = appFromTarget(target);
     if (!app) return;
@@ -145,7 +351,7 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     const sessionId = app?._lastRun?.retainedSessionId;
     if (!app || !sessionId || !isActiveGm()) return;
     const result = await globalThis.game?.arcflight?.eventTest?.abandon?.({ sessionId });
-    if (result?.ok === true) app._lastRun = { ...app._lastRun, retainedSessionId: null, cleanup: result, cleanupError: null };
+    if (result?.ok === true) app._lastRun = { ...app._lastRun, retainedSessionId: null, fixture: null, cleanup: result, cleanupError: null };
     else app._lastRun = { ...app._lastRun, cleanupError: result?.errors?.[0] ?? { code: "m12-test-session-cleanup-unavailable", message: "Retained fixture cleanup failed." } };
     app.render();
   }
@@ -173,8 +379,10 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     const registry = createSuiteRegistry();
     const selectedSuite = registry.find((suite) => suite.id === (this._selectedSuiteId ?? "quick-check")) ?? registry[0];
     const run = this._lastRun ?? null;
+    const fixture = run?.fixture ?? run?.profile?.fixture ?? null;
     const steps = run?.steps ?? [];
     const evidence = selectTestLabEvidence(steps, this._selectedStepId);
+    const copyAvailability = testLabCopyAvailability({ run, evidence, fixture });
     const gameValue = globalThis.game;
     const environment = { moduleVersion: gameValue?.modules?.get?.("arcflight")?.version ?? "0.0.0", foundryVersion: gameValue?.version ?? "unknown", pf2eVersion: gameValue?.system?.version ?? "unknown", buildIdentifier: globalThis.__arcflightBuildId ?? "local", activeGm: activeGmDisplayName(gameValue), activeGmId: gameValue?.users?.activeGM?.id ?? null };
     return {
@@ -184,9 +392,12 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
       lanes: ["ENGINE", "GM FLOW", "PLAYER VIEW"],
       summary: run?.summary ?? { total: 0, passed: 0, failed: 0, skipped: 0, warnings: 0, status: "IDLE" },
       run,
+      fixture,
+      isFixturePrep: selectedSuite.id === "fixture-prep",
       selectedSuite,
       timeline: steps,
       selectedStepId: evidence?.stepId ?? null,
+      copyAvailability,
       evidence: evidence ? { ...evidence, retainedSessionId: run?.retainedSessionId ?? null, expectedText: safeText(evidence.expected), actualText: safeText(evidence.actual), beforeSnapshotText: safeText(evidence.beforeSnapshot), afterSnapshotText: safeText(evidence.afterSnapshot) } : null,
       eventOptions: this._eventOptions ?? [],
       shipOptions: this._shipOptions ?? [],
@@ -216,6 +427,10 @@ export class ArcflightTestLabApp extends HandlebarsApplicationMixin(ApplicationV
     if (shipSelector) shipSelector.addEventListener("change", (event) => { this._selectedShipId = event.target.value || null; this.render(); });
     root.querySelector("[data-action='runTest']")?.addEventListener("click", (event) => this.constructor.runTest(event, event.currentTarget));
     root.querySelector("[data-action='clearResults']")?.addEventListener("click", (event) => this.constructor.clearResults(event, event.currentTarget));
+    root.querySelector("[data-action='copyRunSummary']")?.addEventListener("click", (event) => this.constructor.copyRunSummary(event, event.currentTarget));
+    root.querySelector("[data-action='copyAllResults']")?.addEventListener("click", (event) => this.constructor.copyAllResults(event, event.currentTarget));
+    root.querySelector("[data-action='copyStepEvidence']")?.addEventListener("click", (event) => this.constructor.copyStepEvidence(event, event.currentTarget));
+    root.querySelector("[data-action='copyPreparedFixture']")?.addEventListener("click", (event) => this.constructor.copyPreparedFixture(event, event.currentTarget));
     root.querySelector("[data-action='cleanupRetainedFixture']")?.addEventListener("click", (event) => this.constructor.cleanupRetainedFixture(event, event.currentTarget));
     root.querySelector("[data-action='toggleForcedFailure']")?.addEventListener("change", (event) => { this._forcePostLaunchFailure = event.currentTarget.checked === true; this.render(); });
   }

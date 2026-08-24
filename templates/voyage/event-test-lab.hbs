@@ -38,7 +38,10 @@
         <button type="button" data-action="runSuite" disabled>RUN SUITE · FUTURE</button>
         <button type="button" data-action="cancelRun" disabled>CANCEL · FUTURE</button>
         <button type="button" class="test-lab-action test-lab-action-secondary" data-action="clearResults">CLEAR RESULTS</button>
-        {{#if run.retainedSessionId}}<button type="button" data-action="cleanupRetainedFixture">CLEAN UP RETAINED TEST SESSION</button>{{/if}}
+        <button type="button" class="test-lab-action test-lab-action-secondary" data-action="copyRunSummary" {{#unless copyAvailability.runSummary}}disabled{{/unless}}>COPY RUN SUMMARY</button>
+        <button type="button" class="test-lab-action test-lab-action-secondary" data-action="copyAllResults" {{#unless copyAvailability.allResults}}disabled{{/unless}}>COPY ALL RESULTS</button>
+        {{#if copyAvailability.preparedFixture}}<button type="button" class="test-lab-action test-lab-action-secondary" data-action="copyPreparedFixture">COPY PREPARED FIXTURE</button>{{/if}}
+        {{#if run.retainedSessionId}}<button type="button" data-action="cleanupRetainedFixture">{{#if isFixturePrep}}CLEAN UP PREPARED TEST SESSION{{else}}CLEAN UP RETAINED TEST SESSION{{/if}}</button>{{/if}}
       </div>
 
       {{#if forcePostLaunchFailureAvailable}}<label class="test-lab-retention-toggle"><input type="checkbox" data-action="toggleForcedFailure" {{#if forcePostLaunchFailure}}checked{{/if}} {{#if isRunning}}disabled{{/if}}> <span>FORCE POST-LAUNCH FAILURE <small>TEST ONLY</small></span></label>{{/if}}
@@ -46,6 +49,15 @@
       <section id="arcflight-test-lab-summary" class="arcflight-test-lab-summary" aria-label="Test Lab summary" aria-live="polite" data-component="test-lab-summary" data-localization-key="ARCFLIGHT.TestLab.Summary" data-data-path="summary">
         <div class="summary-card summary-pass"><span>PASS</span><strong>{{summary.passed}}</strong></div><div class="summary-card summary-fail"><span>FAIL</span><strong>{{summary.failed}}</strong></div><div class="summary-card summary-skip"><span>SKIP</span><strong>{{summary.skipped}}</strong></div><div class="summary-card summary-warning"><span>WARNING</span><strong>{{summary.warnings}}</strong></div><div class="summary-card summary-total"><span>TOTAL</span><strong>{{summary.total}}</strong></div><div class="summary-card summary-status"><span>Status</span><strong>{{summary.status}}</strong></div>
       </section>
+
+      {{#if fixture}}
+        <section id="arcflight-test-lab-fixture" class="test-lab-fixture-summary" data-component="test-lab-fixture-summary" data-localization-key="ARCFLIGHT.TestLab.Fixture" data-data-path="fixture">
+          <div class="test-lab-fixture-heading"><h3>PREPARED TEST FIXTURE</h3><span class="test-lab-fixture-state">RETAINED / PRE-RESOLUTION</span></div>
+          <dl><dt>SESSION</dt><dd><code>{{fixture.sessionId}}</code></dd><dt>EVENT</dt><dd>{{fixture.eventId}}</dd><dt>SHIP</dt><dd>{{fixture.shipName}} <code>{{fixture.shipId}}</code></dd><dt>ROUND</dt><dd>{{fixture.roundId}}</dd><dt>STATE</dt><dd>{{fixture.sessionState}} / {{fixture.phase}}</dd><dt>REVISION</dt><dd>{{fixture.revision}}</dd></dl>
+          <h4>ASSIGNMENTS</h4>
+          <ul>{{#each fixture.assignments}}<li><strong>{{this.stationLabel}}</strong><span>{{this.operatorName}}</span><code>{{this.operatorId}}</code></li>{{/each}}</ul>
+        </section>
+      {{/if}}
 
       <div id="arcflight-test-lab-panels" class="arcflight-test-lab-panels">
         <section id="arcflight-test-lab-timeline" class="timeline-panel" data-component="test-lab-timeline" data-localization-key="ARCFLIGHT.TestLab.Timeline" data-data-path="timeline">
@@ -56,6 +68,7 @@
         <section id="arcflight-test-lab-evidence" class="evidence-panel" data-component="test-lab-evidence" data-localization-key="ARCFLIGHT.TestLab.Evidence" data-data-path="evidence">
           <h3>Evidence</h3>
           {{#if evidence}}
+            <button type="button" class="test-lab-action test-lab-action-secondary" data-action="copyStepEvidence" {{#unless copyAvailability.stepEvidence}}disabled{{/unless}}>COPY STEP EVIDENCE</button>
             <dl><dt>STEP</dt><dd>{{evidence.label}}</dd><dt>STATUS</dt><dd>{{evidence.status}}</dd><dt>EXPECTED</dt><dd>{{evidence.expectedText}}</dd><dt>ACTUAL</dt><dd>{{evidence.actualText}}</dd><dt>ERROR CODE</dt><dd>{{evidence.errorCode}}</dd><dt>ERROR PATH</dt><dd>{{evidence.errorPath}}</dd><dt>ERROR MESSAGE</dt><dd>{{evidence.errorMessage}}</dd><dt>REVISION BEFORE</dt><dd>{{evidence.revisionBefore}}</dd><dt>REVISION AFTER</dt><dd>{{evidence.revisionAfter}}</dd><dt>DURATION</dt><dd>{{evidence.durationMs}}ms</dd><dt>COMMAND</dt><dd>{{evidence.commandSummary}}</dd><dt>WRITES</dt><dd>{{evidence.writes}}</dd><dt>RETAINED SESSION</dt><dd>{{evidence.retainedSessionId}}</dd></dl>
             <details><summary>Snapshots</summary><h4>Before</h4><pre>{{evidence.beforeSnapshotText}}</pre><h4>After</h4><pre>{{evidence.afterSnapshotText}}</pre></details>
             <details><summary>Normalized diff</summary>{{#if evidence.diff.length}}<ul>{{#each evidence.diff}}<li>{{this.kind}} · {{this.path}}</li>{{/each}}</ul>{{else}}<p>No diff recorded.</p>{{/if}}</details>

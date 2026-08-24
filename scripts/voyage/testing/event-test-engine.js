@@ -108,6 +108,22 @@ function operation(result, snapshot = null) {
   return output;
 }
 
+function withTestOrigin(snapshot, sessionId, context) {
+  if (!snapshot?.session || !nonBlank(sessionId)) return snapshot;
+  const found = findStoredSession(sessionId, context);
+  const origin = found.ok ? safeClone(found.session?.encounterState?.metadata?.testOrigin) : { ok: false, value: null };
+  return origin.ok ? {
+    ...snapshot,
+    session: {
+      ...snapshot.session,
+      eventId: found.session.eventId ?? snapshot.session.eventId ?? null,
+      definitionSnapshotId: found.session.definitionSnapshotId ?? snapshot.session.definitionSnapshotId ?? null,
+      shipId: found.session.shipId ?? snapshot.session.shipId ?? null,
+      testOrigin: origin.value
+    }
+  } : snapshot;
+}
+
 function currentValues(result) {
   return { revision: result?.revision, authorityEpoch: result?.authorityEpoch };
 }
@@ -137,6 +153,22 @@ function launchRequest(input, context) {
   };
 }
 
+function actorOperatorIdentity(actor) {
+  const id = typeof actor?.id === "string" ? actor.id : "";
+  const uuid = typeof actor?.uuid === "string" ? actor.uuid : id ? `Actor.${id}` : "";
+  const name = typeof actor?.name === "string" && actor.name.trim() ? actor.name : id;
+  return id && uuid && actor?.type !== "vehicle" ? { kind: "actor", id, uuid, name } : null;
+}
+
+function fixtureOperatorCandidates(context, shipId) {
+  const seen = new Set();
+  return actorValues(context)
+    .filter((actor) => actor?.id !== shipId)
+    .map(actorOperatorIdentity)
+    .filter((operator) => operator && !seen.has(operator.id) && (seen.add(operator.id), true))
+    .sort((left, right) => left.id.localeCompare(right.id) || left.uuid.localeCompare(right.uuid));
+}
+
 async function readPlanning(sessionId, context) {
   const inspect = await inspectEventSession(sessionId, context);
   return inspect?.ok ? inspect : null;
@@ -145,8 +177,22 @@ async function readPlanning(sessionId, context) {
 async function dispatchPlanning(sessionId, context, commandKind, payload, state) {
   const request = commandRequest(sessionId, state.revision, state.authorityEpoch, commandKind, payload);
   const result = await Promise.resolve(dispatchVoyageEventSessionCommand(request, context));
-  if (!result?.ok) return { result, state: null };
-  return { result, state: currentValues(result) };
+  if (!result?.ok) return { result, state: null, request };
+  return { result, state: currentValues(result), request };
+}
+
+function recordPlanningTrace(trace, commandKind, beforeState, result, stageBefore, stageAfter, payload = null) {
+  trace.push({
+    command: commandKind,
+    requestId: result?.request?.requestId ?? result?.result?.requestId ?? null,
+    inputs: safeClone(payload).value ?? null,
+    status: result?.result?.ok === true ? "PASS" : "FAIL",
+    revisionBefore: beforeState?.revision ?? null,
+    revisionAfter: result?.result?.revision ?? null,
+    writes: result?.result?.ok === true ? 1 : 0,
+    stageBefore: stageBefore ?? null,
+    stageAfter: stageAfter ?? null
+  });
 }
 
 function stationSelections(planning, explicit) {
@@ -278,7 +324,9 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
     if (!cloned.ok || !cloned.value || typeof cloned.value !== "object" || Array.isArray(cloned.value) || Object.getPrototypeOf(cloned.value) !== Object.prototype) return invalid("request", "inspect requires an object with sessionId.");
     const keys = Object.keys(cloned.value);
     if (!keys.every((key) => ["sessionId", "verbose"].includes(key)) || !nonBlank(cloned.value.sessionId) || (Object.hasOwn(cloned.value, "verbose") && typeof cloned.value.verbose !== "boolean")) return invalid("request", "inspect requires a nonblank sessionId and optional boolean verbose.");
-    return inspectEventSession(cloned.value.sessionId, checked.context);
+    const result = await inspectEventSession(cloned.value.sessionId, checked.context);
+    if (!result?.ok) return result;
+    return { ...result, snapshot: withTestOrigin(result.snapshot, cloned.value.sessionId, checked.context) };
   }
 
   async function inspectAs(input = {}) {
@@ -292,6 +340,55 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
     const checked = await guard();
     if (!checked.ok) return checked.result;
     return findAuthoredActions(filters, checked.context);
+  }
+
+  async function discoverFixtureRequirements(input = {}) {
+    const checked = await guard();
+    if (!checked.ok) return checked.result;
+    const cloned = safeClone(input);
+    if (!cloned.ok || !cloned.value || typeof cloned.value !== "object" || Array.isArray(cloned.value)
+      || !nonBlank(cloned.value.eventId) || (Object.hasOwn(cloned.value, "definitionSnapshotId") && !nonBlank(cloned.value.definitionSnapshotId))) {
+      return invalid("request", "discoverFixtureRequirements requires eventId and optional definitionSnapshotId.");
+    }
+    const listed = await Promise.resolve(listEventDefinitions(checked.context));
+    const selected = listed.find((entry) => entry?.eventId === cloned.value.eventId) ?? null;
+    if (!selected) return eventTestFailure(testError("m11-event-definition-not-found", "eventId", "The selected event definition was not discovered."));
+    let definition = null;
+    try {
+      definition = typeof checked.context.resolveEventDefinitionSnapshot === "function"
+        ? await checked.context.resolveEventDefinitionSnapshot(cloned.value.eventId, cloned.value.definitionSnapshotId ?? selected.definitionSnapshotId)
+        : getM12EventDefinition();
+    } catch {}
+    const rounds = Array.isArray(definition?.rounds) ? [...definition.rounds].sort((left, right) => (left?.roundNumber ?? 0) - (right?.roundNumber ?? 0)) : [];
+    const round = rounds[0] ?? null;
+    const stations = Array.isArray(round?.availableStations)
+      ? round.availableStations.map((station) => ({
+        stationId: station?.stationId ?? null,
+        label: station?.label ?? station?.name ?? station?.stationId ?? null,
+        actions: Array.isArray(station?.actions) ? station.actions.map((action) => ({
+          actionId: action?.actionId ?? null,
+          name: action?.name ?? action?.actionId ?? null,
+          approaches: Array.isArray(action?.approaches) ? action.approaches.map((approach) => ({ approachId: approach?.approachId ?? null, name: approach?.name ?? approach?.approachId ?? null })) : []
+        })) : []
+      }))
+      : [];
+    if (!nonBlank(round?.roundId) || stations.length === 0 || stations.some((station) => !nonBlank(station.stationId) || station.actions.length === 0)) {
+      return eventTestFailure(testError("m12-test-engine-station-requirements-unavailable", "eventDefinition.rounds", "The selected event has no valid authored station requirements for Fixture Prep."));
+    }
+    return { ok: true, eventId: cloned.value.eventId, definitionSnapshotId: selected.definitionSnapshotId ?? null, roundId: round.roundId, roundNumber: round.roundNumber ?? null, stations };
+  }
+
+  async function listOperators(input = {}) {
+    const checked = await guard();
+    if (!checked.ok) return checked.result;
+    const cloned = safeClone(input);
+    if (!cloned.ok || !cloned.value || typeof cloned.value !== "object" || Array.isArray(cloned.value)
+      || !nonBlank(cloned.value.eventId) || !nonBlank(cloned.value.shipId)) return invalid("request", "listOperators requires eventId and shipId.");
+    const ship = listVoyageEventLaunchShips(actorValues(checked.context)).find((entry) => entry.id === cloned.value.shipId);
+    if (!ship) return eventTestFailure(testError("m12-invalid-ship-fixture", "shipId", "The selected ship is not a valid Arcflight launch ship."));
+    const operators = fixtureOperatorCandidates(checked.context, ship.id);
+    if (operators.length === 0) return eventTestFailure(testError("m12-test-engine-no-valid-operators", "operators", "No valid operator Actors are available for Fixture Prep."));
+    return { ok: true, eventId: cloned.value.eventId, shipId: ship.id, operators, assignmentPolicy: "canonical-first-valid" };
   }
 
   async function abandon(input = {}) {
@@ -384,7 +481,7 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
     const result = await Promise.resolve(launchVoyageEventSession(request, launchContext));
     if (!result?.ok) return operation(result);
     const snapshot = await inspectEventSession(result.sessionId, checked.context);
-    return snapshot?.ok ? operation(result, snapshot.snapshot) : operation(result);
+    return snapshot?.ok ? operation(result, withTestOrigin(snapshot.snapshot, result.sessionId, checked.context)) : operation(result);
   }
 
   async function rapidPlan(input = {}) {
@@ -398,6 +495,7 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
     if (!validTestOrigin(sessionTestOrigin(found.session), checked.context.authenticatedUserId)) {
       return testLifecycleFailure("m12-test-session-origin-required", "Only Event Test Engine sessions may be rapidly planned.", value.sessionId);
     }
+    const trace = [];
     let inspection = await inspectEventSession(value.sessionId, checked.context);
     if (!inspection?.ok) return inspection;
     let state = currentValues({ revision: inspection.snapshot.session.revision, authorityEpoch: inspection.snapshot.session.authorityEpoch });
@@ -405,18 +503,29 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
     if (sessionState === "round-introduction") {
       const begun = await dispatchPlanning(value.sessionId, checked.context, "begin-crew-planning", { phaseStartSnapshotId: id("event-test-crew-planning") }, state);
       if (!begun.result?.ok) return operation(begun.result);
+      recordPlanningTrace(trace, "begin-crew-planning", state, begun, sessionState, "crew-planning", { phaseStartSnapshotId: begun.request.payload.phaseStartSnapshotId });
       state = begun.state;
       inspection = await inspectEventSession(value.sessionId, checked.context);
       if (!inspection?.ok) return inspection;
       sessionState = inspection.snapshot.session.sessionState;
+      if (value.stopAt === "crew-planning") {
+        const stopped = operation(begun.result, inspection.snapshot);
+        stopped.trace = trace;
+        stopped.checkpoint = "crew-planning";
+        return stopped;
+      }
     }
-    if (sessionState === "station-resolution") return inspection;
+    if (sessionState === "crew-planning" && value.stopAt === "crew-planning") {
+      return { ...inspection, trace, checkpoint: "crew-planning" };
+    }
+    if (sessionState === "station-resolution") return { ...inspection, trace };
     if (sessionState !== "crew-planning") return operation({ ok: false, sessionId: value.sessionId, errors: [{ code: "m11-command-not-allowed", path: "sessionState", message: "Rapid planning requires Round Introduction or Crew Planning.", severity: "error" }] });
     const selections = stationSelections(inspection.snapshot, value.selections);
     if (!selections || selections.length === 0) return operation({ ok: false, sessionId: value.sessionId, errors: [{ code: "m12-test-engine-no-assigned-stations", path: "planning.assignments", message: "Rapid planning requires assigned stations and authored actions.", severity: "error" }] });
     for (const selection of selections) {
       const selected = await dispatchPlanning(value.sessionId, checked.context, "station-selection", selection, state);
       if (!selected.result?.ok) return operation(selected.result);
+      recordPlanningTrace(trace, "station-selection", state, selected, "crew-planning", "crew-planning", selection);
       state = selected.state;
     }
     inspection = await inspectEventSession(value.sessionId, checked.context);
@@ -427,6 +536,7 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
       if (locked.has(assignment.stationId)) continue;
       const lock = await dispatchPlanning(value.sessionId, checked.context, "station-lock", { stationId: assignment.stationId }, state);
       if (!lock.result?.ok) return operation(lock.result);
+      recordPlanningTrace(trace, "station-lock", state, lock, "crew-planning", "crew-planning", { stationId: assignment.stationId });
       state = lock.state;
     }
     inspection = await inspectEventSession(value.sessionId, checked.context);
@@ -439,6 +549,7 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
     if (JSON.stringify(currentOrder) !== JSON.stringify(desiredOrder)) {
       const order = await dispatchPlanning(value.sessionId, checked.context, "station-order", { stationOrder: desiredOrder }, state);
       if (!order.result?.ok) return operation(order.result);
+      recordPlanningTrace(trace, "station-order", state, order, "crew-planning", "crew-planning", { stationOrder: desiredOrder });
       state = order.state;
     }
     inspection = await inspectEventSession(value.sessionId, checked.context);
@@ -446,11 +557,20 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
     state = currentValues({ revision: inspection.snapshot.session.revision, authorityEpoch: inspection.snapshot.session.authorityEpoch });
     const lockedResult = await dispatchPlanning(value.sessionId, checked.context, "plan-lock", { phaseStartSnapshotId: id("event-test-plan-lock") }, state);
     if (!lockedResult.result?.ok) return operation(lockedResult.result);
+    recordPlanningTrace(trace, "plan-lock", state, lockedResult, "crew-planning", "plan-locked", { phaseStartSnapshotId: lockedResult.request.payload.phaseStartSnapshotId });
+    if (value.stopAt === "plan-locked") {
+      const locked = await inspectEventSession(value.sessionId, checked.context);
+      if (!locked?.ok) return locked;
+      const stopped = operation(lockedResult.result, locked.snapshot);
+      stopped.trace = trace;
+      stopped.checkpoint = "plan-locked";
+      return stopped;
+    }
     const resolutionRequest = { kind: "voyage.m12-begin-resolution", requestId: id("event-test-begin-resolution"), sessionId: value.sessionId, expectedRevision: lockedResult.result.revision, authorityEpoch: lockedResult.result.authorityEpoch };
     const resolution = await Promise.resolve(beginVoyageEventSessionResolution(resolutionRequest, checked.context));
     if (!resolution?.ok) return operation(resolution);
     const final = await inspectEventSession(value.sessionId, checked.context);
-    return final?.ok ? operation(resolution, final.snapshot) : operation(resolution);
+    return final?.ok ? Object.assign(operation(resolution, final.snapshot), { trace, checkpoint: "station-resolution" }) : operation(resolution);
   }
 
   async function resolveStation(input = {}) {
@@ -580,6 +700,8 @@ export function createVoyageEventTestNamespace({ getContext, getGame } = {}) {
     inspect,
     inspectAs,
     findActionsByConsequence,
+    discoverFixtureRequirements,
+    listOperators,
     start,
     rapidPlan,
     resolveStation,

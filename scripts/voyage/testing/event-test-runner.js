@@ -89,7 +89,7 @@ export function createTestRunner({ registry = createSuiteRegistry(), context = {
       runRecord.summary = { total: 1, passed: 0, failed: 1, skipped: 0, warnings: 0, status: "FAILED" };
       runRecord.completedAt = new Date().toISOString();
       runRecord.durationMs = 0;
-      return { ok: false, runId, suiteId: suite?.id ?? suiteId, lane: profile.lane, summary: runRecord.summary, steps, retainedSessionId: null, report: createTestReportModel(runRecord) };
+      return { ok: false, runId, suiteId: suite?.id ?? suiteId, lane: profile.lane, summary: runRecord.summary, steps, retainedSessionId: null, profile: structuredClone(profile), fixture: null, report: createTestReportModel(runRecord) };
     }
 
     const tests = (suite?.tests ?? []).filter((test) => test.id !== "forced-post-launch-failure" || profile.forcePostLaunchFailure === true);
@@ -158,7 +158,7 @@ export function createTestRunner({ registry = createSuiteRegistry(), context = {
             runRecord.retainedSessionId = profile.sessionId ?? null;
             runRecord.completedAt = new Date().toISOString();
             runRecord.durationMs = Date.now() - startedTime;
-            return { ok: false, runId, suiteId: profile.suiteId, lane: profile.lane, summary: runRecord.summary, steps, retainedSessionId: runRecord.retainedSessionId, report: createTestReportModel({ ...runRecord, summary: runRecord.summary }) };
+            return { ok: false, runId, suiteId: profile.suiteId, lane: profile.lane, summary: runRecord.summary, steps, retainedSessionId: runRecord.retainedSessionId, profile: structuredClone(profile), fixture: profile.fixture ?? null, report: createTestReportModel({ ...runRecord, summary: runRecord.summary }) };
           }
         }
       } catch (error) {
@@ -198,6 +198,8 @@ export function createTestRunner({ registry = createSuiteRegistry(), context = {
       summary: runRecord.summary,
       steps,
       retainedSessionId: runRecord.retainedSessionId,
+      profile: structuredClone(profile),
+      fixture: profile.fixture ?? null,
       report: createTestReportModel({ ...runRecord, summary: runRecord.summary })
     };
   }

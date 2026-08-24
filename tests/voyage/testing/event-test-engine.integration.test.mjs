@@ -75,6 +75,30 @@ test("start and rapidPlan use the real launch and planning lifecycle", async () 
   assert.equal(player.projection.projectionRole, "operator");
   assert.equal(player.projection.assignedStations.length, 1);
 });
+
+test("Fixture Prep discovers canonical requirements and stops at Plan Locked before resolution", async () => {
+  const fx = fixture();
+  const api = createVoyageEventTestNamespace({ getContext: () => fx.context, getGame: () => fx.game });
+  const requirements = await api.discoverFixtureRequirements({ eventId: "m12-glassback-cinderwake" });
+  assert.equal(requirements.ok, true, JSON.stringify(requirements.errors));
+  assert.deepEqual(requirements.stations.map((station) => station.stationId), ["captain", "engineer", "navigator", "watchmaster", "veilwarden"]);
+  assert.ok(requirements.stations.every((station) => station.actions[0]?.approaches[0]?.approachId));
+  const operators = await api.listOperators({ eventId: "m12-glassback-cinderwake", shipId: "ship" });
+  assert.equal(operators.ok, true, JSON.stringify(operators.errors));
+  assert.deepEqual(operators.operators.map((operator) => operator.id), ["captain", "engineer", "navigator", "veilwarden", "watchmaster"]);
+  const selections = Object.fromEntries(operators.operators.slice(0, 5).map((operator, index) => [requirements.stations[index].stationId, operator.id]));
+  const started = await api.start({ shipId: "ship", operatorSelections: selections });
+  assert.equal(started.ok, true, JSON.stringify(started.errors));
+  const planned = await api.rapidPlan({ sessionId: started.sessionId, stopAt: "plan-locked", mode: "canonical-first-valid" });
+  assert.equal(planned.ok, true, JSON.stringify(planned.errors));
+  assert.equal(planned.checkpoint, "plan-locked");
+  assert.equal(planned.snapshot.session.sessionState, "plan-locked");
+  assert.equal(planned.snapshot.session.phase, "lock-readiness");
+  assert.equal(planned.snapshot.resolution.pendingChecks.length, 5);
+  assert.equal(planned.trace.some((entry) => entry.command === "begin-resolution"), false);
+  assert.ok(planned.trace.every((entry) => ["begin-crew-planning", "station-selection", "station-lock", "station-order", "plan-lock"].includes(entry.command)));
+  assert.equal(fx.tracker.updates > 0, true);
+});
 async function startedFixture(input = {}) {
   const fx = fixture();
   const api = createVoyageEventTestNamespace({ getContext: () => fx.context, getGame: () => fx.game });

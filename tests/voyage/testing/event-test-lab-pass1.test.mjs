@@ -7,7 +7,7 @@ import {
   registerTestLabSceneControl
 } from "../../../scripts/voyage/testing/event-test-lab-entry.js";
 import { createTestRunner } from "../../../scripts/voyage/testing/event-test-runner.js";
-import { createSuiteRegistry, QUICK_CHECK_SUITE_ID } from "../../../scripts/voyage/testing/event-test-suite-registry.js";
+import { createSuiteRegistry, FIXTURE_PREP_SUITE_ID, QUICK_CHECK_SUITE_ID } from "../../../scripts/voyage/testing/event-test-suite-registry.js";
 import { listEventDefinitions } from "../../../scripts/voyage/testing/event-test-inspector.js";
 
 const gmGame = { user: { id: "gm-1", isGM: true }, users: { activeGM: { id: "gm-1" } } };
@@ -182,4 +182,34 @@ test("an active ordinary-session conflict has zero-write evidence and no retaine
   assert.equal(step.errorPath, "sessionId");
   assert.equal(step.writes, 0);
   assert.equal(run.retainedSessionId, null);
+});
+
+test("Fixture Prep is an enabled ENGINE suite and retains the canonical pre-resolution fixture", async () => {
+  const calls = { starts: [], rapidPlans: [], abandons: 0 };
+  const stationIds = ["captain", "engineer", "navigator", "watchmaster", "veilwarden"];
+  const requirements = stationIds.map((stationId) => ({ stationId, label: stationId.toUpperCase(), actions: [{ actionId: `${stationId}-action`, name: "Authored action", approaches: [{ approachId: `${stationId}-approach`, name: "Authored approach" }] }] }));
+  const operators = stationIds.map((id) => ({ kind: "actor", id: `operator-${id}`, uuid: `Actor.operator-${id}`, name: id }));
+  let snapshot = { session: { sessionId: "fixture-prep-session", eventId: "fixture-event", shipId: "fixture-ship", revision: 1, sessionState: "round-introduction", phase: "round-introduction", roundId: "round-1", testOrigin: { kind: "arcflight-event-test" } }, planning: { assignments: [], stations: requirements, selections: {}, stationLocks: [], proposedStationOrder: [] }, resolution: { pendingChecks: [], pendingBreachSave: null }, ship: { activeHazards: [], voidScarEvidence: null } };
+  const context = runnerContext({ eventTest: {
+    listEvents: async () => ({ ok: true, events: [{ eventId: "fixture-event", title: "Fixture Event", definitionSnapshotId: "fixture-v1" }] }),
+    listShips: async () => ({ ok: true, ships: [{ id: "fixture-ship", name: "Fixture Ship" }] }),
+    discoverFixtureRequirements: async () => ({ ok: true, eventId: "fixture-event", definitionSnapshotId: "fixture-v1", roundId: "round-1", stations: requirements }),
+    listOperators: async () => ({ ok: true, eventId: "fixture-event", shipId: "fixture-ship", operators, assignmentPolicy: "canonical-first-valid" }),
+    start: async (request) => { calls.starts.push(request); snapshot = { ...snapshot, session: { ...snapshot.session, sessionId: request.sessionId, revision: 2 } }; return { ok: true, sessionId: request.sessionId, snapshot }; },
+    rapidPlan: async ({ sessionId, stopAt }) => { calls.rapidPlans.push({ sessionId, stopAt }); if (stopAt === "crew-planning") snapshot = { ...snapshot, session: { ...snapshot.session, sessionState: "crew-planning", phase: "planning", revision: 3 } }; if (stopAt === "plan-locked") snapshot = { ...snapshot, session: { ...snapshot.session, sessionState: "plan-locked", phase: "lock-readiness", revision: 10 }, planning: { ...snapshot.planning, assignments: requirements.map((station, index) => ({ stationId: station.stationId, operator: operators[index] })), selections: Object.fromEntries(requirements.map((station) => [station.stationId, { actionId: `${station.stationId}-action`, approachId: `${station.stationId}-approach`, riskBidId: null }])), stationLocks: [...stationIds], proposedStationOrder: [...stationIds] } }; return { ok: true, sessionId, revision: snapshot.session.revision, authorityEpoch: 1, snapshot, trace: [{ command: stopAt === "crew-planning" ? "begin-crew-planning" : "plan-lock", writes: 1 }], checkpoint: stopAt }; },
+    inspect: async () => ({ ok: true, snapshot }),
+    abandon: async () => { calls.abandons += 1; return { ok: true }; }
+  } });
+  const suite = createSuiteRegistry().find((entry) => entry.id === FIXTURE_PREP_SUITE_ID);
+  assert.equal(suite?.enabled, true);
+  assert.equal(suite?.lane, "ENGINE");
+  const run = await createTestRunner({ registry: createSuiteRegistry(), context }).run({ suiteId: FIXTURE_PREP_SUITE_ID, eventId: "fixture-event", shipId: "fixture-ship" });
+  assert.equal(run.ok, true, JSON.stringify(run.steps));
+  assert.equal(run.summary.passed, 12);
+  assert.equal(run.retainedSessionId, calls.starts[0].sessionId);
+  assert.deepEqual(calls.starts[0].operatorSelections, Object.fromEntries(stationIds.map((stationId) => [stationId, `operator-${stationId}`])));
+  assert.deepEqual(calls.rapidPlans.map((entry) => entry.stopAt), ["crew-planning", "plan-locked"]);
+  assert.equal(run.fixture.sessionState, "plan-locked");
+  assert.equal(run.fixture.phase, "lock-readiness");
+  assert.equal(calls.abandons, 0);
 });

@@ -900,3 +900,16 @@
 .test-lab-retention-toggle small { margin-inline-start: .35rem; color: #f0b49d; font-size: .72rem; letter-spacing: .08em; }
 .test-lab-retention-toggle:has(input:disabled) { opacity: .62; }
 .test-lab-cleanup-result { color: #a9d5ad; font-size: .9rem; }
+.test-lab-fixture-summary { padding: .9rem; border: 1px solid #a47c45; background: linear-gradient(145deg, rgba(69,49,29,.72), rgba(35,26,20,.9)); }
+.test-lab-fixture-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; }
+.evidence-panel > [data-action="copyStepEvidence"] { margin-bottom: .75rem; min-height: 2.2rem; padding: .45rem .7rem; border-color: #80633f; background: #30241b; color: #f4e6d1; font-size: .76rem; font-weight: 700; letter-spacing: .035em; }
+.test-lab-fixture-heading h3 { margin: 0; color: #fff3db; font-size: 1.05rem; }
+.test-lab-fixture-state { color: #a9d5ad; font-size: .76rem; font-weight: 700; letter-spacing: .08em; }
+.test-lab-fixture-summary dl { display: grid; grid-template-columns: minmax(6rem,.3fr) minmax(0,1fr) minmax(5rem,.25fr) minmax(0,1fr); gap: .4rem .8rem; margin: .7rem 0; }
+.test-lab-fixture-summary dt { color: #d7c8b5; font-size: .74rem; font-weight: 700; letter-spacing: .08em; }
+.test-lab-fixture-summary dd { min-width: 0; margin: 0; color: #f4e8d7; overflow-wrap: anywhere; }
+.test-lab-fixture-summary h4 { margin: .7rem 0 .35rem; color: #f0c878; font-size: .82rem; letter-spacing: .08em; }
+.test-lab-fixture-summary ul { display: grid; gap: .25rem; margin: 0; padding: 0; list-style: none; }
+.test-lab-fixture-summary li { display: grid; grid-template-columns: minmax(8rem,.45fr) minmax(9rem,.65fr) minmax(8rem,1fr); gap: .6rem; padding: .35rem .45rem; border: 1px solid #4f3d2d; background: rgba(23,20,18,.55); }
+.test-lab-fixture-summary code { color: #eadfce; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .test-lab-fixture-summary dl { grid-template-columns: minmax(6rem,.35fr) minmax(0,1fr); } .test-lab-fixture-summary li { grid-template-columns: 1fr; gap: .15rem; } }

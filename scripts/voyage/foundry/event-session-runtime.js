@@ -653,6 +653,20 @@ function validCreationDefinition(value, session) {
   }
   return true;
 }
+function creationEncounterMatches(initialEncounterState, session, initialGmUserId) {
+  const comparable = capture(session.encounterState);
+  if (!comparable.ok) return false;
+  const origin = comparable.value?.metadata?.testOrigin;
+  if (origin !== undefined) {
+    if (!exactKeys(origin, ["kind", "createdByUserId", "createdAt"]) || origin.kind !== "arcflight-event-test"
+      || origin.createdByUserId !== initialGmUserId || !validIsoTimestamp(origin.createdAt)) return false;
+    if (isPlainObject(comparable.value.metadata)) {
+      delete comparable.value.metadata.testOrigin;
+      if (initialEncounterState.metadata === null && Object.keys(comparable.value.metadata).length === 0) comparable.value.metadata = null;
+    }
+  }
+  return equal(initialEncounterState, comparable.value);
+}
 function validCreationRecord(record, session, initialGmUserId) {
   if (!exactKeys(record, PROCESSED_REQUEST_FIELDS) || !nonBlank(record.requestId) || !nonBlank(record.principalUserId) || !nonBlank(initialGmUserId)
     || record.principalUserId !== initialGmUserId || record.projectionKind !== "gm" || record.commandKind !== CREATION_COMMAND_KIND
@@ -662,7 +676,7 @@ function validCreationRecord(record, session, initialGmUserId) {
   if (tuple[0] !== session.sessionId || tuple[1] !== record.principalUserId || tuple[2] !== "gm" || tuple[3] !== 0 || tuple[4] !== 0 || tuple[5] !== CREATION_COMMAND_KIND
     || !exactKeys(tuple[6], ["eventId", "definitionSnapshotId", "shipId", "eventDefinition", "initialEncounterState"])
     || tuple[6].eventId !== session.eventId || tuple[6].definitionSnapshotId !== session.definitionSnapshotId || tuple[6].shipId !== session.shipId
-    || (session.revision === 0 && !equal(tuple[6].initialEncounterState, session.encounterState)) || !validCreationDefinition(tuple[6].eventDefinition, session)) return false;
+    || (session.revision === 0 && !creationEncounterMatches(tuple[6].initialEncounterState, session, initialGmUserId)) || !validCreationDefinition(tuple[6].eventDefinition, session)) return false;
   const expectedResponse = { ok: true, requestId: record.requestId, sessionId: session.sessionId, status: "setup", revision: 0, authorityEpoch: 0, projection: null, events: [], errors: [], warnings: [] };
   return validStoredResponse(record.response, record, session.sessionId, session.authorityEpoch) && equal(record.response, expectedResponse);
 }
@@ -4451,6 +4465,17 @@ export async function createVoyageEventSession(request, context = {}) {
     initialEncounter = normalizeEncounterNarrative(encounter.value);
     if (!initialEncounter) return failure([diagnostic("m11-command-payload-invalid", "request.initialEncounterState")], identities);
   } catch { return failure([diagnostic("m11-command-payload-invalid", "request.eventDefinition")], identities); }
+  if (context?.__eventTestOrigin !== undefined) {
+    const origin = capture(context.__eventTestOrigin);
+    if (!origin.ok || !exactKeys(origin.value, ["kind", "createdByUserId", "createdAt"])
+      || origin.value.kind !== "arcflight-event-test" || origin.value.createdByUserId !== auth.activeGmUserId
+      || !validIsoTimestamp(origin.value.createdAt)) return failure([diagnostic("m11-command-payload-invalid", "request.testOrigin")], identities);
+    const encounterCapture = capture(initialEncounter);
+    if (!encounterCapture.ok) return failure([diagnostic("m11-command-payload-invalid", "request.testOrigin")], identities);
+    encounterCapture.value.metadata = isPlainObject(encounterCapture.value.metadata) ? encounterCapture.value.metadata : {};
+    encounterCapture.value.metadata.testOrigin = origin.value;
+    initialEncounter = encounterCapture.value;
+  }
   const id = generatedId(context), levels = context.documentOwnershipLevels ?? globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS ?? { NONE: 0, OWNER: 3 }, ownership = ownershipForGms(auth.users, levels);
   const earlyRevision0Failure = (revision0Stage, details = {}) => revision0Failure("m11-session-write-failed", VOYAGE_SESSION_PATH, identities, { revision0Stage, sessionId: value.sessionId, documentId: id, ...details });
   if (!id || !ownership || ownership[auth.activeGmUserId] !== levels.OWNER) return earlyRevision0Failure("create-before");

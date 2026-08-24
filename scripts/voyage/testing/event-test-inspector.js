@@ -105,6 +105,7 @@ function projectionSnapshot(gmProjection, planningProjection, resolutionProjecti
     session: {
       sessionId: projection.sessionId ?? planning.sessionId ?? resolution.sessionId ?? null,
       eventId: projection.eventId ?? planning.eventId ?? null,
+      shipId: projection.shipId ?? projection.primaryShip?.id ?? planning.shipId ?? resolution.shipId ?? null,
       definitionSnapshotId: projection.definitionSnapshotId ?? null,
       revision: projection.revision ?? planning.revision ?? resolution.revision ?? null,
       authorityEpoch: gmProjection.authorityEpoch ?? planning.authorityEpoch ?? null,
